@@ -1,0 +1,20 @@
+{
+  "extends": "../../packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM"],
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "allowSyntheticDefaultImports": true,
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@laptopmitra/api-client": ["../../packages/api-client/dist"],
+      "@laptopmitra/types": ["../../packages/types/dist"],
+      "@laptopmitra/config": ["../../packages/config"]
+    },
+    "rootDir": "."
+  },
+  "include": ["src/**/*", "app.config.ts"],
+  "exclude": ["node_modules", "dist", ".expo", "metro.config.js"]
+}

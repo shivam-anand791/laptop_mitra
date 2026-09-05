@@ -1,0 +1,331 @@
+// Prisma schema for LaptopMitra migration
+// Designed from scratch based on business logic (not DB introspection)
+// Improvements over PHP original:
+// - JWT auth replacing PHP sessions/OTP
+// - Unified discount + referral/affiliate system (was separate in PHP)
+// - S3/Cloudinary storage (was local disk)
+// - Razorpay sandbox-ready with test keys only
+// - Proper foreign keys and relationships
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Core models
+// ---------------------------------------------------------------------------
+
+model User {
+  id          String      @id @default(uuid())
+  name        String?
+  email       String      @unique
+  emailVerified  DateTime?
+  password    String
+  role        String      @default("USER") // USER | ADMIN | MODERATOR
+  status      String      @default("ACTIVE") // ACTIVE | SUSPENDED | DELETED
+  imageUrl    String?
+  phone       String?
+  address     String?
+  city        String?
+  state       String?
+  pincode     String?
+  gender      String?
+  dob         DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Authentication (JWT-based, replaces PHP sessions/OTP)
+  refreshTokens RefreshToken[]
+
+  // Referral/Affiliate tracking
+  referralCode      String      @unique
+  referralEarnings  Decimal     @default(0)
+  referralTier      String      @default("BASIC") // BASIC | GOLD | PLATINUM
+  referralLinkClickedCount Int      @default(0)
+
+  // OTP (kept for backward compatibility but not primary auth)
+  otp           String?
+  otpExpiresAt    DateTime?
+  otpAttemptCount Int         @default(0)
+
+  // Relations
+  orders            Order[]
+  wishlists         Wishlist[]
+  carts             Cart[]
+  referrals         Referral[]
+  otpAttempts       OtpAttempt[]
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  parentId    String?  // Self-referencing for subcategories
+  parent      Category? @relation("CategorySubcategories", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  products      Product[]
+  subcategories Category[] @relation("CategorySubcategories")
+}
+
+// ---------------------------------------------------------------------------
+// Product catalog
+// ---------------------------------------------------------------------------
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  shortDescription String?
+  price       Decimal
+  compareAtPrice  Decimal? // For "original price" / strike-through
+  sku         String   @unique
+  barcode     String?  // Optional barcode
+  stock       Int      @default(0)
+  allowBackorder Boolean  @default(false)
+  status      String   @default("ACTIVE") // ACTIVE | INACTIVE | DISCONTINUED
+  metadata    Json?    // Flexible extra fields (weight, dimensions, etc.)
+  isFeatured   Boolean  @default(false)
+  isNewArrival Boolean  @default(false)
+  tags         String?  // Comma-separated search/filter tags (MySQL does not support list of primitives)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  category      Category?    @relation(fields: [categoryId], references: [id])
+  categoryId    String?
+  images        ProductImage[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  wishlistItems WishlistItem[]
+}
+
+// Product Image
+model ProductImage {
+  id          String   @id @default(uuid())
+  product     Product  @relation(fields: [productId], references: [id])
+  productId   String
+  url         String   // Cloudinary/S3 URL
+  altText     String?
+  isPrimary    Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([productId])
+}
+
+// ---------------------------------------------------------------------------
+// Cart & Wishlist (unified storage, authenticated CRUD)
+// ---------------------------------------------------------------------------
+
+model Cart {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  items CartItem[]
+}
+
+model CartItem {
+  id          String   @id @default(uuid())
+  cart        Cart     @relation(fields: [cartId], references: [id])
+  cartId      String
+  product     Product  @relation(fields: [productId], references: [id])
+  productId   String
+  quantity    Int      @default(1)
+  priceAtAdd  Decimal  // Price when added (captures price changes)
+  createdAt   DateTime @default(now())
+
+  @@unique([cartId, productId])
+  @@index([cartId])
+}
+
+model Wishlist {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  items WishlistItem[]
+}
+
+model WishlistItem {
+  id          String   @id @default(uuid())
+  wishlist    Wishlist @relation(fields: [wishlistId], references: [id])
+  wishlistId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  productId   String
+  createdAt   DateTime @default(now())
+
+  @@unique([wishlistId, productId])
+  @@index([wishlistId])
+}
+
+// ---------------------------------------------------------------------------
+// Orders & Checkout (improved vs PHP)
+// ---------------------------------------------------------------------------
+
+model Order {
+  id               String      @id @default(uuid())
+  orderNumber      String      @unique @default(cuid())
+  user             User        @relation(fields: [userId], references: [id])
+  userId           String
+  status           String      @default("PENDING") // PENDING | CONFIRMED | SHIPPING | DELIVERED | CANCELLED | REFUNDED
+  paymentStatus    String      @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED | REFUNDED
+  paymentMethod    String?     // "razorpay" | "wallet" | "cod"
+  paymentId        String?     // Razorpay payment ID
+  razorpayOrderId  String?     // Razorpay order ID
+  razorpaySignature String?     // For webhook verification
+  subtotal         Decimal
+  discountAmount   Decimal     @default(0)
+  discountType     String?     // "percentage" | "fixed" | "referral"
+  finalAmount      Decimal
+  shippingAddress  Json?       // Normalize later into Address model
+  phone            String?
+  email            String
+  notes            String?
+  referralCode     String?     // Code applied (if any)
+  referralDiscount Decimal     @default(0) // Discount from referral
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  // Relations
+  items        OrderItem[]
+  deliveries   Delivery[]
+  payments     Payment[]
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  order       Order    @relation(fields: [orderId], references: [id])
+  orderId     String
+  product     Product  @relation(fields: [productId], references: [id])
+  productId   String
+  quantity    Int
+  price       Decimal  // Price at time of purchase
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+}
+
+model Delivery {
+  id          String   @id @default(uuid())
+  order       Order    @relation(fields: [orderId], references: [id])
+  orderId     String
+  trackingNumber String?
+  carrier       String?
+  status      String   @default("PENDING") // PENDING | SHIPPED | OUT_FOR_DELIVERY | DELIVERED | RETURNED
+  shippedAt   DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orderId])
+}
+
+// Payment records (for webhook tracking)
+model Payment {
+  id               String   @id @default(uuid())
+  order           Order    @relation(fields: [orderId], references: [id])
+  orderId          String
+  razorpayPaymentId  String?
+  razorpayOrderId   String?
+  razorpaySignature String?
+  amount           Decimal
+  currency         String   @default("INR")
+  status           String   @default("PENDING") // PENDING | COMPLETED | FAILED | REFUNDED
+  receiptId        String?
+  attemptCount     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([orderId])
+}
+
+// ---------------------------------------------------------------------------
+// Discount & Referral/Affiliate system (UNIFIED — was separate in PHP!)
+// ---------------------------------------------------------------------------
+
+model DiscountCode {
+  id            String   @id @default(uuid())
+  code          String   @unique
+  name          String
+  description   String?
+  type          String   // "percentage" | "fixed" | "free_shipping"
+  value         Decimal  // Discount value (percentage% or fixed amount)
+  minOrderValue Decimal? // Minimum order to apply
+  maxUses       Int?     // Total uses allowed (null = unlimited)
+  uses          Int      @default(0)
+  maxUsesPerUser Int?    // Per-user limit (null = unlimited)
+  isActive      Boolean  @default(true)
+  validFrom     DateTime?
+  validUntil    DateTime?
+  appliesTo     String?  // "all" | "category" | "product"
+  appliesToIds  String?  // Comma-separated product/category IDs
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([code])
+}
+
+// This model unifies what was TWO separate systems in PHP:
+// 1. Referral codes (flat ₹500 discount via referral_code lookup)
+// 2. Coupon system (validate_coupon.php)
+// Now it's ONE system covering both use cases.
+model Referral {
+  id            String   @id @default(uuid())
+  user          User     @relation(fields: [userId], references: [id])
+  userId        String
+  code          String   @unique
+  tier          String   @default("BASIC") // BASIC | GOLD | PLATINUM
+  earnings      Decimal  @default(0) // Total earned from referrals
+  referredUsers Int      @default(0) // Count of successful referrals
+  status        String   @default("ACTIVE") // ACTIVE | EXPIRED | REVOKED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([code])
+}
+
+// ---------------------------------------------------------------------------
+// OTP (kept for backward compatibility but secondary to JWT)
+// ---------------------------------------------------------------------------
+
+model OtpAttempt {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  purpose   String   // "login" | "password_reset" | "email_verify"
+  otp       String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId, purpose])
+}
