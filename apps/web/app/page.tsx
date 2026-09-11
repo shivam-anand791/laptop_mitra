@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import CustomerLayout from '../components/CustomerLayout';
 import ProductCard from '../components/ProductCard';
+import MacLaptopScreen from '../components/ui/mac-laptop-screen';
 import AnimatedCounter from '../components/AnimatedCounter';
 import { ProductCardSkeleton } from '../components/ui/Skeleton';
 import { Product } from '../lib/types';
@@ -240,12 +241,24 @@ export default function HomePage() {
                     <span className="text-xs text-[var(--text-muted)] font-mono">STOCK: 8 LEFT</span>
                   </div>
 
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=1000&q=80"
-                    alt="MacBook Pro Special Deal"
-                    className="w-full h-52 object-cover rounded-[var(--radius-lg)] mb-4"
-                  />
+                  {/* Laptop Mockup Frame */}
+                  <div className="w-full max-w-full overflow-hidden mb-4 rounded-[var(--radius-lg)]">
+                    <MacLaptopScreen
+                      width="100%"
+                      height="230px"
+                      rounded={true}
+                      shadow={false}
+                      className="w-full"
+                    >
+                      {/* TODO: replace with real product image from API */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src="https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=1200&q=80"
+                        alt="Featured Laptop Workspace"
+                        className="w-full h-full object-cover"
+                      />
+                    </MacLaptopScreen>
+                  </div>
 
                   <div className="space-y-2">
                     <h3 className="text-lg font-bold text-[var(--text-primary)]">
