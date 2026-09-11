@@ -4,6 +4,9 @@ export interface Category {
   slug: string;
   description?: string | null;
   parentId?: string | null;
+  parent?: Category | null;
+  subcategories?: Category[];
+  _count?: { products: number };
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -83,6 +86,21 @@ export interface User {
   referralTier?: string;
   referralLinkClickedCount?: number;
   createdAt?: Date | string;
+}
+
+export interface Address {
+  id: string;
+  userId: string;
+  fullName?: string | null;
+  phone?: string | null;
+  address: string;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  landmark?: string | null;
+  isDefault: boolean;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 }
 
 export interface OrderItem {

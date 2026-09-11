@@ -1,10 +1,10 @@
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
-import { useForm } from 'react-hook-form';
+import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useResetPassword } from '../../hooks/useApi';
-import { AuthStackParamList } from '../../navigation/types';
+import { AuthStackParamList, AuthNavigationProp } from '../../navigation/types';
 
 const resetPasswordSchema = z.object({
   newPassword: z
@@ -22,11 +22,11 @@ const resetPasswordSchema = z.object({
 });
 
 type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
-
 type ResetPasswordRouteProp = RouteProp<AuthStackParamList, 'ResetPassword'>;
 
 export default function ResetPasswordScreen() {
   const route = useRoute<ResetPasswordRouteProp>();
+  const navigation = useNavigation<AuthNavigationProp>();
   const { token } = route.params;
   const { mutate: apiResetPassword, isPending, isSuccess } = useResetPassword();
 
@@ -49,7 +49,7 @@ export default function ResetPasswordScreen() {
           'Password Reset Successful',
           'Your password has been updated. You can now login with your new password.',
           [
-            { text: 'Go to Login', onPress: () => { /* navigation handled by parent */ } },
+            { text: 'Go to Login', onPress: () => navigation.navigate('Login') },
           ],
           { cancelable: false }
         );
@@ -63,7 +63,7 @@ export default function ResetPasswordScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -81,28 +81,46 @@ export default function ResetPasswordScreen() {
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>New Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              secureTextEntry
-              autoCompleteType="new-password"
-              returnKeyType="next"
-              {...(control as any)}
+            <Controller
+              control={control}
+              name="newPassword"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={styles.input}
+                  placeholder="••••••••"
+                  secureTextEntry
+                  autoComplete="new-password"
+                  returnKeyType="next"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
             />
             {errors.newPassword && <Text style={styles.errorText}>{errors.newPassword.message}</Text>}
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Confirm New Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              secureTextEntry
-              autoCompleteType="new-password"
-              returnKeyType="go"
-              {...(control as any)}
+            <Controller
+              control={control}
+              name="confirmPassword"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={styles.input}
+                  placeholder="••••••••"
+                  secureTextEntry
+                  autoComplete="new-password"
+                  returnKeyType="go"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
             />
-            {errors.confirmPassword && <Text style={styles.errorText}>{errors.confirmPassword.message}</Text>}
+            {errors.confirmPassword && (
+              <Text style={styles.errorText}>{errors.confirmPassword.message}</Text>
+            )}
           </View>
 
           <View style={styles.passwordHint}>

@@ -42,10 +42,12 @@ __decorate([
     __metadata("design:type", String)
 ], RegisterDto.prototype, "password", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '+919876543210', description: 'Phone number', required: false }),
+    (0, swagger_1.ApiProperty)({ example: '+919876543210', description: 'Phone number with country code (e.g., +919876543210)', required: false }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.Matches)(/^\+?[1-9]\d{1,14}$/, { message: 'Invalid phone number format' }),
+    (0, class_validator_1.Matches)(/^\+?\d{7,15}$/, {
+        message: 'Invalid phone number. Use format like +919876543210 (7-15 digits with optional + prefix)',
+    }),
     __metadata("design:type", String)
 ], RegisterDto.prototype, "phone", void 0);
 //# sourceMappingURL=register.dto.js.map

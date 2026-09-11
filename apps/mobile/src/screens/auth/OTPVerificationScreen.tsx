@@ -1,6 +1,6 @@
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { AuthStackParamList } from '../../navigation/types';
@@ -78,15 +78,23 @@ export default function OTPVerificationScreen() {
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Enter OTP</Text>
-            <TextInput
-              style={[styles.input, styles.otpInput]}
-              placeholder="123456"
-              autoCapitalize="none"
-              autoCompleteType="one-time-code"
-              keyboardType="numeric"
-              maxLength={6}
-              returnKeyType="go"
-              {...(control as any)}
+            <Controller
+              control={control}
+              name="otp"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={[styles.input, styles.otpInput]}
+                  placeholder="123456"
+                  autoCapitalize="none"
+                  autoComplete="one-time-code"
+                  keyboardType="numeric"
+                  maxLength={6}
+                  returnKeyType="go"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
             />
             {errors.otp && <Text style={styles.errorText}>{errors.otp.message}</Text>}
           </View>

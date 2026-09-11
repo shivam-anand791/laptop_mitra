@@ -6,7 +6,6 @@
     "moduleResolution": "bundler",
     "module": "ESNext",
     "allowSyntheticDefaultImports": true,
-    "ignoreDeprecations": "6.0",
     "paths": {
       "@/*": ["./src/*"],
       "@laptopmitra/api-client": ["../../packages/api-client/dist"],

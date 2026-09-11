@@ -14,14 +14,17 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const cart_service_1 = require("../cart/cart.service");
 const product_service_1 = require("../product/product.service");
+const notification_service_1 = require("../notifications/notification.service");
 let OrderService = class OrderService {
     prisma;
     cartService;
     productService;
-    constructor(prisma, cartService, productService) {
+    notificationService;
+    constructor(prisma, cartService, productService, notificationService) {
         this.prisma = prisma;
         this.cartService = cartService;
         this.productService = productService;
+        this.notificationService = notificationService;
     }
     async createOrder(userId, referralCode, discountCode, shippingAddress, phone, notes) {
         const { cart, total, itemCount } = await this.cartService.getCart(userId);
@@ -140,9 +143,10 @@ let OrderService = class OrderService {
         }
         const order = await this.prisma.order.create(orderData);
         await this.cartService.clearCart(userId);
+        await this.notificationService.dispatchOrderUpdate(userId, order.id, 'PENDING');
         return order;
     }
-    async findOne(id) {
+    async findOne(id, userId, userRole) {
         const order = await this.prisma.order.findUnique({
             where: { id },
             include: {
@@ -156,6 +160,9 @@ let OrderService = class OrderService {
         });
         if (!order) {
             throw new common_1.NotFoundException(`Order with id ${id} not found`);
+        }
+        if (userId && userRole !== 'ADMIN' && order.userId !== userId) {
+            throw new common_1.ForbiddenException('Access denied: You can only view your own orders');
         }
         return order;
     }
@@ -175,12 +182,15 @@ let OrderService = class OrderService {
             orderBy: { createdAt: 'desc' },
         });
     }
-    async updateStatus(id, status) {
+    async updateStatus(id, status, userId, userRole) {
         const order = await this.prisma.order.findUnique({
             where: { id },
         });
         if (!order) {
             throw new common_1.NotFoundException(`Order with id ${id} not found`);
+        }
+        if (userRole !== 'ADMIN' && order.userId !== userId) {
+            throw new common_1.ForbiddenException('Access denied: You can only update your own orders');
         }
         const updateData = { status };
         if (status === 'DELIVERED') {
@@ -189,10 +199,54 @@ let OrderService = class OrderService {
         else if (status === 'CANCELLED') {
             updateData.paymentStatus = 'REFUNDED';
         }
-        return await this.prisma.order.update({
+        const updatedOrder = await this.prisma.order.update({
             where: { id },
             data: updateData,
         });
+        await this.notificationService.dispatchOrderUpdate(order.userId, order.id, status);
+        return updatedOrder;
+    }
+    async cancelOrder(id, userId, userRole) {
+        const order = await this.prisma.order.findUnique({
+            where: { id },
+            include: { payments: true },
+        });
+        if (!order) {
+            throw new common_1.NotFoundException(`Order with id ${id} not found`);
+        }
+        if (userRole !== 'ADMIN' && order.userId !== userId) {
+            throw new common_1.ForbiddenException('Access denied: You can only cancel your own orders');
+        }
+        const allowedStatuses = ['PENDING', 'CONFIRMED'];
+        if (!allowedStatuses.includes(order.status)) {
+            throw new common_1.BadRequestException(`Cannot cancel order in status "${order.status}". Orders can only be cancelled when PENDING or CONFIRMED.`);
+        }
+        const paymentCompleted = order.paymentStatus === 'COMPLETED';
+        const updatedOrder = await this.prisma.order.update({
+            where: { id },
+            data: {
+                status: 'CANCELLED',
+                paymentStatus: 'REFUNDED',
+            },
+            include: {
+                items: { include: { product: true } },
+                deliveries: true,
+                payments: true,
+            },
+        });
+        for (const item of updatedOrder.items) {
+            await this.prisma.product.update({
+                where: { id: item.productId },
+                data: { stock: { increment: item.quantity } },
+            });
+        }
+        return {
+            ...updatedOrder,
+            refundRequired: paymentCompleted,
+            refundMessage: paymentCompleted
+                ? 'Payment was completed - refund needs to be processed via Razorpay'
+                : null,
+        };
     }
 };
 exports.OrderService = OrderService;
@@ -200,6 +254,7 @@ exports.OrderService = OrderService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         cart_service_1.CartService,
-        product_service_1.ProductService])
+        product_service_1.ProductService,
+        notification_service_1.NotificationService])
 ], OrderService);
 //# sourceMappingURL=order.service.js.map

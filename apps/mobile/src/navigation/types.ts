@@ -24,19 +24,16 @@ export type MainTabParamList = {
 
 export type MainStackParamList = {
   MainTabs: undefined;
+  Search: undefined;
   ProductDetail: { productId: string };
-  CartDetail: undefined;
-  WishlistDetail: undefined;
   Checkout: undefined;
-  OrderConfirmation: { orderId: string };
   OrderHistory: undefined;
   OrderDetail: { orderId: string };
   Profile: undefined;
+  MitraDashboard: undefined;
   AddressBook: undefined;
   AddAddress: { addressId?: string };
-  ReferralDashboard: undefined;
-  EarningsHistory: undefined;
-  Settings: undefined;
+  ChangePassword: undefined;
 };
 
 export type RootNavigationProp = NativeStackNavigationProp<RootStackParamList>;

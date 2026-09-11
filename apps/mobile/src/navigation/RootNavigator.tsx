@@ -1,20 +1,23 @@
 import { useAuth } from '../providers/AuthProvider';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import MainTabs from './MainTabs';
+import MainStack from './MainStack';
 import AuthStack from './AuthStack';
 import { RootStackParamList } from './types';
+import { ActivityIndicator, View } from 'react-native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
-  const { user, isLoading } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    // Show a placeholder while session restores
-    return null;
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+        <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
   }
 
-  // If user has an auth token, show main app with tabs; otherwise show auth stack
   return (
     <Stack.Navigator
       screenOptions={{
@@ -22,8 +25,8 @@ export default function RootNavigator() {
         animation: 'fade',
       }}
     >
-      {user ? (
-        <Stack.Screen name="Main" component={MainTabs} />
+      {isAuthenticated ? (
+        <Stack.Screen name="Main" component={MainStack} />
       ) : (
         <Stack.Screen name="Auth" component={AuthStack} />
       )}

@@ -1,4 +1,4 @@
-import type { Product, Cart, CartItem, WishlistItem, User, Order } from '../../types/dist/index';
+import type { Product, Cart, CartItem, WishlistItem, User, Order, Address, Category } from '../../types/dist/index';
 
 export * from '../../types/dist/index';
 
@@ -48,22 +48,43 @@ export class LaptopMitraApiClient {
   }
 
   // Auth
-  async login(email: string, pass: string): Promise<{ access_token: string; user: User }> {
-    return this.request<{ access_token: string; user: User }>('/auth/login', {
+  async login(email: string, pass: string): Promise<{ accessToken: string; refreshToken: string; user: User }> {
+    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password: pass }),
     });
   }
 
-  async register(data: { name: string; email: string; password: string; referralCode?: string }): Promise<{ access_token: string; user: User }> {
-    return this.request<{ access_token: string; user: User }>('/auth/register', {
+  async register(data: { name: string; email: string; password: string; phone?: string; referralCode?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
+    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
+  async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+    return this.request<{ accessToken: string; refreshToken: string }>('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    });
+  }
+
   async getProfile(): Promise<User> {
     return this.request<User>('/auth/profile');
+  }
+
+  async updateProfile(data: Partial<User>): Promise<User> {
+    return this.request<User>('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async logout(refreshToken: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+    });
   }
 
   // Cart
@@ -82,6 +103,17 @@ export class LaptopMitraApiClient {
     return this.request<{ message: string }>(`/cart/items/${itemId}`, { method: 'DELETE' });
   }
 
+  async updateCartItemQuantity(itemId: string, quantity: number): Promise<{ cartItem: CartItem; message: string }> {
+    return this.request<{ cartItem: CartItem; message: string }>(`/cart/items/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ quantity }),
+    });
+  }
+
+  async clearCart(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/cart', { method: 'DELETE' });
+  }
+
   // Wishlist
   async getWishlist(): Promise<WishlistItem[]> {
     return this.request<WishlistItem[]>('/wishlist');
@@ -92,6 +124,14 @@ export class LaptopMitraApiClient {
       method: 'POST',
       body: JSON.stringify({ productId }),
     });
+  }
+
+  async removeWishlistItem(itemId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/wishlist/items/${itemId}`, { method: 'DELETE' });
+  }
+
+  async clearWishlist(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/wishlist', { method: 'DELETE' });
   }
 
   // Orders
@@ -112,7 +152,73 @@ export class LaptopMitraApiClient {
     return this.request<Order[]>('/orders');
   }
 
-  // Auth — Password Reset
+  async validateDiscount(code: string, cartTotal: number): Promise<{
+    valid: boolean;
+    discountType: 'percentage' | 'fixed' | 'free_shipping' | null;
+    discountValue: number;
+    discountAmount: number;
+    message: string;
+  }> {
+    return this.request<{
+      valid: boolean;
+      discountType: 'percentage' | 'fixed' | 'free_shipping' | null;
+      discountValue: number;
+      discountAmount: number;
+      message: string;
+    }>('/discount/validate', {
+      method: 'POST',
+      body: JSON.stringify({ code, cartTotal }),
+    });
+  }
+
+  async getOrder(id: string): Promise<Order> {
+    return this.request<Order>(`/orders/${id}`);
+  }
+
+  async cancelOrder(id: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/orders/${id}/cancel`, { method: 'PATCH' });
+  }
+
+  // Addresses
+  async getAddresses(): Promise<Address[]> {
+    return this.request<Address[]>('/addresses');
+  }
+
+  async createAddress(data: Partial<Address>): Promise<Address> {
+    return this.request<Address>('/addresses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAddress(id: string, data: Partial<Address>): Promise<Address> {
+    return this.request<Address>(`/addresses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAddress(id: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/addresses/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Categories
+  async getCategories(params?: { parentId?: string }): Promise<Category[]> {
+    const query = params?.parentId ? `?parentId=${encodeURIComponent(params.parentId)}` : '';
+    return this.request<Category[]>(`/categories${query}`);
+  }
+
+  async getCategory(id: string): Promise<Category> {
+    return this.request<Category>(`/categories/${id}`);
+  }
+
+  async getCategoryBySlug(slug: string): Promise<Category> {
+    return this.request<Category>(`/categories/slug/${slug}`);
+  }
+
+  // Auth — Password Reset (not yet implemented on backend — stub)
   async forgotPassword(email: string): Promise<{ message: string }> {
     return this.request<{ message: string }>('/auth/forgot-password', {
       method: 'POST',
@@ -127,11 +233,11 @@ export class LaptopMitraApiClient {
     });
   }
 
-  // Auth — Token Refresh
-  async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
-    return this.request<{ accessToken: string; refreshToken: string }>('/auth/refresh', {
+  // Password Change (authenticated)
+  async changePassword(data: { currentPassword: string; newPassword: string }): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/change-password', {
       method: 'POST',
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify(data),
     });
   }
 }

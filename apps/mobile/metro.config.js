@@ -5,7 +5,7 @@ const config = getDefaultConfig(__dirname);
 
 // Watch all workspace packages for changes (packages are at repo root)
 config.watchFolders = [
-  path.resolve(__dirname, '../../../packages'),
+  path.resolve(__dirname, '../../packages'),
 ];
 
 // Resolve workspace packages correctly

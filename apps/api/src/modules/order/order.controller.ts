@@ -1,8 +1,10 @@
-import { Controller, Post, Get, Put, Param, Body, UseGuards, Query } from '@nestjs/common';
+import { Controller, Post, Get, Put, Patch, Param, Body, UseGuards, Query } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { GetUser } from '../../decorators/get-user.decorator';
+import { RolesGuard } from '../../guards/roles.guard';
+import { Roles } from '../../decorators/roles.decorator';
 
 @ApiTags('orders')
 @Controller('orders')
@@ -43,23 +45,38 @@ export class OrderController {
 
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  @ApiOperation({ summary: 'Get order by ID' })
+  @ApiOperation({ summary: 'Get order by ID (ownership checked)' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 403, description: 'Forbidden: You can only view your own orders' })
   async getOrder(@GetUser() user: any, @Param('id') id: string) {
-    return this.orderService.findOne(id);
+    return this.orderService.findOne(id, user.id, user.role);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
   @Put(':id/status')
-  @ApiOperation({ summary: 'Update order status' })
+  @ApiOperation({ summary: 'Update order status (admin only)' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 403, description: 'Forbidden: Admin access required' })
   async updateStatus(
     @GetUser() user: any,
     @Param('id') id: string,
     @Body('status') status: string,
   ) {
-    return this.orderService.updateStatus(id, status);
+    return this.orderService.updateStatus(id, status, user.id, user.role);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/cancel')
+  @ApiOperation({ summary: 'Cancel order (ownership checked, only PENDING/CONFIRMED)' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Order cancelled successfully' })
+  @ApiResponse({ status: 400, description: 'Bad Request: Order cannot be cancelled in current status' })
+  @ApiResponse({ status: 403, description: 'Forbidden: You can only cancel your own orders' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  async cancelOrder(@GetUser() user: any, @Param('id') id: string) {
+    return this.orderService.cancelOrder(id, user.id, user.role);
   }
 }

@@ -1,11 +1,13 @@
+import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useRegister } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { useNavigation } from '@react-navigation/native';
 import { AuthNavigationProp } from '../../navigation/types';
+import CountryPicker, { Country, COUNTRIES } from '../../components/CountryPicker';
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(100, 'Name too long'),
@@ -19,10 +21,13 @@ const registerSchema = z.object({
     .regex(/[0-9]/, 'Password must contain a number')
     .regex(/[@$!%*?&]/, 'Password must contain a special character (@$!%*?&)'),
   confirmPassword: z.string().min(1, 'Please confirm your password'),
-  phone: z.string().optional().refine(
-    (val) => !val || /^\+?[1-9]\d{1,14}$/.test(val),
-    'Invalid phone format (e.g., +919876543210)'
-  ),
+  phone: z
+    .string()
+    .optional()
+    .refine(
+      (val) => !val || /^\d{7,15}$/.test(val),
+      'Phone must be 7-15 digits (country code is selected separately)',
+    ),
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'Passwords do not match',
   path: ['confirmPassword'],
@@ -34,6 +39,7 @@ export default function RegisterScreen() {
   const navigation = useNavigation<AuthNavigationProp>();
   const { login: authLogin } = useAuth();
   const { mutate: apiRegister, isPending, isError, error } = useRegister();
+  const [selectedCountry, setSelectedCountry] = useState<Country>(COUNTRIES[0]!); // Default: India
 
   const {
     control,
@@ -51,15 +57,36 @@ export default function RegisterScreen() {
   });
 
   const onSubmit = async (data: RegisterFormData) => {
-    const { confirmPassword: _confirmPassword, ...registerData } = data;
-    apiRegister(registerData, {
-      onSuccess: async (response) => {
-        const { access_token, user } = response as { access_token: string; user: any };
-        await authLogin(access_token, undefined, user);
-        // Navigation will auto-switch via RootNavigator
+    const { confirmPassword: _confirmPassword, phone, ...rest } = data;
+
+    // Build phone with country code: only if user entered a phone number
+    const fullPhone = phone && phone.trim().length > 0
+      ? `${selectedCountry.dialCode}${phone.trim()}`
+      : undefined;
+
+    const registerPayload: { name: string; email: string; password: string; phone?: string } = {
+      ...rest,
+      ...(fullPhone ? { phone: fullPhone } : {}),
+    };
+
+    apiRegister(registerPayload, {
+      onSuccess: async (response: any) => {
+        const { accessToken, refreshToken, user } = response;
+        await authLogin(accessToken, refreshToken, user);
       },
       onError: (err: Error) => {
-        Alert.alert('Registration Failed', err.message || 'Registration failed. Please try again.');
+        // Parse NestJS validation error arrays into readable messages
+        let message = err.message || 'Registration failed. Please try again.';
+        try {
+          // NestJS ValidationPipe returns { statusCode, message: string[], error }
+          const parsed = JSON.parse(message);
+          if (Array.isArray(parsed.message)) {
+            message = parsed.message.join('\n');
+          }
+        } catch {
+          // Not JSON — use as-is
+        }
+        Alert.alert('Registration Failed', message);
       },
     });
   };
@@ -69,7 +96,7 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -81,69 +108,115 @@ export default function RegisterScreen() {
         <View style={styles.formContainer}>
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Full Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="John Doe"
-              autoCapitalize="words"
-              autoCompleteType="name"
-              returnKeyType="next"
-              {...(control as any)}
+            <Controller
+              control={control}
+              name="name"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={styles.input}
+                  placeholder="John Doe"
+                  autoCapitalize="words"
+                  autoComplete="name"
+                  returnKeyType="next"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
             />
             {errors.name && <Text style={styles.errorText}>{errors.name.message}</Text>}
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="you@example.com"
-              autoCapitalize="none"
-              autoCompleteType="email"
-              keyboardType="email-address"
-              returnKeyType="next"
-              {...(control as any)}
+            <Controller
+              control={control}
+              name="email"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={styles.input}
+                  placeholder="you@example.com"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                  returnKeyType="next"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
             />
             {errors.email && <Text style={styles.errorText}>{errors.email.message}</Text>}
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Phone (Optional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="+91 98765 43210"
-              autoCapitalize="none"
-              autoCompleteType="tel"
-              keyboardType="phone-pad"
-              returnKeyType="next"
-              {...(control as any)}
-            />
+            <View style={styles.phoneRow}>
+              <CountryPicker selectedCountry={selectedCountry} onSelect={setSelectedCountry} />
+              <Controller
+                control={control}
+                name="phone"
+                render={({ field: { onChange, onBlur, value } }) => (
+                  <TextInput
+                    style={styles.phoneInput}
+                    placeholder="98765 43210"
+                    autoCapitalize="none"
+                    autoComplete="tel"
+                    keyboardType="phone-pad"
+                    returnKeyType="next"
+                    onBlur={onBlur}
+                    onChangeText={onChange}
+                    value={value ?? ''}
+                    maxLength={15}
+                  />
+                )}
+              />
+            </View>
             {errors.phone && <Text style={styles.errorText}>{errors.phone.message}</Text>}
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              secureTextEntry
-              autoCompleteType="new-password"
-              returnKeyType="next"
-              {...(control as any)}
+            <Controller
+              control={control}
+              name="password"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={styles.input}
+                  placeholder="••••••••"
+                  secureTextEntry
+                  autoComplete="new-password"
+                  returnKeyType="next"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
             />
             {errors.password && <Text style={styles.errorText}>{errors.password.message}</Text>}
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Confirm Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              secureTextEntry
-              autoCompleteType="new-password"
-              returnKeyType="go"
-              {...(control as any)}
+            <Controller
+              control={control}
+              name="confirmPassword"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={styles.input}
+                  placeholder="••••••••"
+                  secureTextEntry
+                  autoComplete="new-password"
+                  returnKeyType="go"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
             />
-            {errors.confirmPassword && <Text style={styles.errorText}>{errors.confirmPassword.message}</Text>}
+            {errors.confirmPassword && (
+              <Text style={styles.errorText}>{errors.confirmPassword.message}</Text>
+            )}
           </View>
 
           <View style={styles.passwordHint}>
@@ -156,7 +229,9 @@ export default function RegisterScreen() {
 
           {isError && error && (
             <View style={styles.apiError}>
-              <Text style={styles.apiErrorText}>{error.message || 'Registration failed. Please try again.'}</Text>
+              <Text style={styles.apiErrorText}>
+                {error.message || 'Registration failed. Please try again.'}
+              </Text>
             </View>
           )}
 
@@ -228,6 +303,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 10,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: '#1e293b',
+    backgroundColor: '#fff',
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  phoneInput: {
+    flex: 1,
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderLeftWidth: 0,
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
     paddingHorizontal: 16,
     fontSize: 16,
     color: '#1e293b',

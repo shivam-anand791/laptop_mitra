@@ -11,6 +11,10 @@ import { WishlistModule } from './modules/wishlist/wishlist.module';
 import { OrderModule } from './modules/order/order.module';
 import { PaymentsModule } from './modules/payments/payment.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { DiscountModule } from './modules/discount/discount.module';
+import { AddressModule } from './modules/address/address.module';
+import { NotificationModule } from './modules/notifications/notification.module';
+import { CategoriesModule } from './modules/categories/categories.module';
 
 @Module({
   imports: [
@@ -33,6 +37,10 @@ import { AdminModule } from './modules/admin/admin.module';
     OrderModule,
     PaymentsModule,
     AdminModule,
+    DiscountModule,
+    AddressModule,
+    NotificationModule,
+    CategoriesModule,
   ],
   providers: [
     {

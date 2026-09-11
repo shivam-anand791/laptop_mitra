@@ -1,5 +1,5 @@
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useLogin } from '../../hooks/useApi';
@@ -33,10 +33,9 @@ export default function LoginScreen() {
 
   const onSubmit = async (data: LoginFormData) => {
     apiLogin(data, {
-      onSuccess: async (response) => {
-        const { access_token, user } = response as { access_token: string; user: any };
-        await authLogin(access_token, undefined, user);
-        // Navigation will auto-switch via RootNavigator
+      onSuccess: async (response: any) => {
+        const { accessToken, refreshToken, user } = response;
+        await authLogin(accessToken, refreshToken, user);
       },
       onError: (err: Error) => {
         Alert.alert('Login Failed', err.message || 'Invalid credentials. Please try again.');
@@ -50,7 +49,7 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -62,14 +61,22 @@ export default function LoginScreen() {
         <View style={styles.formContainer}>
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="you@example.com"
-              autoCapitalize="none"
-              autoCompleteType="email"
-              keyboardType="email-address"
-              returnKeyType="next"
-              {...(control as any)}
+            <Controller
+              control={control}
+              name="email"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={styles.input}
+                  placeholder="you@example.com"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                  returnKeyType="next"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
             />
             {errors.email && <Text style={styles.errorText}>{errors.email.message}</Text>}
           </View>
@@ -81,13 +88,21 @@ export default function LoginScreen() {
                 <Text style={styles.forgotText}>Forgot?</Text>
               </TouchableOpacity>
             </View>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              secureTextEntry
-              autoCompleteType="password"
-              returnKeyType="go"
-              {...(control as any)}
+            <Controller
+              control={control}
+              name="password"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={styles.input}
+                  placeholder="••••••••"
+                  secureTextEntry
+                  autoComplete="password"
+                  returnKeyType="go"
+                  onBlur={onBlur}
+                  onChangeText={onChange}
+                  value={value}
+                />
+              )}
             />
             {errors.password && <Text style={styles.errorText}>{errors.password.message}</Text>}
           </View>

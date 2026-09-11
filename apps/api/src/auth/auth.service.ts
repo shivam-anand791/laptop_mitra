@@ -15,7 +15,7 @@ export class AuthService {
   ) {}
 
   async register(registerDto: RegisterDto) {
-    const { name, email, password } = registerDto;
+    const { name, email, password, phone } = registerDto;
 
     const existingUser = await this.prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -31,6 +31,7 @@ export class AuthService {
         email,
         password: hashedPassword,
         referralCode,
+        phone: phone || null,
       },
     });
 
@@ -113,7 +114,7 @@ export class AuthService {
     };
   }
 
-  async refreshToken(userId: string, token: string) {
+  async refreshToken(token: string) {
     const refreshToken = await this.prisma.refreshToken.findUnique({
       where: { token },
       include: { user: true },
@@ -130,7 +131,11 @@ export class AuthService {
     // Invalidate old token
     await this.prisma.refreshToken.delete({ where: { id: refreshToken.id } });
 
-    const payload = { sub: refreshToken.user.id, email: refreshToken.user.email, role: refreshToken.user.role };
+    const payload = {
+      sub: refreshToken.user.id,
+      email: refreshToken.user.email,
+      role: refreshToken.user.role,
+    };
     const newAccessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
     const newRefreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
 
@@ -160,6 +165,7 @@ export class AuthService {
         id: true,
         name: true,
         email: true,
+        phone: true,
         role: true,
         status: true,
         imageUrl: true,
@@ -175,6 +181,97 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async updateUserProfile(
+    userId: string,
+    data: { name?: string; email?: string; phone?: string },
+  ) {
+    const updates: { name?: string; email?: string; phone?: string | null } = {};
+
+    if (data.name !== undefined) {
+      const trimmedName = data.name.trim();
+      if (!trimmedName) {
+        throw new BadRequestException('Name cannot be empty');
+      }
+      updates.name = trimmedName;
+    }
+
+    if (data.email !== undefined) {
+      const trimmedEmail = data.email.trim().toLowerCase();
+      if (!trimmedEmail) {
+        throw new BadRequestException('Email cannot be empty');
+      }
+
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email: trimmedEmail },
+      });
+
+      if (existingUser && existingUser.id !== userId) {
+        throw new ConflictException('Email already registered');
+      }
+
+      updates.email = trimmedEmail;
+    }
+
+    if (data.phone !== undefined) {
+      updates.phone = data.phone?.trim() || null;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return this.getUserProfile(userId);
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: updates,
+    });
+
+    return this.getUserProfile(userId);
+  }
+
+  async changePassword(
+    userId: string,
+    data: { currentPassword: string; newPassword: string },
+  ) {
+    const currentPassword = data.currentPassword?.trim();
+    const newPassword = data.newPassword?.trim();
+
+    if (!currentPassword) {
+      throw new BadRequestException('Current password is required');
+    }
+
+    if (!newPassword) {
+      throw new BadRequestException('New password is required');
+    }
+
+    if (newPassword.length < 6) {
+      throw new BadRequestException('New password must be at least 6 characters long');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, password: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
+
+    return { message: 'Password changed successfully' };
   }
 
   async validateUser(email: string, password: string): Promise<any> {

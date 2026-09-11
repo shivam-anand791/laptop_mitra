@@ -18,47 +18,71 @@ let ProductService = class ProductService {
         this.prisma = prisma;
     }
     async findAll(filters) {
+        const normalizeNumber = (value) => {
+            if (value === undefined || value === null || value === '') {
+                return undefined;
+            }
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : undefined;
+        };
+        const normalizeBoolean = (value) => {
+            if (typeof value === 'boolean')
+                return value;
+            if (typeof value === 'string')
+                return value === 'true';
+            return undefined;
+        };
+        const normalizedFilters = {
+            ...filters,
+            featured: normalizeBoolean(filters?.featured),
+            newArrival: normalizeBoolean(filters?.newArrival),
+            stockOnly: normalizeBoolean(filters?.stockOnly),
+            minPrice: normalizeNumber(filters?.minPrice),
+            maxPrice: normalizeNumber(filters?.maxPrice),
+            limit: normalizeNumber(filters?.limit) ?? 50,
+            offset: normalizeNumber(filters?.offset) ?? 0,
+        };
         const where = {};
-        if (filters?.categoryId) {
-            where.categoryId = filters.categoryId;
+        if (normalizedFilters.categoryId) {
+            where.categoryId = normalizedFilters.categoryId;
         }
-        if (filters?.search) {
+        if (normalizedFilters.search) {
             where.OR = [
-                { name: { contains: filters.search } },
-                { description: { contains: filters.search } },
-                { shortDescription: { contains: filters.search } },
-                { sku: { contains: filters.search } },
+                { name: { contains: normalizedFilters.search } },
+                { description: { contains: normalizedFilters.search } },
+                { shortDescription: { contains: normalizedFilters.search } },
+                { sku: { contains: normalizedFilters.search } },
             ];
         }
-        if (filters?.tags && filters.tags.length > 0) {
+        if (normalizedFilters.tags && normalizedFilters.tags.length > 0) {
             where.OR = where.OR || [];
-            for (const tag of filters.tags) {
+            for (const tag of normalizedFilters.tags) {
                 where.OR.push({
                     tags: { contains: tag, mode: 'insensitive' },
                 });
             }
         }
-        if (filters?.featured !== undefined) {
-            where.isFeatured = filters.featured;
+        if (normalizedFilters.featured !== undefined) {
+            where.isFeatured = normalizedFilters.featured;
         }
-        if (filters?.newArrival !== undefined) {
-            where.isNewArrival = filters.newArrival;
+        if (normalizedFilters.newArrival !== undefined) {
+            where.isNewArrival = normalizedFilters.newArrival;
         }
-        if (filters?.minPrice !== undefined || filters?.maxPrice !== undefined) {
+        if (normalizedFilters.minPrice !== undefined || normalizedFilters.maxPrice !== undefined) {
             where.price = {};
-            if (filters?.minPrice !== undefined)
-                where.price.gte = filters.minPrice;
-            if (filters?.maxPrice !== undefined)
-                where.price.lte = filters.maxPrice;
+            if (normalizedFilters.minPrice !== undefined)
+                where.price.gte = normalizedFilters.minPrice;
+            if (normalizedFilters.maxPrice !== undefined)
+                where.price.lte = normalizedFilters.maxPrice;
         }
-        if (filters?.stockOnly) {
+        if (normalizedFilters.stockOnly) {
             where.stock = { gt: 0 };
         }
         const [products, total] = await Promise.all([
             this.prisma.product.findMany({
                 where,
-                take: filters?.limit ?? 50,
-                skip: filters?.offset ?? 0,
+                take: normalizedFilters.limit,
+                skip: normalizedFilters.offset,
                 orderBy: { createdAt: 'desc' },
                 include: {
                     category: true,

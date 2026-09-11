@@ -6,6 +6,7 @@ export declare class UsersController {
     private readonly usersService;
     constructor(usersService: UsersService);
     getProfile(user: any): Promise<{
+        address: string;
         name: string;
         email: string;
         phone: string;
@@ -14,7 +15,6 @@ export declare class UsersController {
         role: string;
         status: string;
         imageUrl: string;
-        address: string;
         city: string;
         state: string;
         pincode: string;
@@ -24,12 +24,12 @@ export declare class UsersController {
         updatedAt: Date;
     }>;
     updateProfile(user: any, updateProfileDto: UpdateProfileDto): Promise<{
+        address: string;
         name: string;
         email: string;
         phone: string;
         id: string;
         referralCode: string;
-        address: string;
         city: string;
         state: string;
         pincode: string;
@@ -38,12 +38,12 @@ export declare class UsersController {
         createdAt: Date;
     }>;
     updateAddress(user: any, updateAddressDto: UpdateAddressDto): Promise<{
+        address: string;
         name: string;
         email: string;
         phone: string;
         id: string;
         referralCode: string;
-        address: string;
         city: string;
         state: string;
         pincode: string;
@@ -58,6 +58,7 @@ export declare class UsersController {
         orders: number;
     }>;
     getUserById(id: string): Promise<{
+        address: string;
         name: string;
         email: string;
         phone: string;
@@ -66,7 +67,6 @@ export declare class UsersController {
         role: string;
         status: string;
         imageUrl: string;
-        address: string;
         city: string;
         state: string;
         pincode: string;

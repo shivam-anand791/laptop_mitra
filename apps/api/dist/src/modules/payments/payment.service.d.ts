@@ -1,10 +1,12 @@
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../notifications/notification.service';
 export declare class PaymentService {
     private configService;
     private prisma;
+    private notificationService;
     private readonly razorpay;
-    constructor(configService: ConfigService, prisma: PrismaService);
+    constructor(configService: ConfigService, prisma: PrismaService, notificationService: NotificationService);
     createOrder(amount: number, currency: string, receipt: string): Promise<any>;
     verifyWebhookSignature(payload: string, signature: string): Promise<boolean>;
     handlePaymentWebhook(payload: any, signature: string): Promise<{

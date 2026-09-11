@@ -1,11 +1,13 @@
 import { PrismaService } from '../../prisma/prisma.service';
 import { CartService } from '../cart/cart.service';
 import { ProductService } from '../product/product.service';
+import { NotificationService } from '../notifications/notification.service';
 export declare class OrderService {
     private prisma;
     private cartService;
     private productService;
-    constructor(prisma: PrismaService, cartService: CartService, productService: ProductService);
+    private notificationService;
+    constructor(prisma: PrismaService, cartService: CartService, productService: ProductService, notificationService: NotificationService);
     createOrder(userId: string, referralCode?: string, discountCode?: string, shippingAddress?: any, phone?: string, notes?: string): Promise<{
         email: string;
         phone: string | null;
@@ -29,8 +31,9 @@ export declare class OrderService {
         notes: string | null;
         referralDiscount: import("@prisma/client/runtime/library").Decimal;
     }>;
-    findOne(id: string): Promise<{
+    findOne(id: string, userId?: string, userRole?: string): Promise<{
         user: {
+            address: string | null;
             name: string | null;
             email: string;
             password: string;
@@ -41,7 +44,6 @@ export declare class OrderService {
             role: string;
             status: string;
             imageUrl: string | null;
-            address: string | null;
             city: string | null;
             state: string | null;
             pincode: string | null;
@@ -199,7 +201,87 @@ export declare class OrderService {
         notes: string | null;
         referralDiscount: import("@prisma/client/runtime/library").Decimal;
     })[]>;
-    updateStatus(id: string, status: string): Promise<{
+    updateStatus(id: string, status: string, userId?: string, userRole?: string): Promise<{
+        email: string;
+        phone: string | null;
+        id: string;
+        referralCode: string | null;
+        status: string;
+        createdAt: Date;
+        updatedAt: Date;
+        userId: string;
+        orderNumber: string;
+        paymentStatus: string;
+        paymentMethod: string | null;
+        paymentId: string | null;
+        razorpayOrderId: string | null;
+        razorpaySignature: string | null;
+        subtotal: import("@prisma/client/runtime/library").Decimal;
+        discountAmount: import("@prisma/client/runtime/library").Decimal;
+        discountType: string | null;
+        finalAmount: import("@prisma/client/runtime/library").Decimal;
+        shippingAddress: import("@prisma/client/runtime/library").JsonValue | null;
+        notes: string | null;
+        referralDiscount: import("@prisma/client/runtime/library").Decimal;
+    }>;
+    cancelOrder(id: string, userId: string, userRole: string): Promise<{
+        refundRequired: boolean;
+        refundMessage: string;
+        items: ({
+            product: {
+                description: string | null;
+                name: string;
+                id: string;
+                status: string;
+                createdAt: Date;
+                updatedAt: Date;
+                tags: string | null;
+                sku: string;
+                shortDescription: string | null;
+                slug: string;
+                price: import("@prisma/client/runtime/library").Decimal;
+                compareAtPrice: import("@prisma/client/runtime/library").Decimal | null;
+                barcode: string | null;
+                stock: number;
+                allowBackorder: boolean;
+                metadata: import("@prisma/client/runtime/library").JsonValue | null;
+                isFeatured: boolean;
+                isNewArrival: boolean;
+                categoryId: string | null;
+            };
+        } & {
+            id: string;
+            createdAt: Date;
+            quantity: number;
+            price: import("@prisma/client/runtime/library").Decimal;
+            productId: string;
+            orderId: string;
+        })[];
+        deliveries: {
+            id: string;
+            status: string;
+            createdAt: Date;
+            updatedAt: Date;
+            orderId: string;
+            trackingNumber: string | null;
+            carrier: string | null;
+            shippedAt: Date | null;
+            deliveredAt: Date | null;
+        }[];
+        payments: {
+            id: string;
+            status: string;
+            createdAt: Date;
+            updatedAt: Date;
+            orderId: string;
+            razorpayOrderId: string | null;
+            razorpaySignature: string | null;
+            razorpayPaymentId: string | null;
+            amount: import("@prisma/client/runtime/library").Decimal;
+            currency: string;
+            receiptId: string | null;
+            attemptCount: number;
+        }[];
         email: string;
         phone: string | null;
         id: string;

@@ -18,6 +18,8 @@ const order_service_1 = require("./order.service");
 const swagger_1 = require("@nestjs/swagger");
 const jwt_auth_guard_1 = require("../../auth/guards/jwt-auth.guard");
 const get_user_decorator_1 = require("../../decorators/get-user.decorator");
+const roles_guard_1 = require("../../guards/roles.guard");
+const roles_decorator_1 = require("../../decorators/roles.decorator");
 let OrderController = class OrderController {
     orderService;
     constructor(orderService) {
@@ -30,10 +32,13 @@ let OrderController = class OrderController {
         return this.orderService.findByUser(user.id, status);
     }
     async getOrder(user, id) {
-        return this.orderService.findOne(id);
+        return this.orderService.findOne(id, user.id, user.role);
     }
     async updateStatus(user, id, status) {
-        return this.orderService.updateStatus(id, status);
+        return this.orderService.updateStatus(id, status, user.id, user.role);
+    }
+    async cancelOrder(user, id) {
+        return this.orderService.cancelOrder(id, user.id, user.role);
     }
 };
 exports.OrderController = OrderController;
@@ -62,9 +67,10 @@ __decorate([
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)(':id'),
-    (0, swagger_1.ApiOperation)({ summary: 'Get order by ID' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Get order by ID (ownership checked)' }),
     (0, swagger_1.ApiParam)({ name: 'id', type: String }),
     (0, swagger_1.ApiResponse)({ status: 200 }),
+    (0, swagger_1.ApiResponse)({ status: 403, description: 'Forbidden: You can only view your own orders' }),
     __param(0, (0, get_user_decorator_1.GetUser)()),
     __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
@@ -72,11 +78,13 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], OrderController.prototype, "getOrder", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)('ADMIN'),
     (0, common_1.Put)(':id/status'),
-    (0, swagger_1.ApiOperation)({ summary: 'Update order status' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Update order status (admin only)' }),
     (0, swagger_1.ApiParam)({ name: 'id', type: String }),
     (0, swagger_1.ApiResponse)({ status: 200 }),
+    (0, swagger_1.ApiResponse)({ status: 403, description: 'Forbidden: Admin access required' }),
     __param(0, (0, get_user_decorator_1.GetUser)()),
     __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Body)('status')),
@@ -84,6 +92,21 @@ __decorate([
     __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", Promise)
 ], OrderController.prototype, "updateStatus", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Patch)(':id/cancel'),
+    (0, swagger_1.ApiOperation)({ summary: 'Cancel order (ownership checked, only PENDING/CONFIRMED)' }),
+    (0, swagger_1.ApiParam)({ name: 'id', type: String }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Order cancelled successfully' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Bad Request: Order cannot be cancelled in current status' }),
+    (0, swagger_1.ApiResponse)({ status: 403, description: 'Forbidden: You can only cancel your own orders' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Order not found' }),
+    __param(0, (0, get_user_decorator_1.GetUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], OrderController.prototype, "cancelOrder", null);
 exports.OrderController = OrderController = __decorate([
     (0, swagger_1.ApiTags)('orders'),
     (0, common_1.Controller)('orders'),

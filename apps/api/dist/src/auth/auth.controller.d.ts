@@ -24,7 +24,7 @@ export declare class AuthController {
             role: string;
         };
     }>;
-    refresh(refreshToken: string, userId: string): Promise<{
+    refresh(refreshToken: string): Promise<{
         accessToken: string;
         refreshToken: string;
     }>;
@@ -34,6 +34,7 @@ export declare class AuthController {
     getProfile(req: any): Promise<{
         name: string;
         email: string;
+        phone: string;
         id: string;
         referralCode: string;
         role: string;
@@ -42,5 +43,28 @@ export declare class AuthController {
         createdAt: Date;
         referralEarnings: import("@prisma/client/runtime/library").Decimal;
         referralTier: string;
+    }>;
+    updateProfile(req: any, body: {
+        name?: string;
+        email?: string;
+        phone?: string;
+    }): Promise<{
+        name: string;
+        email: string;
+        phone: string;
+        id: string;
+        referralCode: string;
+        role: string;
+        status: string;
+        imageUrl: string;
+        createdAt: Date;
+        referralEarnings: import("@prisma/client/runtime/library").Decimal;
+        referralTier: string;
+    }>;
+    changePassword(req: any, body: {
+        currentPassword: string;
+        newPassword: string;
+    }): Promise<{
+        message: string;
     }>;
 }

@@ -86,6 +86,23 @@ describe('AuthService', () => {
             });
             await expect(authService.register(registerDto)).rejects.toThrow(common_1.ConflictException);
         });
+        it('should return both accessToken and refreshToken', async () => {
+            prismaService.user.findUnique.mockResolvedValue(null);
+            prismaService.user.create.mockResolvedValue({
+                id: 'user-1',
+                email: registerDto.email,
+                name: registerDto.name,
+                role: 'USER',
+            });
+            bcrypt.hash.mockResolvedValue('hashedPassword');
+            prismaService.refreshToken.create.mockResolvedValue({});
+            const result = await authService.register(registerDto);
+            expect(result).toHaveProperty('accessToken');
+            expect(result).toHaveProperty('refreshToken');
+            expect(result).toHaveProperty('user');
+            expect(typeof result.accessToken).toBe('string');
+            expect(typeof result.refreshToken).toBe('string');
+        });
     });
     describe('login', () => {
         const loginDto = {
@@ -123,27 +140,100 @@ describe('AuthService', () => {
             bcrypt.compare.mockResolvedValue(false);
             await expect(authService.login(loginDto)).rejects.toThrow(common_1.UnauthorizedException);
         });
+        it('should throw UnauthorizedException if account is suspended', async () => {
+            prismaService.user.findUnique.mockResolvedValue({
+                ...mockUser,
+                status: 'SUSPENDED',
+            });
+            bcrypt.compare.mockResolvedValue(true);
+            await expect(authService.login(loginDto)).rejects.toThrow(common_1.UnauthorizedException);
+        });
+        it('should return both accessToken and refreshToken', async () => {
+            prismaService.user.findUnique.mockResolvedValue(mockUser);
+            bcrypt.compare.mockResolvedValue(true);
+            prismaService.refreshToken.create.mockResolvedValue({});
+            const result = await authService.login(loginDto);
+            expect(result).toHaveProperty('accessToken');
+            expect(result).toHaveProperty('refreshToken');
+            expect(result).toHaveProperty('user');
+            expect(typeof result.accessToken).toBe('string');
+            expect(typeof result.refreshToken).toBe('string');
+        });
+        it('should save refresh token to database', async () => {
+            prismaService.user.findUnique.mockResolvedValue(mockUser);
+            bcrypt.compare.mockResolvedValue(true);
+            prismaService.refreshToken.create.mockResolvedValue({});
+            await authService.login(loginDto);
+            expect(prismaService.refreshToken.create).toHaveBeenCalledWith({
+                data: {
+                    userId: mockUser.id,
+                    token: 'jwt-token',
+                    expiresAt: expect.any(Date),
+                },
+            });
+        });
     });
     describe('refreshToken', () => {
+        const mockRefreshToken = {
+            id: 'token-1',
+            token: 'refresh-token',
+            expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            user: {
+                id: 'user-1',
+                email: 'john@example.com',
+                role: 'USER',
+                status: 'ACTIVE',
+            },
+        };
         it('should return new tokens when refresh token is valid', async () => {
-            const mockRefreshToken = {
-                id: 'token-1',
-                token: 'refresh-token',
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-                user: {
-                    id: 'user-1',
-                    email: 'john@example.com',
-                    role: 'USER',
-                    status: 'ACTIVE',
-                },
-            };
             prismaService.refreshToken.findUnique.mockResolvedValue(mockRefreshToken);
             prismaService.refreshToken.delete.mockResolvedValue({});
             prismaService.refreshToken.create.mockResolvedValue({});
             jwtService.sign.mockReturnValue('new-jwt-token');
-            const result = await authService.refreshToken('user-1', 'refresh-token');
+            const result = await authService.refreshToken('refresh-token');
             expect(result.accessToken).toBe('new-jwt-token');
             expect(result.refreshToken).toBe('new-jwt-token');
+        });
+        it('should throw UnauthorizedException if refresh token not found', async () => {
+            prismaService.refreshToken.findUnique.mockResolvedValue(null);
+            await expect(authService.refreshToken('invalid-token')).rejects.toThrow(common_1.UnauthorizedException);
+        });
+        it('should throw UnauthorizedException if refresh token is expired', async () => {
+            const expiredToken = {
+                ...mockRefreshToken,
+                expiresAt: new Date(Date.now() - 1000),
+            };
+            prismaService.refreshToken.findUnique.mockResolvedValue(expiredToken);
+            await expect(authService.refreshToken('refresh-token')).rejects.toThrow(common_1.UnauthorizedException);
+        });
+        it('should throw UnauthorizedException if user account is suspended', async () => {
+            const suspendedToken = {
+                ...mockRefreshToken,
+                user: { ...mockRefreshToken.user, status: 'SUSPENDED' },
+            };
+            prismaService.refreshToken.findUnique.mockResolvedValue(suspendedToken);
+            await expect(authService.refreshToken('refresh-token')).rejects.toThrow(common_1.UnauthorizedException);
+        });
+        it('should invalidate old token and issue new one', async () => {
+            prismaService.refreshToken.findUnique.mockResolvedValue(mockRefreshToken);
+            prismaService.refreshToken.delete.mockResolvedValue({});
+            prismaService.refreshToken.create.mockResolvedValue({});
+            jwtService.sign.mockReturnValue('new-jwt-token');
+            await authService.refreshToken('refresh-token');
+            expect(prismaService.refreshToken.delete).toHaveBeenCalledWith({
+                where: { id: mockRefreshToken.id },
+            });
+            expect(prismaService.refreshToken.create).toHaveBeenCalled();
+        });
+    });
+    describe('logout', () => {
+        it('should delete refresh token', async () => {
+            prismaService.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+            const result = await authService.logout('user-1', 'refresh-token');
+            expect(result.message).toBe('Logged out successfully');
+            expect(prismaService.refreshToken.deleteMany).toHaveBeenCalledWith({
+                where: { token: 'refresh-token', userId: 'user-1' },
+            });
         });
     });
 });

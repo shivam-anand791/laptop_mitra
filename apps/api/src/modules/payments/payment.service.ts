@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../notifications/notification.service';
 import * as crypto from 'crypto';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -13,6 +14,7 @@ export class PaymentService {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    private notificationService: NotificationService,
   ) {
     const keyId = this.configService.get<string>('RAZORPAY_KEY_ID');
     const keySecret = this.configService.get<string>('RAZORPAY_KEY_SECRET');
@@ -115,6 +117,12 @@ export class PaymentService {
                 paymentId: paymentEntity.id,
               },
             });
+
+            await this.notificationService.dispatchPaymentUpdate(
+              payment.order.userId,
+              payment.order.id,
+              'COMPLETED',
+            );
           }
         }
         return { valid: true, event: 'payment_authorized', data: paymentEntity };
@@ -140,6 +148,12 @@ export class PaymentService {
                 paymentId: paymentEntity.id,
               },
             });
+
+            await this.notificationService.dispatchPaymentUpdate(
+              payment.order.userId,
+              payment.order.id,
+              'COMPLETED',
+            );
           }
         }
         return { valid: true, event: 'payment_captured', data: paymentEntity };
@@ -165,6 +179,12 @@ export class PaymentService {
                 paymentId: paymentEntity.id,
               },
             });
+
+            await this.notificationService.dispatchPaymentUpdate(
+              payment.order.userId,
+              payment.order.id,
+              'FAILED',
+            );
           }
         }
         return { valid: true, event: 'payment_failed', data: paymentEntity };

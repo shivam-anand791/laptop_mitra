@@ -8,6 +8,7 @@ export declare class UsersService {
     private configService;
     constructor(prisma: PrismaService, configService: ConfigService);
     findById(id: string): Promise<{
+        address: string;
         name: string;
         email: string;
         phone: string;
@@ -16,7 +17,6 @@ export declare class UsersService {
         role: string;
         status: string;
         imageUrl: string;
-        address: string;
         city: string;
         state: string;
         pincode: string;
@@ -26,12 +26,12 @@ export declare class UsersService {
         updatedAt: Date;
     }>;
     updateProfile(userId: string, updateProfileDto: UpdateProfileDto): Promise<{
+        address: string;
         name: string;
         email: string;
         phone: string;
         id: string;
         referralCode: string;
-        address: string;
         city: string;
         state: string;
         pincode: string;
@@ -40,12 +40,12 @@ export declare class UsersService {
         createdAt: Date;
     }>;
     updateAddress(userId: string, updateAddressDto: UpdateAddressDto): Promise<{
+        address: string;
         name: string;
         email: string;
         phone: string;
         id: string;
         referralCode: string;
-        address: string;
         city: string;
         state: string;
         pincode: string;

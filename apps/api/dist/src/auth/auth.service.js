@@ -25,7 +25,7 @@ let AuthService = class AuthService {
         this.randomService = randomService;
     }
     async register(registerDto) {
-        const { name, email, password } = registerDto;
+        const { name, email, password, phone } = registerDto;
         const existingUser = await this.prisma.user.findUnique({ where: { email } });
         if (existingUser) {
             throw new common_1.ConflictException('Email already registered');
@@ -38,6 +38,7 @@ let AuthService = class AuthService {
                 email,
                 password: hashedPassword,
                 referralCode,
+                phone: phone || null,
             },
         });
         const payload = { sub: user.id, email: user.email, role: user.role };
@@ -105,7 +106,7 @@ let AuthService = class AuthService {
             },
         };
     }
-    async refreshToken(userId, token) {
+    async refreshToken(token) {
         const refreshToken = await this.prisma.refreshToken.findUnique({
             where: { token },
             include: { user: true },
@@ -117,7 +118,11 @@ let AuthService = class AuthService {
             throw new common_1.UnauthorizedException('User account is not active');
         }
         await this.prisma.refreshToken.delete({ where: { id: refreshToken.id } });
-        const payload = { sub: refreshToken.user.id, email: refreshToken.user.email, role: refreshToken.user.role };
+        const payload = {
+            sub: refreshToken.user.id,
+            email: refreshToken.user.email,
+            role: refreshToken.user.role,
+        };
         const newAccessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
         const newRefreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
         await this.prisma.refreshToken.create({
@@ -143,6 +148,7 @@ let AuthService = class AuthService {
                 id: true,
                 name: true,
                 email: true,
+                phone: true,
                 role: true,
                 status: true,
                 imageUrl: true,
@@ -156,6 +162,70 @@ let AuthService = class AuthService {
             throw new common_1.UnauthorizedException('User not found');
         }
         return user;
+    }
+    async updateUserProfile(userId, data) {
+        const updates = {};
+        if (data.name !== undefined) {
+            const trimmedName = data.name.trim();
+            if (!trimmedName) {
+                throw new common_1.BadRequestException('Name cannot be empty');
+            }
+            updates.name = trimmedName;
+        }
+        if (data.email !== undefined) {
+            const trimmedEmail = data.email.trim().toLowerCase();
+            if (!trimmedEmail) {
+                throw new common_1.BadRequestException('Email cannot be empty');
+            }
+            const existingUser = await this.prisma.user.findUnique({
+                where: { email: trimmedEmail },
+            });
+            if (existingUser && existingUser.id !== userId) {
+                throw new common_1.ConflictException('Email already registered');
+            }
+            updates.email = trimmedEmail;
+        }
+        if (data.phone !== undefined) {
+            updates.phone = data.phone?.trim() || null;
+        }
+        if (Object.keys(updates).length === 0) {
+            return this.getUserProfile(userId);
+        }
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: updates,
+        });
+        return this.getUserProfile(userId);
+    }
+    async changePassword(userId, data) {
+        const currentPassword = data.currentPassword?.trim();
+        const newPassword = data.newPassword?.trim();
+        if (!currentPassword) {
+            throw new common_1.BadRequestException('Current password is required');
+        }
+        if (!newPassword) {
+            throw new common_1.BadRequestException('New password is required');
+        }
+        if (newPassword.length < 6) {
+            throw new common_1.BadRequestException('New password must be at least 6 characters long');
+        }
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true, password: true },
+        });
+        if (!user) {
+            throw new common_1.UnauthorizedException('User not found');
+        }
+        const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
+        if (!isCurrentPasswordValid) {
+            throw new common_1.UnauthorizedException('Current password is incorrect');
+        }
+        const hashedPassword = await bcrypt.hash(newPassword, 12);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { password: hashedPassword },
+        });
+        return { message: 'Password changed successfully' };
     }
     async validateUser(email, password) {
         const user = await this.prisma.user.findUnique({

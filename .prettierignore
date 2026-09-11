@@ -1,0 +1,11 @@
+public_html/
+rules/
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+coverage/
+generated/
+package-lock.json
+*.md

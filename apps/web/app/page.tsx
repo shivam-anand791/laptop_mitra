@@ -4,8 +4,107 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import CustomerLayout from '../components/CustomerLayout';
 import ProductCard from '../components/ProductCard';
+import AnimatedCounter from '../components/AnimatedCounter';
+import { ProductCardSkeleton } from '../components/ui/Skeleton';
 import { Product } from '../lib/types';
 import { api } from '../lib/api';
+
+/* ── Category icons (Lucide-style SVG, not emoji) ── */
+
+const categories = [
+  {
+    title: 'Business Laptops',
+    slug: 'cat-business',
+    desc: 'ThinkPad & Latitude',
+    badge: 'Durability',
+    icon: (
+      <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Apple MacBooks',
+    slug: 'cat-apple',
+    desc: 'M1, M2 & Pro chips',
+    badge: 'All-Day Battery',
+    icon: (
+      <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Gaming & High-Perf',
+    slug: 'cat-gaming',
+    desc: 'RTX GPUs & 120Hz',
+    badge: 'Powerhouse',
+    icon: (
+      <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Slim Ultrabooks',
+    slug: 'cat-ultrabook',
+    desc: 'Dell XPS & ZenBooks',
+    badge: 'Lightweight',
+    icon: (
+      <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Student Budget',
+    slug: 'cat-student',
+    desc: 'Starting under ₹35,000',
+    badge: 'Top Value',
+    icon: (
+      <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+        <path d="M12 14l9-5-9-5-9 5 9 5z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
+      </svg>
+    ),
+  },
+];
+
+/* ── Quality checklist items ── */
+
+const qualityChecks = [
+  {
+    num: 1,
+    title: 'Battery & Power Health > 90%',
+    desc: 'We reject any laptop with depleted battery cells. We verify charging circuits, voltage regulators, and endurance cycles to ensure 6 to 14 hours of real battery backup.',
+    color: 'var(--info)',
+    bgColor: 'rgba(56, 189, 248, 0.1)',
+  },
+  {
+    num: 2,
+    title: 'Pristine Screen & Hardware Diagnostics',
+    desc: 'RGB sub-pixel inspection ensures zero dead spots, zero white patches, and zero hinge wobble. Keyboard, TrackPoint, webcam, and speakers are 100% verified.',
+    color: 'var(--accent)',
+    bgColor: 'var(--accent-bg)',
+  },
+  {
+    num: 3,
+    title: 'Thermal Repasting & Deep Sanitization',
+    desc: 'Fans are ultrasonic cleaned and factory thermal paste is reapplied with Arctic MX-4 compound for maximum heat dissipation, silent performance, and longevity.',
+    color: '#C084FC',
+    bgColor: 'rgba(168, 85, 247, 0.1)',
+  },
+];
+
+/* ── Brand logos for social proof ── */
+
+const brandLogos = ['Lenovo', 'Dell', 'HP', 'Apple', 'ASUS', 'Acer'];
+
+/* ══════════════════════════════════════════════
+   HOMEPAGE
+   ══════════════════════════════════════════════ */
 
 export default function HomePage() {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
@@ -26,105 +125,143 @@ export default function HomePage() {
     loadProducts();
   }, []);
 
-  const displayedProducts = activeTab === 'featured'
-    ? featuredProducts.filter(p => p.isFeatured)
-    : featuredProducts.filter(p => p.isNewArrival);
+  const displayedProducts =
+    activeTab === 'featured'
+      ? featuredProducts.filter((p) => p.isFeatured)
+      : featuredProducts.filter((p) => p.isNewArrival);
 
   return (
     <CustomerLayout>
-      {/* HERO SECTION */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-blue-950 via-zinc-950 to-zinc-950 text-white pt-12 pb-20 lg:pt-20 lg:pb-28 border-b border-zinc-800">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(37,99,235,0.18),transparent_50%)] pointer-events-none" />
+      {/* ─── TOP BANNER ─── */}
+      <div className="bg-[var(--bg-deep)] border-b border-[var(--border-subtle)]">
+        <div className="max-w-7xl mx-auto flex items-center justify-between py-2 px-4 text-xs">
+          <span className="hidden sm:inline text-[var(--text-secondary)]">
+            India&apos;s Most Trusted Refurbished Laptop Marketplace
+          </span>
+          <div className="flex items-center gap-4 mx-auto sm:mx-0 text-[var(--text-secondary)]">
+            <span className="flex items-center gap-1">
+              <span className="text-[var(--accent)]">✓</span> 1-Year Warranty
+            </span>
+            <span className="hidden md:inline flex items-center gap-1">
+              <span className="text-[var(--accent)]">✓</span> 7-Day Replacement
+            </span>
+            <span className="flex items-center gap-1">
+              Code: <strong className="text-[var(--accent)] font-bold">MITRA500</strong> for ₹500 Off
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── HERO SECTION ─── */}
+      <section className="relative overflow-hidden bg-[var(--bg-deep)] pt-12 pb-20 lg:pt-20 lg:pb-28">
+        {/* Radial gradient overlay */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'radial-gradient(circle at 30% 20%, rgba(0, 229, 160, 0.08), transparent 50%)',
+          }}
+        />
+
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
             {/* Left Copy */}
             <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold tracking-wide">
-                <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+              {/* Badge */}
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-[var(--radius-full)] bg-[var(--accent-bg)] border border-[var(--accent)]/20 text-[var(--accent)] text-xs font-semibold tracking-wide">
+                <span className="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
                 India&apos;s Most Trusted Refurbished Laptop Marketplace
               </div>
 
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.15]">
+              {/* Headline — italic emphasis per DESIGN.md */}
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] font-display">
                 Premium Laptops.<br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-sky-300">
-                  Like-New Quality.
-                </span><br />
+                <span className="text-[var(--accent)] italic">Like-New</span> Quality.<br />
                 Up to 65% Off Retail.
               </h1>
 
-              <p className="text-base sm:text-lg text-zinc-300 max-w-2xl mx-auto lg:mx-0 font-normal leading-relaxed">
-                32-point rigorously inspected corporate lease-returns. Backed by a full <strong className="text-white">1-Year Warranty</strong>, <strong className="text-white">7-Day Hassle-Free Replacement</strong>, and free express nationwide delivery.
+              {/* Subtitle */}
+              <p className="text-base sm:text-lg text-[var(--text-secondary)] max-w-2xl mx-auto lg:mx-0 leading-relaxed">
+                32-point rigorously inspected corporate lease-returns. Backed by a full{' '}
+                <strong className="text-[var(--text-primary)]">1-Year Warranty</strong>,{' '}
+                <strong className="text-[var(--text-primary)]">7-Day Hassle-Free Replacement</strong>,
+                and free express nationwide delivery.
               </p>
 
+              {/* CTAs */}
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-2">
                 <Link
                   href="/products"
-                  className="w-full sm:w-auto px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 transition-all hover:scale-105 active:scale-95 text-center flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-8 py-4 bg-[var(--accent)] text-[var(--bg-deep)] font-bold rounded-[var(--radius-xl)] shadow-glow hover:bg-[var(--accent-dim)] transition-all hover:scale-[1.02] active:scale-[0.98] text-center flex items-center justify-center gap-2"
                 >
                   <span>Explore Laptops</span>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
                   </svg>
                 </Link>
                 <Link
                   href="/products?category=cat-apple"
-                  className="w-full sm:w-auto px-6 py-4 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-white font-semibold rounded-xl transition-all text-center flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-6 py-4 bg-[var(--bg-elevated)] hover:bg-[var(--border-default)] border border-[var(--border-default)] text-[var(--text-primary)] font-semibold rounded-[var(--radius-xl)] transition-all text-center flex items-center justify-center gap-2"
                 >
-                  <span>🍏 Apple MacBooks</span>
+                  Apple MacBooks
                 </Link>
               </div>
 
-              {/* Trust metrics bar */}
-              <div className="pt-6 border-t border-zinc-800/80 grid grid-cols-3 gap-4 max-w-md mx-auto lg:mx-0">
+              {/* Trust stats */}
+              <div className="pt-6 border-t border-[var(--border-subtle)] grid grid-cols-3 gap-4 max-w-md mx-auto lg:mx-0">
                 <div>
-                  <div className="text-2xl sm:text-3xl font-black text-white">50K+</div>
-                  <div className="text-xs text-zinc-400">Laptops Sold</div>
+                  <div className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)]">
+                    <AnimatedCounter target={50} suffix="K+" />
+                  </div>
+                  <div className="text-xs text-[var(--text-muted)]">Laptops Sold</div>
                 </div>
                 <div>
-                  <div className="text-2xl sm:text-3xl font-black text-emerald-400">4.9★</div>
-                  <div className="text-xs text-zinc-400">Verified Reviews</div>
+                  <div className="text-2xl sm:text-3xl font-bold text-[var(--accent)]">
+                    <AnimatedCounter target={49} suffix="★" />
+                  </div>
+                  <div className="text-xs text-[var(--text-muted)]">Verified Reviews</div>
                 </div>
                 <div>
-                  <div className="text-2xl sm:text-3xl font-black text-blue-400">1 Year</div>
-                  <div className="text-xs text-zinc-400">Doorstep Warranty</div>
+                  <div className="text-2xl sm:text-3xl font-bold text-[var(--info)]">
+                    1 Year
+                  </div>
+                  <div className="text-xs text-[var(--text-muted)]">Doorstep Warranty</div>
                 </div>
               </div>
             </div>
 
-            {/* Right Card / Visual */}
+            {/* Right — Deal Card */}
             <div className="lg:col-span-5 relative">
-              <div className="relative mx-auto max-w-md lg:max-w-none rounded-3xl p-1 bg-gradient-to-tr from-blue-500 via-indigo-500 to-purple-500 shadow-2xl shadow-blue-500/20">
-                <div className="rounded-[22px] bg-zinc-900 p-6 overflow-hidden">
+              <div className="relative mx-auto max-w-md lg:max-w-none rounded-[var(--radius-2xl)] p-[2px] bg-gradient-to-tr from-[var(--accent)] via-[var(--info)] to-[var(--accent)] shadow-xl">
+                <div className="rounded-[calc(var(--radius-2xl)-2px)] bg-[var(--bg-surface)] p-6 overflow-hidden">
                   <div className="flex items-center justify-between mb-4">
-                    <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold border border-emerald-500/20">
+                    <span className="px-3 py-1 rounded-[var(--radius-full)] bg-[var(--accent-bg)] text-[var(--accent)] text-xs font-bold border border-[var(--accent)]/20">
                       DEAL OF THE DAY
                     </span>
-                    <span className="text-xs text-zinc-400 font-mono">STOCK: 8 UNITS LEFT</span>
+                    <span className="text-xs text-[var(--text-muted)] font-mono">STOCK: 8 LEFT</span>
                   </div>
 
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=1000&q=80"
                     alt="MacBook Pro Special Deal"
-                    className="w-full h-52 object-cover rounded-xl mb-4"
+                    className="w-full h-52 object-cover rounded-[var(--radius-lg)] mb-4"
                   />
 
                   <div className="space-y-2">
-                    <h3 className="text-lg font-bold text-white">
+                    <h3 className="text-lg font-bold text-[var(--text-primary)]">
                       Apple MacBook Pro 16&quot; (M2 Pro, 16GB, 512GB)
                     </h3>
-                    <p className="text-xs text-zinc-400">
+                    <p className="text-xs text-[var(--text-muted)]">
                       Grade A+ Pristine • 100% Battery Health • Liquid Retina XDR 120Hz
                     </p>
-
                     <div className="flex items-baseline justify-between pt-3">
                       <div>
-                        <div className="text-2xl font-black text-white">₹1,54,999</div>
-                        <div className="text-xs line-through text-zinc-500">₹2,49,900 Retail MRP</div>
+                        <div className="text-2xl font-bold text-[var(--text-primary)] font-mono">₹1,54,999</div>
+                        <div className="text-xs line-through text-[var(--text-muted)]">₹2,49,900 Retail MRP</div>
                       </div>
                       <Link
-                        href="/products/prod-macbook-pro-16"
-                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-colors"
+                        href="/products"
+                        className="px-4 py-2.5 bg-[var(--accent)] text-[var(--bg-deep)] text-xs font-bold rounded-[var(--radius-md)] hover:bg-[var(--accent-dim)] transition-colors"
                       >
                         Claim Offer →
                       </Link>
@@ -137,84 +274,80 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* CATEGORIES SECTION */}
-      <section className="py-16 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+      {/* ─── CATEGORIES ─── */}
+      <section className="py-16 bg-[var(--bg-deep)] border-t border-[var(--border-subtle)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-10">
             <div>
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+              <span className="text-xs font-bold text-[var(--accent)] uppercase tracking-widest">
                 Curated Collections
               </span>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-zinc-900 dark:text-white mt-1">
+              <h2 className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)] mt-1 font-display">
                 Shop Laptops by Category
               </h2>
             </div>
             <Link
               href="/products"
-              className="mt-4 md:mt-0 text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+              className="mt-4 md:mt-0 text-sm font-semibold text-[var(--accent)] hover:underline inline-flex items-center gap-1"
             >
               Browse all categories →
             </Link>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {[
-              { title: 'Business Laptops', slug: 'cat-business', icon: '💼', desc: 'ThinkPad & Latitude', badge: 'Durability' },
-              { title: 'Apple MacBooks', slug: 'cat-apple', icon: '🍏', desc: 'M1, M2 & Pro chips', badge: 'All-Day Battery' },
-              { title: 'Gaming & High-Perf', slug: 'cat-gaming', icon: '🎮', desc: 'RTX GPUs & 120Hz', badge: 'Powerhouse' },
-              { title: 'Slim Ultrabooks', slug: 'cat-ultrabook', icon: '✨', desc: 'Dell XPS & ZenBooks', badge: 'Lightweight' },
-              { title: 'Student Budget', slug: 'cat-student', icon: '🎓', desc: 'Starting under ₹35,000', badge: 'Top Value' },
-            ].map((cat, idx) => (
+            {categories.map((cat) => (
               <Link
-                key={idx}
+                key={cat.slug}
                 href={`/products?category=${cat.slug}`}
-                className="group p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 hover:border-blue-500 hover:shadow-lg transition-all text-center flex flex-col items-center"
+                className="group p-5 rounded-[var(--radius-xl)] bg-[var(--bg-surface)] border border-[var(--border-default)] hover:border-[var(--accent)]/40 hover:shadow-card-hover transition-all text-center flex flex-col items-center"
               >
-                <span className="text-3xl mb-3 group-hover:scale-110 transition-transform">{cat.icon}</span>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 mb-2">
+                <span className="text-[var(--accent)] mb-3 group-hover:scale-110 transition-transform">
+                  {cat.icon}
+                </span>
+                <span className="px-2 py-0.5 rounded-[var(--radius-full)] bg-[var(--accent-bg)] text-[var(--accent)] text-[10px] font-semibold mb-2">
                   {cat.badge}
                 </span>
-                <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 group-hover:text-blue-600 transition-colors">
+                <h4 className="font-semibold text-sm text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">
                   {cat.title}
                 </h4>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{cat.desc}</p>
+                <p className="text-xs text-[var(--text-muted)] mt-1">{cat.desc}</p>
               </Link>
             ))}
           </div>
         </div>
       </section>
 
-      {/* FEATURED / NEW ARRIVALS TABS */}
-      <section className="py-16 bg-zinc-50 dark:bg-zinc-950">
+      {/* ─── FEATURED / NEW ARRIVALS ─── */}
+      <section className="py-16 bg-[var(--bg-surface)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
             <div>
-              <span className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+              <span className="text-xs font-bold text-[var(--accent)] uppercase tracking-widest">
                 Tested &amp; Ready to Ship
               </span>
-              <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-white mt-1">
+              <h2 className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)] mt-1 font-display">
                 Handpicked Deals
               </h2>
             </div>
 
-            {/* Filter Tabs */}
-            <div className="inline-flex p-1 rounded-xl bg-zinc-200 dark:bg-zinc-800 text-xs font-bold self-start">
+            {/* Tab toggle */}
+            <div className="inline-flex p-1 rounded-[var(--radius-lg)] bg-[var(--bg-elevated)] text-xs font-bold self-start">
               <button
                 onClick={() => setActiveTab('featured')}
-                className={`px-4 py-2 rounded-lg transition-all ${
+                className={`px-4 py-2 rounded-[var(--radius-md)] transition-all ${
                   activeTab === 'featured'
-                    ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+                    ? 'bg-[var(--bg-surface)] text-[var(--accent)] shadow-sm'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                 }`}
               >
                 ⭐ Best Sellers
               </button>
               <button
                 onClick={() => setActiveTab('new')}
-                className={`px-4 py-2 rounded-lg transition-all ${
+                className={`px-4 py-2 rounded-[var(--radius-md)] transition-all ${
                   activeTab === 'new'
-                    ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+                    ? 'bg-[var(--bg-surface)] text-[var(--accent)] shadow-sm'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                 }`}
               >
                 🔥 New Arrivals
@@ -225,111 +358,120 @@ export default function HomePage() {
           {/* Product Grid */}
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3, 4, 5, 6].map(n => (
-                <div key={n} className="h-96 rounded-2xl bg-zinc-200 dark:bg-zinc-800 animate-pulse" />
+              {[1, 2, 3, 4, 5, 6].map((n) => (
+                <ProductCardSkeleton key={n} />
               ))}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {(displayedProducts.length > 0 ? displayedProducts : featuredProducts).map(product => (
-                <ProductCard key={product.id} product={product} />
-              ))}
+              {(displayedProducts.length > 0 ? displayedProducts : featuredProducts).map(
+                (product) => (
+                  <ProductCard key={product.id} product={product} />
+                ),
+              )}
             </div>
           )}
 
           <div className="mt-12 text-center">
             <Link
               href="/products"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-white text-white dark:text-zinc-900 text-sm font-bold shadow-md transition-all hover:scale-105"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-[var(--radius-xl)] bg-[var(--bg-elevated)] hover:bg-[var(--border-default)] text-[var(--text-primary)] text-sm font-bold border border-[var(--border-default)] transition-all hover:scale-[1.02]"
             >
               <span>View All 50+ Verified Laptops</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
               </svg>
             </Link>
           </div>
         </div>
       </section>
 
-      {/* 32-POINT CHECKLIST QUALITY SPOTLIGHT */}
-      <section className="py-16 bg-white dark:bg-zinc-900 border-t border-b border-zinc-200 dark:border-zinc-800">
+      {/* ─── QUALITY PROMISE ─── */}
+      <section className="py-16 bg-[var(--bg-deep)] border-t border-[var(--border-subtle)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-12">
-            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">
+            <span className="text-xs font-bold text-[var(--accent)] uppercase tracking-widest">
               LaptopMitra Quality Standard
             </span>
-            <h2 className="text-2xl sm:text-4xl font-extrabold text-zinc-900 dark:text-white mt-2">
+            <h2 className="text-2xl sm:text-4xl font-bold text-[var(--text-primary)] mt-2 font-display">
               Why Our Certified Laptops Feel Brand New
             </h2>
-            <p className="text-sm sm:text-base text-zinc-600 dark:text-zinc-400 mt-3">
+            <p className="text-sm sm:text-base text-[var(--text-secondary)] mt-3">
               Unlike local second-hand markets, every LaptopMitra unit undergoes military-grade testing by certified engineers before shipping.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-              <div className="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-2xl mb-4 font-black">
-                1
+            {qualityChecks.map((check) => (
+              <div
+                key={check.num}
+                className="p-6 rounded-[var(--radius-xl)] bg-[var(--bg-surface)] border border-[var(--border-default)]"
+              >
+                <div
+                  className="w-12 h-12 rounded-[var(--radius-lg)] flex items-center justify-center text-xl mb-4 font-bold"
+                  style={{ background: check.bgColor, color: check.color }}
+                >
+                  {check.num}
+                </div>
+                <h3 className="font-bold text-lg text-[var(--text-primary)] mb-2">
+                  {check.title}
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                  {check.desc}
+                </p>
               </div>
-              <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-100 mb-2">
-                Battery &amp; Power Health &gt; 90%
-              </h3>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                We reject any laptop with depleted battery cells. We verify charging circuits, voltage regulators, and endurance cycles to ensure 6 to 14 hours of real battery backup.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-              <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-2xl mb-4 font-black">
-                2
-              </div>
-              <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-100 mb-2">
-                Pristine Screen &amp; Hardware Diagnostics
-              </h3>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                RGB sub-pixel inspection ensures zero dead spots, zero white patches, and zero hinge wobble. Keyboard, TrackPoint, webcam, and speakers are 100% verified.
-              </p>
-            </div>
-
-            <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-              <div className="w-12 h-12 rounded-xl bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 flex items-center justify-center text-2xl mb-4 font-black">
-                3
-              </div>
-              <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-100 mb-2">
-                Thermal Repasting &amp; Deep Sanitization
-              </h3>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                Fans are ultrasonic cleaned and factory thermal paste is reapplied with Arctic MX-4 compound for maximum heat dissipation, silent performance, and longevity.
-              </p>
-            </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* MITRA REFERRAL / AFFILIATE PROMO */}
-      <section className="py-16 bg-gradient-to-r from-blue-900 via-indigo-900 to-zinc-950 text-white">
+      {/* ─── SOCIAL PROOF — Brand Logos ─── */}
+      <section className="py-12 bg-[var(--bg-surface)] border-t border-[var(--border-subtle)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest font-semibold mb-8">
+            Laptops sourced from leading brands
+          </p>
+          <div className="flex items-center justify-center gap-8 sm:gap-12 flex-wrap opacity-40">
+            {brandLogos.map((brand) => (
+              <span
+                key={brand}
+                className="text-xl sm:text-2xl font-bold text-[var(--text-primary)] font-display tracking-tight"
+              >
+                {brand}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── MITRA REFERRAL CTA ─── */}
+      <section className="py-16 bg-[var(--bg-deep)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="rounded-3xl bg-blue-600/20 border border-blue-400/30 p-8 sm:p-12 relative overflow-hidden backdrop-blur-md">
+          <div className="rounded-[var(--radius-2xl)] bg-[var(--accent)]/10 border border-[var(--accent)]/20 p-8 sm:p-12 relative overflow-hidden backdrop-blur-sm">
             <div className="max-w-2xl space-y-4">
-              <span className="px-3 py-1 rounded-full bg-yellow-400/20 text-yellow-300 border border-yellow-400/30 text-xs font-bold uppercase tracking-wider">
+              <span className="px-3 py-1 rounded-[var(--radius-full)] bg-[var(--warning)]/20 text-[var(--warning)] border border-[var(--warning)]/30 text-xs font-bold uppercase tracking-wider">
                 Mitra Partner Program
               </span>
-              <h2 className="text-3xl sm:text-4xl font-black">
+              <h2 className="text-3xl sm:text-4xl font-bold text-[var(--text-primary)] font-display">
                 Earn 10% Cash Commission On Every Referral
               </h2>
-              <p className="text-sm sm:text-base text-zinc-200 leading-relaxed">
-                Share your unique Mitra referral code. Your friends receive an instant <strong className="text-yellow-300">₹500 discount</strong> on their laptop purchase, and you earn <strong className="text-white">10% direct payout</strong> into your bank account!
+              <p className="text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
+                Share your unique Mitra referral code. Your friends receive an instant{' '}
+                <strong className="text-[var(--warning)]">₹500 discount</strong> on their laptop
+                purchase, and you earn{' '}
+                <strong className="text-[var(--text-primary)]">10% direct payout</strong> into your
+                bank account!
               </p>
               <div className="pt-2 flex flex-col sm:flex-row gap-4">
                 <Link
                   href="/register"
-                  className="px-6 py-3 bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-bold rounded-xl shadow-lg transition-transform hover:scale-105 text-center text-sm"
+                  className="px-6 py-3 bg-[var(--warning)] hover:bg-[var(--warning)]/90 text-[var(--bg-deep)] font-bold rounded-[var(--radius-xl)] shadow-lg transition-transform hover:scale-[1.02] text-center text-sm"
                 >
                   Join Mitra Program Free
                 </Link>
                 <Link
                   href="/profile"
-                  className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold rounded-xl transition-colors text-center text-sm"
+                  className="px-6 py-3 bg-[var(--bg-elevated)] hover:bg-[var(--border-default)] border border-[var(--border-default)] text-[var(--text-primary)] font-semibold rounded-[var(--radius-xl)] transition-colors text-center text-sm"
                 >
                   View My Referral Code
                 </Link>

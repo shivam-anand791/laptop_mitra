@@ -15,6 +15,7 @@ export declare class AdminService {
         referralTier: string;
     }[]>;
     updateUserStatus(userId: string, status: string): Promise<{
+        address: string | null;
         name: string | null;
         email: string;
         password: string;
@@ -25,7 +26,6 @@ export declare class AdminService {
         role: string;
         status: string;
         imageUrl: string | null;
-        address: string | null;
         city: string | null;
         state: string | null;
         pincode: string | null;

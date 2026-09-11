@@ -21,9 +21,11 @@ export class RegisterDto {
   })
   password: string;
 
-  @ApiProperty({ example: '+919876543210', description: 'Phone number', required: false })
+  @ApiProperty({ example: '+919876543210', description: 'Phone number with country code (e.g., +919876543210)', required: false })
   @IsOptional()
   @IsString()
-  @Matches(/^\+?[1-9]\d{1,14}$/, { message: 'Invalid phone number format' })
+  @Matches(/^\+?\d{7,15}$/, {
+    message: 'Invalid phone number. Use format like +919876543210 (7-15 digits with optional + prefix)',
+  })
   phone?: string;
 }

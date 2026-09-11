@@ -13,15 +13,18 @@ exports.PaymentService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const prisma_service_1 = require("../../prisma/prisma.service");
+const notification_service_1 = require("../notifications/notification.service");
 const crypto = require("crypto");
 const Razorpay = require('razorpay');
 let PaymentService = class PaymentService {
     configService;
     prisma;
+    notificationService;
     razorpay;
-    constructor(configService, prisma) {
+    constructor(configService, prisma, notificationService) {
         this.configService = configService;
         this.prisma = prisma;
+        this.notificationService = notificationService;
         const keyId = this.configService.get('RAZORPAY_KEY_ID');
         const keySecret = this.configService.get('RAZORPAY_KEY_SECRET');
         if (!keyId || !keySecret) {
@@ -92,6 +95,7 @@ let PaymentService = class PaymentService {
                                 paymentId: paymentEntity.id,
                             },
                         });
+                        await this.notificationService.dispatchPaymentUpdate(payment.order.userId, payment.order.id, 'COMPLETED');
                     }
                 }
                 return { valid: true, event: 'payment_authorized', data: paymentEntity };
@@ -114,6 +118,7 @@ let PaymentService = class PaymentService {
                                 paymentId: paymentEntity.id,
                             },
                         });
+                        await this.notificationService.dispatchPaymentUpdate(payment.order.userId, payment.order.id, 'COMPLETED');
                     }
                 }
                 return { valid: true, event: 'payment_captured', data: paymentEntity };
@@ -136,6 +141,7 @@ let PaymentService = class PaymentService {
                                 paymentId: paymentEntity.id,
                             },
                         });
+                        await this.notificationService.dispatchPaymentUpdate(payment.order.userId, payment.order.id, 'FAILED');
                     }
                 }
                 return { valid: true, event: 'payment_failed', data: paymentEntity };
@@ -165,6 +171,7 @@ exports.PaymentService = PaymentService;
 exports.PaymentService = PaymentService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [config_1.ConfigService,
-        prisma_service_1.PrismaService])
+        prisma_service_1.PrismaService,
+        notification_service_1.NotificationService])
 ], PaymentService);
 //# sourceMappingURL=payment.service.js.map

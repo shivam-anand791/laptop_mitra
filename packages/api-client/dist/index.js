@@ -61,8 +61,26 @@ class LaptopMitraApiClient {
             body: JSON.stringify(data),
         });
     }
+    async refreshAccessToken(refreshToken) {
+        return this.request('/auth/refresh', {
+            method: 'POST',
+            body: JSON.stringify({ refreshToken }),
+        });
+    }
     async getProfile() {
         return this.request('/auth/profile');
+    }
+    async updateProfile(data) {
+        return this.request('/auth/profile', {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    }
+    async logout(refreshToken) {
+        return this.request('/auth/logout', {
+            method: 'POST',
+            body: JSON.stringify({ refreshToken }),
+        });
     }
     // Cart
     async getCart() {
@@ -77,6 +95,15 @@ class LaptopMitraApiClient {
     async removeCartItem(itemId) {
         return this.request(`/cart/items/${itemId}`, { method: 'DELETE' });
     }
+    async updateCartItemQuantity(itemId, quantity) {
+        return this.request(`/cart/items/${itemId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ quantity }),
+        });
+    }
+    async clearCart() {
+        return this.request('/cart', { method: 'DELETE' });
+    }
     // Wishlist
     async getWishlist() {
         return this.request('/wishlist');
@@ -86,6 +113,12 @@ class LaptopMitraApiClient {
             method: 'POST',
             body: JSON.stringify({ productId }),
         });
+    }
+    async removeWishlistItem(itemId) {
+        return this.request(`/wishlist/items/${itemId}`, { method: 'DELETE' });
+    }
+    async clearWishlist() {
+        return this.request('/wishlist', { method: 'DELETE' });
     }
     // Orders
     async createOrder(payload) {
@@ -97,7 +130,51 @@ class LaptopMitraApiClient {
     async getOrders() {
         return this.request('/orders');
     }
-    // Auth — Password Reset
+    async validateDiscount(code, cartTotal) {
+        return this.request('/discount/validate', {
+            method: 'POST',
+            body: JSON.stringify({ code, cartTotal }),
+        });
+    }
+    async getOrder(id) {
+        return this.request(`/orders/${id}`);
+    }
+    async cancelOrder(id) {
+        return this.request(`/orders/${id}/cancel`, { method: 'PATCH' });
+    }
+    // Addresses
+    async getAddresses() {
+        return this.request('/addresses');
+    }
+    async createAddress(data) {
+        return this.request('/addresses', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    }
+    async updateAddress(id, data) {
+        return this.request(`/addresses/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    }
+    async deleteAddress(id) {
+        return this.request(`/addresses/${id}`, {
+            method: 'DELETE',
+        });
+    }
+    // Categories
+    async getCategories(params) {
+        const query = params?.parentId ? `?parentId=${encodeURIComponent(params.parentId)}` : '';
+        return this.request(`/categories${query}`);
+    }
+    async getCategory(id) {
+        return this.request(`/categories/${id}`);
+    }
+    async getCategoryBySlug(slug) {
+        return this.request(`/categories/slug/${slug}`);
+    }
+    // Auth — Password Reset (not yet implemented on backend — stub)
     async forgotPassword(email) {
         return this.request('/auth/forgot-password', {
             method: 'POST',
@@ -110,11 +187,11 @@ class LaptopMitraApiClient {
             body: JSON.stringify({ token, newPassword }),
         });
     }
-    // Auth — Token Refresh
-    async refreshAccessToken(refreshToken) {
-        return this.request('/auth/refresh', {
+    // Password Change (authenticated)
+    async changePassword(data) {
+        return this.request('/auth/change-password', {
             method: 'POST',
-            body: JSON.stringify({ refreshToken }),
+            body: JSON.stringify(data),
         });
     }
 }

@@ -1,7 +1,8 @@
-import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CartService } from '../cart/cart.service';
 import { ProductService } from '../product/product.service';
+import { NotificationService } from '../notifications/notification.service';
 
 @Injectable()
 export class OrderService {
@@ -9,6 +10,7 @@ export class OrderService {
     private prisma: PrismaService,
     private cartService: CartService,
     private productService: ProductService,
+    private notificationService: NotificationService,
   ) {}
 
   async createOrder(userId: string, referralCode?: string, discountCode?: string, shippingAddress?: any, phone?: string, notes?: string) {
@@ -163,10 +165,12 @@ export class OrderService {
     // Clear cart
     await this.cartService.clearCart(userId);
 
+    await this.notificationService.dispatchOrderUpdate(userId, order.id, 'PENDING');
+
     return order;
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string, userRole?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
@@ -181,6 +185,11 @@ export class OrderService {
 
     if (!order) {
       throw new NotFoundException(`Order with id ${id} not found`);
+    }
+
+    // Ownership check: users can only see their own orders; admins can see all
+    if (userId && userRole !== 'ADMIN' && order.userId !== userId) {
+      throw new ForbiddenException('Access denied: You can only view your own orders');
     }
 
     return order;
@@ -204,13 +213,19 @@ export class OrderService {
     });
   }
 
-  async updateStatus(id: string, status: string) {
+  async updateStatus(id: string, status: string, userId?: string, userRole?: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
     });
 
     if (!order) {
       throw new NotFoundException(`Order with id ${id} not found`);
+    }
+
+    // Ownership/admin check: admins can update any order's status;
+    // non-admin users can only update their own orders
+    if (userRole !== 'ADMIN' && order.userId !== userId) {
+      throw new ForbiddenException('Access denied: You can only update your own orders');
     }
 
     const updateData: any = { status };
@@ -221,9 +236,72 @@ export class OrderService {
       updateData.paymentStatus = 'REFUNDED';
     }
 
-    return await this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id },
       data: updateData,
     });
+
+    await this.notificationService.dispatchOrderUpdate(order.userId, order.id, status);
+
+    return updatedOrder;
+  }
+
+  async cancelOrder(id: string, userId: string, userRole: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: { payments: true },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order with id ${id} not found`);
+    }
+
+    // Ownership check: users can only cancel their own orders; admins can cancel any
+    if (userRole !== 'ADMIN' && order.userId !== userId) {
+      throw new ForbiddenException('Access denied: You can only cancel your own orders');
+    }
+
+    // Only allow cancellation from PENDING or CONFIRMED status
+    const allowedStatuses = ['PENDING', 'CONFIRMED'];
+    if (!allowedStatuses.includes(order.status)) {
+      throw new BadRequestException(
+        `Cannot cancel order in status "${order.status}". Orders can only be cancelled when PENDING or CONFIRMED.`,
+      );
+    }
+
+    // If payment was already completed, flag for refund (Razorpay refund API integration can be added here)
+    const paymentCompleted = order.paymentStatus === 'COMPLETED';
+
+    // Update order status to CANCELLED and payment status to REFUNDED
+    const updatedOrder = await this.prisma.order.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
+        paymentStatus: 'REFUNDED',
+      },
+      include: {
+        items: { include: { product: true } },
+        deliveries: true,
+        payments: true,
+      },
+    });
+
+    // Restore product stock for cancelled items
+    for (const item of updatedOrder.items) {
+      await this.prisma.product.update({
+        where: { id: item.productId },
+        data: { stock: { increment: item.quantity } },
+      });
+    }
+
+    // TODO: If paymentCompleted is true, integrate Razorpay refund API here
+    // For now, flag it in the response so the frontend/admin knows refund is needed
+    return {
+      ...updatedOrder,
+      refundRequired: paymentCompleted,
+      refundMessage: paymentCompleted
+        ? 'Payment was completed - refund needs to be processed via Razorpay'
+        : null,
+    };
   }
 }
