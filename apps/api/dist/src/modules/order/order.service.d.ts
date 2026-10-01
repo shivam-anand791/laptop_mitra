@@ -33,15 +33,22 @@ export declare class OrderService {
     }>;
     findOne(id: string, userId?: string, userRole?: string): Promise<{
         user: {
+            address: string | null;
             name: string | null;
             email: string;
             password: string;
+            phone: string | null;
             id: string;
             referralCode: string;
             emailVerified: Date | null;
             role: string;
             status: string;
             imageUrl: string | null;
+            gender: string | null;
+            dob: Date | null;
+            city: string | null;
+            state: string | null;
+            pincode: string | null;
             createdAt: Date;
             updatedAt: Date;
             referralEarnings: import("@prisma/client/runtime/library").Decimal;

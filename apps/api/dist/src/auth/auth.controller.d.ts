@@ -32,46 +32,34 @@ export declare class AuthController {
         message: string;
     }>;
     getProfile(req: any): Promise<{
-        name: string | null;
+        name: string;
         email: string;
-        password: string;
+        phone: string;
         id: string;
         referralCode: string;
-        emailVerified: Date | null;
         role: string;
         status: string;
-        imageUrl: string | null;
+        imageUrl: string;
         createdAt: Date;
-        updatedAt: Date;
         referralEarnings: import("@prisma/client/runtime/library").Decimal;
         referralTier: string;
-        referralLinkClickedCount: number;
-        otp: string | null;
-        otpExpiresAt: Date | null;
-        otpAttemptCount: number;
     }>;
     updateProfile(req: any, body: {
         name?: string;
         email?: string;
         phone?: string;
     }): Promise<{
-        name: string | null;
+        name: string;
         email: string;
-        password: string;
+        phone: string;
         id: string;
         referralCode: string;
-        emailVerified: Date | null;
         role: string;
         status: string;
-        imageUrl: string | null;
+        imageUrl: string;
         createdAt: Date;
-        updatedAt: Date;
         referralEarnings: import("@prisma/client/runtime/library").Decimal;
         referralTier: string;
-        referralLinkClickedCount: number;
-        otp: string | null;
-        otpExpiresAt: Date | null;
-        otpAttemptCount: number;
     }>;
     changePassword(req: any, body: {
         currentPassword: string;

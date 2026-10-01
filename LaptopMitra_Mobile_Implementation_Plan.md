@@ -16,7 +16,7 @@
   - Orders: ✅ complete (getOrders, getOrder, createOrder, cancelOrder)
   - Discount: ✅ complete (`validateDiscount` → `POST /discount/validate`)
   - Addresses: ✅ complete (getAddresses, createAddress, updateAddress, deleteAddress)
-  - Categories: ✅ complete (getCategories, getCategory, getCategoryBySlug)
+  - Categories: ✅ complete (getCategories, getCategory, getCategoryBySlug) 
   - Bookings/Buyback: ❌ no endpoints (legacy PHP only — out of scope)
   - Admin: ❌ not in scope for mobile
 - [x] Confirm `packages/types` has no web-only assumptions. ✅ Types are clean (no DOM, no next/image).
@@ -109,7 +109,7 @@
 - [x] ProductDetail routing via MainStack navigator. ✓ (`MainStack.tsx` — all screens registered)
 - [x] Image caching/optimization via `expo-image`. ✓ (used in ProductCard and ProductDetailScreen)
 - [x] Skeleton loaders for listing screens. ✓ (`Skeleton.tsx` — shimmer animation, `ProductCardSkeleton`, `ProductListSkeleton`, `ProductDetailSkeleton`)
-- [x] Search screen: dedicated screen with debounced search-as-you-type, recent searches (local storage), empty-state and no-results state. ✓ (`SearchScreen.tsx` — 300ms debounce, AsyncStorage recent searches with clear/remove, search bar on HomeScreen navigates to Search, product grid results, loading/empty/no-results states)
+- [ ] Search screen: dedicated screen with debounced search-as-you-type, recent searches (local storage), empty-state and no-results state. **Not started.** (Current: inline search in StoreScreen only)
 
 **TypeScript:** 0 errors. All catalog screens type-checked successfully.
 
@@ -117,7 +117,7 @@
 
 ---
 
-## 5. Cart & Wishlist
+## 5. Cart & Wishlist 
 
 **Status: COMPLETE** — All api-client methods added, screens fully implemented, cart badge on tab bar.
 
@@ -256,10 +256,9 @@
 
 ## 11. Affiliate / "Mitra" Dashboard (Full Parity Item)
 
-- [x] Affiliate dashboard screen: referral code display + share action (native share sheet), referral stats (earnings, tier, referral clicks). ✓ (`MitraDashboardScreen.tsx` — code display with dashed box, Share Code button, Share Link button, tier badge with color coding, stats grid, "How It Works" section)
-- [x] Referral link/code sharing via native share sheet (WhatsApp, SMS, etc.). ✓ (uses React Native `Share` API)
-- [x] Navigation from Account screen to Mitra Dashboard. ✓ (`AccountScreen.tsx` — "Mitra Affiliate" menu section with wallet icon)
-- [ ] Salary/earnings screen (mirrors `salary.php`) — earnings history, payout status. **Not started** — no backend endpoint for earnings history.
+- [ ] Affiliate dashboard screen: referral code display + share action (native share sheet via `expo-sharing`), referral stats (signups, conversions, earnings — mirror `affiliate-dashboard.php`).
+- [ ] Salary/earnings screen (mirrors `salary.php`) — earnings history, payout status.
+- [ ] Referral link/code sharing via native share sheet (WhatsApp, SMS, etc. — a genuine mobile advantage over web here).
 
 **Tests:** dashboard data loads correctly, share action opens native share sheet with correct payload, earnings screen reflects real data states (pending, paid).
 
@@ -282,12 +281,12 @@
 
 ## 13. Cross-Cutting Concerns
 
-- [x] Error handling: consistent toast/banner pattern for API errors across all screens. ✓ (`Toast.tsx` — ToastProvider with `useToast()` hook, supports success/error/info types, animated auto-dismiss, stack up to 3 toasts, wired into App.tsx)
+- [ ] Error handling: consistent toast/banner pattern for API errors across all screens (via a shared hook wrapping `api-client` + React Query error states).
 - [ ] Analytics/crash reporting: decide on a tool (e.g. Sentry for RN) — flag as a new dependency needing the same "no broad filesystem/network access" review as any other dependency.
 - [ ] Accessibility pass: labels, touch target sizes, screen reader support on key flows (auth, checkout).
 - [ ] Localization scaffolding, if the web app supports more than English — otherwise mark as out of scope.
 - [ ] App icons, splash screen, store screenshots (needed for Section 15).
-- [x] Performance: list virtualization for long catalog/order lists (`FlatList`). ✓ (all lists use FlatList with numColumns for grid, infinite scroll pagination)
+- [ ] Performance: list virtualization for long catalog/order lists (`FlatList`/`FlashList`), image size optimization.
 
 ---
 
@@ -316,15 +315,15 @@
 | Stage | Covers | Depends on |
 |---|---|---|
 | A | Sections 0–3 (setup, navigation, auth) | `api-client` auth endpoints stable | ✅ **COMPLETE**
-| B1 | Section 4 (catalog) | None — can proceed now | ✅ **COMPLETE** — all screens including dedicated search
+| B1 | Section 4 (catalog — remaining: dedicated search screen) | None — can proceed now | ✅ **COMPLETE** (minus search screen)
 | B2 | Section 5 (cart, wishlist) | ✅ **COMPLETE** — all api-client methods + screens + badge
 | B3 | Section 6 (discount/referral) | ✅ **COMPLETE** — backend endpoint exists, UI wired in Cart + Checkout
 | C | Section 7 (checkout + Razorpay) | ✅ **COMPLETE** (COD mode); Razorpay native SDK deferred to EAS Build phase
 | D | Section 8 (orders) | ✅ **COMPLETE** — all order screens + api-client methods; booking/buyback out of scope
 | E | Section 9 (account) | ✅ **COMPLETE** — all backend endpoints exist, all profile/address/password screens built
 | F | Section 10 (push notifications) | **NOT STARTED**: backend needs device-token storage + dispatch API spec
-| G | Section 11 (affiliate dashboard) | ✅ **COMPLETE** — dashboard screen with share, tier, stats | Section 12 (admin) | **NOT STARTED**: needs scope confirmation
-| H | Sections 13–15 (polish, testing, build/distribution) | **PARTIAL** — Toast system + FlatList perf done; analytics, accessibility, EAS Build remaining |
+| G | Sections 11–12 (affiliate dashboard, admin) | **NOT STARTED**: admin scope re-confirmed; affiliate endpoints stable
+| H | Sections 13–15 (polish, testing, build/distribution) | **NOT STARTED**: all feature stages functionally complete |
 
 **Reporting:** after each stage, report what was implemented, what was tested and the result, assumptions made, open questions, and anything from the hard-stop list that came up — same cadence as the rest of the project.
 
