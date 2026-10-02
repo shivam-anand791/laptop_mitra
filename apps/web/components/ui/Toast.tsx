@@ -82,24 +82,24 @@ const icons: Record<ToastVariant, React.ReactNode> = {
 
 const variantColors: Record<ToastVariant, { bg: string; text: string; border: string }> = {
   success: {
-    bg: 'bg-[var(--bg-elevated)]',
-    text: 'text-[var(--accent)]',
-    border: 'border-[var(--accent)]/20',
+    bg: 'bg-white',
+    text: 'text-emerald-600',
+    border: 'border-emerald-200 shadow-lg',
   },
   error: {
-    bg: 'bg-[var(--bg-elevated)]',
-    text: 'text-[var(--danger)]',
-    border: 'border-[var(--danger)]/20',
+    bg: 'bg-white',
+    text: 'text-rose-600',
+    border: 'border-rose-200 shadow-lg',
   },
   warning: {
-    bg: 'bg-[var(--bg-elevated)]',
-    text: 'text-[var(--warning)]',
-    border: 'border-[var(--warning)]/20',
+    bg: 'bg-white',
+    text: 'text-amber-600',
+    border: 'border-amber-200 shadow-lg',
   },
   info: {
-    bg: 'bg-[var(--bg-elevated)]',
-    text: 'text-[var(--info)]',
-    border: 'border-[var(--info)]/20',
+    bg: 'bg-white',
+    text: 'text-[#1D6FF2]',
+    border: 'border-blue-200 shadow-lg',
   },
 };
 

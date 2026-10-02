@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -94,6 +95,43 @@ export class AuthService {
     const refreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
 
     // Save refresh token
+    await this.prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: refreshToken,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    };
+  }
+
+  async guestLogin() {
+    const email = `guest-${randomUUID()}@guest.laptopmitra.invalid`;
+    const password = await bcrypt.hash(randomBytes(32).toString('hex'), 12);
+    const user = await this.prisma.user.create({
+      data: {
+        name: 'Guest',
+        email,
+        password,
+        role: 'USER',
+        referralCode: this.randomService.generateReferralCode(),
+      },
+    });
+
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+    const refreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
+
     await this.prisma.refreshToken.create({
       data: {
         userId: user.id,

@@ -14,22 +14,57 @@ export default {
         background: "var(--background)",
         foreground: "var(--foreground)",
 
-        /* ── Semantic palette ── */
-        primary: "#00E5A0",
-        "primary-dim": "#00C48C",
-        secondary: "#64748B",
-        success: "#00E5A0",
-        danger: "#F87171",
-        warning: "#FBBF24",
-        info: "#38BDF8",
-
-        /* ── Custom navy scale ── */
-        navy: {
-          900: "#1A2332",
-          950: "#0B1120",
+        /* ── LaptopMitra Primary Palette ── */
+        "lm-blue": {
+          DEFAULT: "#1D6FF2",
+          hover: "#1558C0",
+          light: "#EBF2FF",
+          50: "#F0F5FF",
+          100: "#E1ECFE",
+          200: "#C2D9FD",
+          500: "#1D6FF2",
+          600: "#1558C0",
+          700: "#0E3E8C",
+        },
+        "lm-navy": {
+          DEFAULT: "#0B1F4B",
+          500: "#1C4294",
+          600: "#132E6B",
+          700: "#0F265C",
+          800: "#0B1F4B",
+          900: "#071433",
+          950: "#040B1D",
+        },
+        "lm-page": "#F5F7FA",
+        "lm-card": "#FFFFFF",
+        "lm-border": "#E4E9F2",
+        "lm-green": {
+          DEFAULT: "#16A34A",
+          stock: "#16A34A",
+          bg: "#DCFCE7",
+        },
+        "lm-orange": {
+          DEFAULT: "#F97316",
+          badge: "#F97316",
+          bg: "#FFF7ED",
         },
 
-        /* ── Custom mint scale ── */
+        /* ── Semantic palette ── */
+        primary: "#1D6FF2",
+        "primary-dim": "#1558C0",
+        secondary: "#64748B",
+        success: "#16A34A",
+        danger: "#EF4444",
+        warning: "#F59E0B",
+        info: "#3B82F6",
+
+        /* ── Custom navy scale (backward compat) ── */
+        navy: {
+          900: "#0B1F4B",
+          950: "#071433",
+        },
+
+        /* ── Custom mint scale (backward compat) ── */
         mint: {
           400: "#34D399",
           500: "#00E5A0",
@@ -38,9 +73,10 @@ export default {
       },
 
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "monospace"],
-        display: ["var(--font-space-grotesk)", "var(--font-geist-sans)", "system-ui", "sans-serif"],
+        sans: ["var(--font-inter)", "system-ui", "-apple-system", "sans-serif"],
+        display: ["var(--font-inter)", "system-ui", "sans-serif"],
+        heading: ["var(--font-inter)", "system-ui", "sans-serif"],
+        mono: ["ui-monospace", "monospace"],
       },
 
       borderRadius: {

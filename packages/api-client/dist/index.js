@@ -55,6 +55,11 @@ class LaptopMitraApiClient {
             body: JSON.stringify({ email, password: pass }),
         });
     }
+    async guestLogin() {
+        return this.request('/auth/guest', {
+            method: 'POST',
+        });
+    }
     async register(data) {
         return this.request('/auth/register', {
             method: 'POST',

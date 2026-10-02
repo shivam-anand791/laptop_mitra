@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Cart, CartItem } from '@laptopmitra/types';
 import { useAuth } from '../providers/AuthProvider';
 
 // Auth hooks
@@ -9,6 +10,17 @@ export function useLogin() {
       const { API_BASE_URL } = await import('../config');
       const client = new LaptopMitraApiClient({ baseUrl: API_BASE_URL });
       return client.login(data.email, data.password);
+    },
+  });
+}
+
+export function useGuestLogin() {
+  return useMutation({
+    mutationFn: async () => {
+      const { LaptopMitraApiClient } = await import('@laptopmitra/api-client');
+      const { API_BASE_URL } = await import('../config');
+      const client = new LaptopMitraApiClient({ baseUrl: API_BASE_URL });
+      return client.guestLogin();
     },
   });
 }
@@ -45,9 +57,28 @@ export function useProduct(id: string) {
 // Cart hooks
 export function useCart() {
   const { getClient, isAuthenticated } = useAuth();
-  return useQuery({
+  return useQuery<Cart & { total: number; itemCount: number }>({
     queryKey: ['cart'],
-    queryFn: () => getClient().getCart(),
+    queryFn: async () => {
+      const res = await getClient().getCart();
+      const cartObj = (res as any)?.cart ?? res;
+      const items: CartItem[] = cartObj?.items ?? [];
+      const total =
+        (res as any)?.total ??
+        items.reduce((sum: number, item: CartItem) => {
+          const price = typeof item.priceAtAdd === 'string' ? parseFloat(item.priceAtAdd) : item.priceAtAdd;
+          return sum + (price || 0) * (item.quantity || 1);
+        }, 0);
+      const itemCount =
+        (res as any)?.itemCount ?? items.reduce((sum: number, item: CartItem) => sum + (item.quantity || 1), 0);
+
+      return {
+        ...cartObj,
+        items,
+        total,
+        itemCount,
+      };
+    },
     enabled: isAuthenticated,
   });
 }
@@ -86,12 +117,23 @@ export function useUpdateCartItemQuantity() {
       await queryClient.cancelQueries({ queryKey: ['cart'] });
       const previous = queryClient.getQueryData(['cart']);
       queryClient.setQueryData(['cart'], (old: any) => {
-        if (!old?.items) return old;
+        if (!old) return old;
+        const currentItems = old.items ?? old.cart?.items ?? [];
+        const updatedItems = currentItems.map((item: any) =>
+          item.id === itemId ? { ...item, quantity } : item,
+        );
+        const newTotal = updatedItems.reduce((sum: number, item: any) => {
+          const price = typeof item.priceAtAdd === 'string' ? parseFloat(item.priceAtAdd) : item.priceAtAdd;
+          return sum + (price || 0) * (item.quantity || 1);
+        }, 0);
+        const newItemCount = updatedItems.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0);
+
         return {
           ...old,
-          items: old.items.map((item: any) =>
-            item.id === itemId ? { ...item, quantity } : item,
-          ),
+          items: updatedItems,
+          total: newTotal,
+          itemCount: newItemCount,
+          ...(old.cart ? { cart: { ...old.cart, items: updatedItems } } : {}),
         };
       });
       return { previous };

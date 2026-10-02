@@ -26,17 +26,17 @@ export default function PriceDisplay({
 
   const sizeConfig = {
     sm: {
-      price: 'text-base',
+      price: 'text-base sm:text-lg',
       compare: 'text-xs',
-      savings: 'text-[10px]',
+      savings: 'text-[11px]',
     },
     md: {
-      price: 'text-xl',
+      price: 'text-xl sm:text-2xl',
       compare: 'text-sm',
       savings: 'text-xs',
     },
     lg: {
-      price: 'text-3xl',
+      price: 'text-2xl sm:text-3xl font-extrabold',
       compare: 'text-base',
       savings: 'text-sm',
     },
@@ -47,27 +47,28 @@ export default function PriceDisplay({
   return (
     <div className={['flex flex-col gap-0.5', className].join(' ')}>
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className={`font-bold text-[var(--text-primary)] font-mono ${s.price}`}>
+        <span className={`font-black text-[#0B1F4B] font-sans tracking-tight ${s.price}`}>
           {formatINR(price)}
         </span>
         {compareAtPrice && compareAtPrice > price && (
-          <span className={`line-through text-[var(--text-muted)] font-mono ${s.compare}`}>
+          <span className={`line-through text-slate-400 font-medium ${s.compare}`}>
             {formatINR(compareAtPrice)}
           </span>
         )}
       </div>
 
       {savings && (
-        <p className={`text-[var(--accent)] font-semibold ${s.savings}`}>
+        <p className={`text-emerald-700 font-semibold ${s.savings}`}>
           Save {formatINR(savings)} ({discountPercent}% off)
         </p>
       )}
 
       {showEmit && (
-        <p className={`text-[var(--text-muted)] font-mono ${s.savings}`}>
-          Or {formatINR(Math.round(price / 12))}/month EMI
+        <p className={`text-slate-500 font-medium ${s.savings}`}>
+          Or {formatINR(Math.round(price / 12))}/mo No-Cost EMI
         </p>
       )}
     </div>
   );
 }
+

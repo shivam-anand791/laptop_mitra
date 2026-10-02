@@ -2,7 +2,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityInd
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useLogin } from '../../hooks/useApi';
+import { useGuestLogin, useLogin } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { useNavigation } from '@react-navigation/native';
 import { AuthNavigationProp } from '../../navigation/types';
@@ -18,6 +18,8 @@ export default function LoginScreen() {
   const navigation = useNavigation<AuthNavigationProp>();
   const { login: authLogin } = useAuth();
   const { mutate: apiLogin, isPending, isError, error } = useLogin();
+  const { mutateAsync: apiGuestLogin, isPending: isGuestPending } = useGuestLogin();
+  const isBusy = isPending || isGuestPending;
 
   const {
     control,
@@ -45,6 +47,15 @@ export default function LoginScreen() {
 
   const goToRegister = () => navigation.navigate('Register');
   const goToForgotPassword = () => navigation.navigate('ForgotPassword');
+
+  const continueAsGuest = async () => {
+    try {
+      const response = await apiGuestLogin();
+      await authLogin(response.accessToken, response.refreshToken, response.user);
+    } catch (err) {
+      Alert.alert('Guest Login Failed', err instanceof Error ? err.message : 'Please try again.');
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -114,15 +125,34 @@ export default function LoginScreen() {
           )}
 
           <TouchableOpacity
-            style={[styles.button, isPending && styles.buttonDisabled]}
+            style={[styles.button, isBusy && styles.buttonDisabled]}
             onPress={handleSubmit(onSubmit)}
-            disabled={isPending}
+            disabled={isBusy}
             activeOpacity={0.8}
           >
             {isPending ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <Text style={styles.buttonText}>Login</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.guestButton, isBusy && styles.buttonDisabled]}
+            onPress={continueAsGuest}
+            disabled={isBusy}
+            activeOpacity={0.8}
+          >
+            {isGuestPending ? (
+              <ActivityIndicator color="#2563eb" size="small" />
+            ) : (
+              <Text style={styles.guestButtonText}>Continue as Guest</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -228,6 +258,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e2e8f0',
+  },
+  dividerText: {
+    color: '#94a3b8',
+    fontSize: 13,
+  },
+  guestButton: {
+    height: 52,
+    borderWidth: 1,
+    borderColor: '#2563eb',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  guestButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2563eb',
   },
   footer: {
     flexDirection: 'row',

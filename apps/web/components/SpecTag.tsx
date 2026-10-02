@@ -8,35 +8,41 @@ interface SpecTagProps {
   className?: string;
 }
 
-const variantStyles: Record<SpecType, { bg: string; text: string }> = {
+const variantStyles: Record<SpecType, { bg: string; text: string; border: string }> = {
   ram: {
-    bg: 'rgba(14, 165, 233, 0.1)',
-    text: '#38BDF8',
+    bg: '#F0F5FF',
+    text: '#1D6FF2',
+    border: '#C2D9FD',
   },
   storage: {
-    bg: 'rgba(168, 85, 247, 0.1)',
-    text: '#C084FC',
+    bg: '#FAF5FF',
+    text: '#9333EA',
+    border: '#E9D5FF',
   },
   processor: {
-    bg: 'rgba(6, 182, 212, 0.1)',
-    text: '#22D3EE',
+    bg: '#F0FDFA',
+    text: '#0D9488',
+    border: '#99F6E4',
   },
   display: {
-    bg: 'rgba(251, 191, 36, 0.1)',
-    text: '#FBBF24',
+    bg: '#FFFBEB',
+    text: '#B45309',
+    border: '#FDE68A',
   },
   gpu: {
-    bg: 'rgba(251, 113, 133, 0.1)',
-    text: '#FB7185',
+    bg: '#FFF1F2',
+    text: '#E11D48',
+    border: '#FECDD3',
   },
   default: {
-    bg: 'var(--bg-elevated)',
-    text: 'var(--text-secondary)',
+    bg: '#F1F5F9',
+    text: '#475569',
+    border: '#E2E8F0',
   },
 };
 
 export default function SpecTag({ variant = 'default', value, className = '' }: SpecTagProps) {
-  const style = variantStyles[variant];
+  const style = variantStyles[variant] || variantStyles.default;
 
   // Shorten common values for compact display
   const displayValue = value
@@ -48,13 +54,14 @@ export default function SpecTag({ variant = 'default', value, className = '' }: 
   return (
     <span
       className={[
-        'inline-flex items-center px-1.5 py-0.5 rounded-[var(--radius-sm)]',
-        'text-[10px] font-medium leading-tight whitespace-nowrap',
+        'inline-flex items-center px-1.5 py-0.5 rounded-md border',
+        'text-[10px] font-semibold leading-tight whitespace-nowrap',
         className,
       ].join(' ')}
-      style={{ background: style.bg, color: style.text }}
+      style={{ background: style.bg, color: style.text, borderColor: style.border }}
     >
       {displayValue || value}
     </span>
   );
 }
+

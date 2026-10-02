@@ -14,10 +14,18 @@
  * Never commit live API URLs or secrets to source control.
  */
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 const extra = (Constants.expoConfig?.extra ?? (Constants as any).manifest?.extra ?? {}) as Record<string, string | undefined>;
+const legacyManifest = Constants.manifest as unknown as { hostUri?: string } | null;
+const hostUri = Constants.expoConfig?.hostUri ?? legacyManifest?.hostUri;
+const developmentHost = hostUri ? new URL(`http://${hostUri}`).hostname : null;
+const apiHost = developmentHost === 'localhost' || developmentHost === '127.0.0.1'
+  ? Platform.OS === 'android' ? '10.0.2.2' : 'localhost'
+  : developmentHost ?? (Platform.OS === 'android' ? '10.0.2.2' : 'localhost');
+const apiPort = extra.API_PORT ?? '3001';
 
 export const API_BASE_URL: string =
   process.env.EXPO_PUBLIC_API_URL ??
   extra.API_URL ??
-  'http://localhost:3000';
+  `http://${apiHost}:${apiPort}`;

@@ -1,14 +1,27 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useWishlist, useRemoveWishlistItem, useClearWishlist, useAddToCart } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { WishlistItem } from '@laptopmitra/types';
 import { MainStackNavigationProp } from '../../navigation/types';
+import Button from '../../components/ui/Button';
+import Badge from '../../components/ui/Badge';
+import { colors, radius, shadows, spacing, typography } from '../../theme/tokens';
 
 export default function WishlistScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
+  const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
   const { data: wishlist, isLoading } = useWishlist();
   const removeItem = useRemoveWishlistItem();
@@ -17,7 +30,7 @@ export default function WishlistScreen() {
 
   const formatPrice = (price: number | string) => {
     const num = typeof price === 'string' ? parseFloat(price) : price;
-    return `₹${num.toLocaleString('en-IN')}`;
+    return `₹${Math.round(num).toLocaleString('en-IN')}`;
   };
 
   const handleRemoveItem = (item: WishlistItem) => {
@@ -66,17 +79,28 @@ export default function WishlistScreen() {
 
   if (!isAuthenticated) {
     return (
-      <View style={styles.center}>
-        <Ionicons name="heart-outline" size={64} color="#cbd5e1" />
-        <Text style={styles.emptyTitle}>Login to view your wishlist</Text>
+      <View style={[styles.center, { paddingTop: insets.top }]}>
+        <View style={styles.emptyIconCircle}>
+          <Ionicons name="heart-outline" size={40} color={colors.primary} />
+        </View>
+        <Text style={styles.emptyTitle}>Login to View Your Wishlist</Text>
+        <Text style={styles.emptySubtitle}>Save and track refurbished laptops you love.</Text>
+        <Button
+          title="Login / Register"
+          onPress={() => navigation.navigate('MainTabs')}
+          variant="primary"
+          size="md"
+          style={{ marginTop: spacing.md }}
+        />
       </View>
     );
   }
 
   if (isLoading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#2563eb" />
+      <View style={[styles.center, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading wishlist...</Text>
       </View>
     );
   }
@@ -85,13 +109,21 @@ export default function WishlistScreen() {
 
   if (items.length === 0) {
     return (
-      <View style={styles.center}>
-        <Ionicons name="heart-outline" size={64} color="#cbd5e1" />
-        <Text style={styles.emptyTitle}>Your wishlist is empty</Text>
-        <Text style={styles.emptySubtitle}>Save items you love for later</Text>
-        <TouchableOpacity style={styles.browseButton} onPress={() => navigation.navigate('MainTabs')}>
-          <Text style={styles.browseButtonText}>Browse Store</Text>
-        </TouchableOpacity>
+      <View style={[styles.center, { paddingTop: insets.top }]}>
+        <View style={styles.emptyIconCircle}>
+          <Ionicons name="heart-outline" size={44} color={colors.primary} />
+        </View>
+        <Text style={styles.emptyTitle}>Your Wishlist is Empty</Text>
+        <Text style={styles.emptySubtitle}>
+          Save laptops you like and get notified of price drops.
+        </Text>
+        <Button
+          title="Browse Store"
+          onPress={() => navigation.navigate('MainTabs')}
+          variant="primary"
+          size="md"
+          style={{ marginTop: spacing.md }}
+        />
       </View>
     );
   }
@@ -99,57 +131,75 @@ export default function WishlistScreen() {
   const renderItem = ({ item }: { item: WishlistItem }) => {
     const product = item.product;
     const primaryImage = product?.images?.find((img) => img.isPrimary) ?? product?.images?.[0];
+    const meta = product?.metadata || {};
+    const specs = [meta.processor, meta.ram, meta.storage].filter(Boolean).join(' • ');
 
     return (
-      <View style={styles.wishlistItem}>
+      <View style={styles.wishlistCard}>
         {/* Image */}
         <TouchableOpacity
           style={styles.itemImage}
           onPress={() => navigation.navigate('ProductDetail', { productId: item.productId })}
+          activeOpacity={0.8}
         >
           {primaryImage ? (
             <Image
               source={{ uri: primaryImage.url }}
               style={styles.image}
-              contentFit="cover"
+              contentFit="contain"
               transition={200}
             />
           ) : (
             <View style={styles.imagePlaceholder}>
-              <Ionicons name="image-outline" size={24} color="#cbd5e1" />
+              <Ionicons name="laptop-outline" size={28} color={colors.textMuted} />
             </View>
           )}
         </TouchableOpacity>
 
         {/* Info */}
         <View style={styles.itemInfo}>
-          <TouchableOpacity onPress={() => navigation.navigate('ProductDetail', { productId: item.productId })}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('ProductDetail', { productId: item.productId })}
+            activeOpacity={0.8}
+          >
+            <View style={styles.badgeRow}>
+              <Badge variant="refurb" label="REFURB" />
+              {product?.stock !== undefined && product.stock > 0 && (
+                <Badge variant="dispatch" label="In Stock" />
+              )}
+            </View>
             <Text style={styles.itemName} numberOfLines={2}>
-              {product?.name ?? 'Unknown Product'}
+              {product?.name ?? 'Laptop Item'}
             </Text>
           </TouchableOpacity>
+
+          {specs ? (
+            <Text style={styles.itemSpecs} numberOfLines={1}>
+              {specs}
+            </Text>
+          ) : null}
+
           {product?.price != null && (
             <Text style={styles.itemPrice}>{formatPrice(product.price)}</Text>
           )}
 
           {/* Actions */}
           <View style={styles.actions}>
-            <TouchableOpacity
-              style={styles.addToCartButton}
+            <Button
+              title="Add to Cart"
               onPress={() => handleAddToCart(item)}
-              disabled={addToCart.isPending}
-            >
-              {addToCart.isPending ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.addToCartText}>Add to Cart</Text>
-              )}
-            </TouchableOpacity>
+              variant="primary"
+              size="sm"
+              loading={addToCart.isPending}
+              icon={<Ionicons name="cart-outline" size={14} color="#FFF" />}
+              style={{ flex: 1 }}
+            />
             <TouchableOpacity
               style={styles.removeButton}
               onPress={() => handleRemoveItem(item)}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Ionicons name="trash-outline" size={18} color="#ef4444" />
+              <Ionicons name="trash-outline" size={16} color={colors.danger} />
             </TouchableOpacity>
           </View>
         </View>
@@ -158,21 +208,29 @@ export default function WishlistScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, 12) }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Wishlist ({items.length})</Text>
-        <TouchableOpacity onPress={handleClearWishlist}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.title}>My Wishlist</Text>
+          <View style={styles.countPill}>
+            <Text style={styles.countPillText}>{items.length}</Text>
+          </View>
+        </View>
+        <TouchableOpacity onPress={handleClearWishlist} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Text style={styles.clearText}>Clear All</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Wishlist items */}
+      {/* Wishlist items list */}
       <FlatList
         data={items}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[
+          styles.list,
+          { paddingBottom: Math.max(insets.bottom + 24, 36) },
+        ]}
         showsVerticalScrollIndicator={false}
       />
     </View>
@@ -182,51 +240,97 @@ export default function WishlistScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.pageBg,
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 24,
-    gap: 12,
+    backgroundColor: colors.pageBg,
+    padding: spacing.xxl,
+    gap: spacing.sm,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  emptyTitle: {
+    ...typography.h2,
+    color: colors.navy,
+  },
+  emptySubtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 19,
+    maxWidth: 280,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    paddingBottom: 8,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0f172a',
+    ...typography.h2,
+    color: colors.navy,
+  },
+  countPill: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  countPillText: {
+    color: colors.textWhite,
+    fontSize: 11,
+    fontWeight: '800',
   },
   clearText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#ef4444',
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.danger,
   },
   list: {
-    padding: 16,
-    gap: 12,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
   },
-  wishlistItem: {
+  wishlistCard: {
     flexDirection: 'row',
-    gap: 12,
-    padding: 12,
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: colors.cardBg,
+    borderRadius: radius.lg,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
+    borderColor: colors.cardBorder,
+    gap: spacing.md,
+    ...shadows.sm,
   },
   itemImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    backgroundColor: '#f8fafc',
+    width: 88,
+    height: 88,
+    borderRadius: radius.md,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.cardBorderLight,
     overflow: 'hidden',
   },
   image: {
@@ -236,74 +340,48 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     width: '100%',
     height: '100%',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   itemInfo: {
     flex: 1,
     gap: 4,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginBottom: 2,
+  },
   itemName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1e293b',
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
     lineHeight: 18,
   },
+  itemSpecs: {
+    fontSize: 10,
+    color: colors.textSecondary,
+  },
   itemPrice: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.navy,
+    marginTop: 2,
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-  },
-  addToCartButton: {
-    flex: 1,
-    height: 36,
-    borderRadius: 8,
-    backgroundColor: '#2563eb',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addToCartText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#fff',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
   },
   removeButton: {
     width: 36,
     height: 36,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#fecaca',
+    borderColor: colors.dangerBorder,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fef2f2',
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#64748b',
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#94a3b8',
-    textAlign: 'center',
-  },
-  browseButton: {
-    marginTop: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-  },
-  browseButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#fff',
+    backgroundColor: colors.dangerLight,
   },
 });

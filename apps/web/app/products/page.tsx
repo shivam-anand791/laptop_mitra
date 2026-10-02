@@ -9,6 +9,7 @@ import FilterSidebar, {
   getProductBrand,
   getProductProcessorGroup,
   getProductRamGroup,
+  getProductStorageGroup,
   getProductGrade,
 } from '../../components/FilterSidebar';
 import { ProductCardSkeleton } from '../../components/ui/Skeleton';
@@ -22,6 +23,8 @@ function ProductsContent() {
 
   const initialCategory = searchParams.get('category') || 'all';
   const initialSearch = searchParams.get('search') || '';
+  const initialType = (searchParams.get('type') as 'all' | 'buy' | 'lease') || 'all';
+  const initialMaxPrice = searchParams.get('maxPrice');
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -32,11 +35,13 @@ function ProductsContent() {
   const [filters, setFilters] = useState<FilterState>({
     category: initialCategory,
     search: initialSearch,
+    listingType: initialType,
     brands: [],
     processors: [],
     rams: [],
+    storages: [],
     grades: [],
-    priceRange: 'all',
+    priceRange: initialMaxPrice === '25000' ? 'under-25k' : 'all',
     stockOnly: false,
   });
 
@@ -62,10 +67,15 @@ function ProductsContent() {
   useEffect(() => {
     const cat = searchParams.get('category');
     const q = searchParams.get('search');
+    const type = searchParams.get('type') as 'all' | 'buy' | 'lease' | null;
+    const maxP = searchParams.get('maxPrice');
+
     setFilters((prev) => ({
       ...prev,
       category: cat || prev.category,
       search: q !== null ? q : prev.search,
+      listingType: type || prev.listingType,
+      priceRange: maxP === '25000' ? 'under-25k' : prev.priceRange,
     }));
   }, [searchParams]);
 
@@ -105,6 +115,12 @@ function ProductsContent() {
           if (!filters.rams.includes(ram)) return false;
         }
 
+        // Storage Filter
+        if (filters.storages.length > 0) {
+          const st = getProductStorageGroup(p);
+          if (!filters.storages.includes(st)) return false;
+        }
+
         // Condition Grade Filter
         if (filters.grades.length > 0) {
           const grade = getProductGrade(p);
@@ -113,10 +129,10 @@ function ProductsContent() {
 
         // Price Bracket Filter
         const price = Number(p.price);
-        if (filters.priceRange === 'under-40k' && price > 40000) return false;
-        if (filters.priceRange === '40k-70k' && (price < 40000 || price > 70000)) return false;
-        if (filters.priceRange === '70k-100k' && (price < 70000 || price > 100000)) return false;
-        if (filters.priceRange === 'above-100k' && price < 100000) return false;
+        if (filters.priceRange === 'under-25k' && price > 25000) return false;
+        if (filters.priceRange === '25k-50k' && (price < 25000 || price > 50000)) return false;
+        if (filters.priceRange === '50k-75k' && (price < 50000 || price > 75000)) return false;
+        if (filters.priceRange === 'above-75k' && price < 75000) return false;
 
         // Stock Filter
         if (filters.stockOnly && p.stock <= 0) return false;
@@ -127,6 +143,11 @@ function ProductsContent() {
         if (sortBy === 'price-low') return Number(a.price) - Number(b.price);
         if (sortBy === 'price-high') return Number(b.price) - Number(a.price);
         if (sortBy === 'newest') return (b.isNewArrival ? 1 : 0) - (a.isNewArrival ? 1 : 0);
+        if (sortBy === 'discount') {
+          const discA = a.compareAtPrice ? (Number(a.compareAtPrice) - Number(a.price)) / Number(a.compareAtPrice) : 0;
+          const discB = b.compareAtPrice ? (Number(b.compareAtPrice) - Number(b.price)) / Number(b.compareAtPrice) : 0;
+          return discB - discA;
+        }
         return (b.isFeatured ? 1 : 0) - (a.isFeatured ? 1 : 0);
       });
   }, [products, filters, sortBy]);
@@ -135,26 +156,47 @@ function ProductsContent() {
     setFilters({
       category: 'all',
       search: '',
+      listingType: 'all',
       brands: [],
       processors: [],
       rams: [],
+      storages: [],
       grades: [],
       priceRange: 'all',
       stockOnly: false,
     });
     setSortBy('featured');
-    // Clear URL query param if present
-    if (searchParams.get('category') || searchParams.get('search')) {
+    if (searchParams.get('category') || searchParams.get('search') || searchParams.get('type') || searchParams.get('maxPrice')) {
       router.push('/products');
+    }
+  };
+
+  const removeSingleFilter = (key: keyof FilterState, value?: string) => {
+    if (Array.isArray(filters[key])) {
+      const arr = (filters[key] as string[]).filter((x) => x !== value);
+      setFilters((prev) => ({ ...prev, [key]: arr }));
+    } else if (typeof filters[key] === 'boolean') {
+      setFilters((prev) => ({ ...prev, [key]: false }));
+    } else if (key === 'category') {
+      setFilters((prev) => ({ ...prev, category: 'all' }));
+      router.push('/products');
+    } else if (key === 'priceRange') {
+      setFilters((prev) => ({ ...prev, priceRange: 'all' }));
+    } else if (key === 'search') {
+      setFilters((prev) => ({ ...prev, search: '' }));
+    } else if (key === 'listingType') {
+      setFilters((prev) => ({ ...prev, listingType: 'all' }));
     }
   };
 
   const activeFilterCount = [
     filters.category !== 'all',
     filters.search.trim().length > 0,
+    filters.listingType !== 'all',
     filters.brands.length > 0,
     filters.processors.length > 0,
     filters.rams.length > 0,
+    filters.storages.length > 0,
     filters.grades.length > 0,
     filters.priceRange !== 'all',
     filters.stockOnly,
@@ -162,67 +204,108 @@ function ProductsContent() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Breadcrumb & Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] mb-2">
-          <span>Home</span>
-          <span>/</span>
-          <span className="text-[var(--text-primary)] font-medium">Refurbished Laptops</span>
+      {/* Breadcrumbs */}
+      <nav aria-label="Breadcrumb" className="mb-4">
+        <ol className="flex items-center gap-2 text-xs text-slate-500">
+          <li>
+            <a href="/" className="hover:text-[#1D6FF2] transition-colors">Home</a>
+          </li>
+          <li>/</li>
+          <li className="text-[#0B1F4B] font-bold">Certified Refurbished Laptops</li>
           {filters.category !== 'all' && (
             <>
-              <span>/</span>
-              <span className="text-[var(--accent)] font-semibold">
+              <li>/</li>
+              <li className="text-[#1D6FF2] font-semibold">
                 {categories.find((c) => c.id === filters.category || c.slug === filters.category)?.name || filters.category}
-              </span>
+              </li>
             </>
           )}
-        </div>
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
+        </ol>
+      </nav>
+
+      {/* Page Header */}
+      <div className="mb-8">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-[var(--text-primary)] font-display tracking-tight">
-              Browse Certified Laptops
+            <h1 className="text-2xl sm:text-3.5xl font-black text-[#0B1F4B] tracking-tight">
+              Certified Pre-Owned &amp; Refurbished Laptops
             </h1>
-            <p className="text-sm text-[var(--text-secondary)] mt-1">
-              Showing {filteredProducts.length} verified laptops tested across our 32-point checklist.
+            <p className="text-xs sm:text-sm text-slate-600 mt-1">
+              Showing <strong className="text-[#0B1F4B] font-bold">{filteredProducts.length}</strong> certified laptops tested across our 32-point engineering inspection checklist.
             </p>
           </div>
-          {/* Active filter pills summary */}
+
+          {/* Active Filter Chips Summary */}
           {activeFilterCount > 0 && (
-            <div className="flex items-center gap-2 flex-wrap text-xs">
-              <span className="text-[var(--text-muted)]">Active:</span>
+            <div className="flex items-center gap-1.5 flex-wrap text-xs">
+              <span className="text-slate-400 font-medium">Active:</span>
+
               {filters.category !== 'all' && (
-                <span className="px-2 py-0.5 rounded-full bg-[var(--accent-bg)] text-[var(--accent)] border border-[var(--accent)]/30 font-medium">
-                  {categories.find((c) => c.id === filters.category)?.name || filters.category}
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-[#1D6FF2] border border-blue-200 text-xs font-semibold">
+                  {categories.find((c) => c.id === filters.category || c.slug === filters.category)?.name || filters.category}
+                  <button onClick={() => removeSingleFilter('category')} className="hover:text-blue-900 cursor-pointer">✕</button>
                 </span>
               )}
+
+              {filters.search && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-800 border border-slate-200 text-xs font-semibold">
+                  &ldquo;{filters.search}&rdquo;
+                  <button onClick={() => removeSingleFilter('search')} className="hover:text-rose-600 cursor-pointer">✕</button>
+                </span>
+              )}
+
               {filters.brands.map((b) => (
-                <span key={b} className="px-2 py-0.5 rounded-full bg-[var(--bg-elevated)] text-[var(--text-primary)] border border-[var(--border-default)]">
+                <span key={b} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
                   {b}
+                  <button onClick={() => removeSingleFilter('brands', b)} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
                 </span>
               ))}
+
               {filters.processors.map((p) => (
-                <span key={p} className="px-2 py-0.5 rounded-full bg-[var(--bg-elevated)] text-[var(--text-primary)] border border-[var(--border-default)]">
+                <span key={p} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
                   {p}
+                  <button onClick={() => removeSingleFilter('processors', p)} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
                 </span>
               ))}
+
               {filters.rams.map((r) => (
-                <span key={r} className="px-2 py-0.5 rounded-full bg-[var(--bg-elevated)] text-[var(--text-primary)] border border-[var(--border-default)]">
+                <span key={r} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
                   {r} RAM
+                  <button onClick={() => removeSingleFilter('rams', r)} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
                 </span>
               ))}
+
+              {filters.storages.map((st) => (
+                <span key={st} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
+                  {st}
+                  <button onClick={() => removeSingleFilter('storages', st)} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
+                </span>
+              ))}
+
               {filters.grades.map((g) => (
-                <span key={g} className="px-2 py-0.5 rounded-full bg-[var(--bg-elevated)] text-[var(--text-primary)] border border-[var(--border-default)]">
+                <span key={g} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold">
                   Grade {g}
+                  <button onClick={() => removeSingleFilter('grades', g)} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
                 </span>
               ))}
-              {filters.stockOnly && (
-                <span className="px-2 py-0.5 rounded-full bg-[var(--accent-bg)] text-[var(--accent)] border border-[var(--accent)]/30">
-                  In Stock
+
+              {filters.priceRange !== 'all' && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold">
+                  {filters.priceRange}
+                  <button onClick={() => removeSingleFilter('priceRange')} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
                 </span>
               )}
+
+              {filters.stockOnly && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                  Ready for Dispatch
+                  <button onClick={() => removeSingleFilter('stockOnly')} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
+                </span>
+              )}
+
               <button
                 onClick={resetFilters}
-                className="text-[var(--accent)] hover:underline font-semibold ml-1 cursor-pointer"
+                className="text-xs font-bold text-[#1D6FF2] hover:underline ml-1 cursor-pointer"
               >
                 Clear all
               </button>
@@ -231,25 +314,25 @@ function ProductsContent() {
         </div>
       </div>
 
-      {/* Mobile filter button */}
+      {/* Mobile filter toggle button */}
       <div className="lg:hidden mb-4">
         <button
           onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
-          className="w-full py-2.5 px-4 rounded-[var(--radius-lg)] bg-[var(--bg-surface)] border border-[var(--border-default)] text-[var(--text-primary)] font-medium text-xs flex items-center justify-between shadow-sm cursor-pointer"
+          className="w-full py-3 px-4 rounded-xl bg-white border border-[#E4E9F2] text-[#0B1F4B] font-bold text-xs flex items-center justify-between shadow-sm cursor-pointer"
         >
           <span className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-[var(--accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-4 h-4 text-[#1D6FF2]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
             Filter Laptops
             {activeFilterCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-[var(--accent)] text-[var(--bg-deep)] text-[10px] font-bold font-mono">
+              <span className="px-2 py-0.5 rounded-full bg-[#1D6FF2] text-white text-[10px] font-bold font-mono">
                 {activeFilterCount}
               </span>
             )}
           </span>
           <svg
-            className={`w-4 h-4 text-[var(--text-muted)] transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-slate-400 transition-transform ${mobileFiltersOpen ? 'rotate-180' : ''}`}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -260,9 +343,9 @@ function ProductsContent() {
         </button>
       </div>
 
-      {/* Mobile Collapsible Filter Panel */}
+      {/* Mobile Filter Drawer */}
       {mobileFiltersOpen && (
-        <div className="lg:hidden mb-6 p-5 rounded-[var(--radius-xl)] bg-[var(--bg-surface)] border border-[var(--border-default)] shadow-xl">
+        <div className="lg:hidden mb-6 p-5 rounded-2xl bg-white border border-[#E4E9F2] shadow-xl">
           <FilterSidebar
             products={products}
             categories={categories}
@@ -274,10 +357,11 @@ function ProductsContent() {
         </div>
       )}
 
+      {/* Main Grid: Sidebar + Product Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Desktop Sticky Sidebar Filter Panel */}
+        {/* Desktop Sticky Sidebar */}
         <aside className="hidden lg:block lg:col-span-1">
-          <div className="sticky top-24 p-5 rounded-[var(--radius-xl)] bg-[var(--bg-surface)] border border-[var(--border-default)] shadow-sm">
+          <div className="sticky top-28 p-5 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm">
             <FilterSidebar
               products={products}
               categories={categories}
@@ -288,24 +372,25 @@ function ProductsContent() {
           </div>
         </aside>
 
-        {/* Main Products Content */}
+        {/* Main Product Area */}
         <div className="lg:col-span-3 space-y-6">
-          {/* Sort bar */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-3.5 rounded-[var(--radius-lg)] bg-[var(--bg-surface)] border border-[var(--border-default)] shadow-sm">
-            <div className="text-xs text-[var(--text-muted)]">
-              Showing <strong className="text-[var(--text-primary)] font-mono">{filteredProducts.length}</strong> laptops
+          {/* Top Sort & Filter Bar */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm">
+            <div className="text-xs text-slate-500 font-medium">
+              Showing <strong className="text-[#0B1F4B] font-bold">{filteredProducts.length}</strong> available laptops
             </div>
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-[var(--text-muted)]">Sort by:</span>
+              <span className="text-slate-500 font-medium">Sort by:</span>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="px-3 py-1.5 rounded-[var(--radius-md)] bg-[var(--bg-elevated)] border border-[var(--border-default)] text-[var(--text-primary)] font-medium text-xs focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+                className="px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0B1F4B] font-semibold text-xs focus:outline-none focus:border-[#1D6FF2] focus:bg-white cursor-pointer shadow-sm"
               >
                 <option value="featured">Featured First</option>
                 <option value="price-low">Price: Low to High</option>
                 <option value="price-high">Price: High to Low</option>
-                <option value="newest">New Arrivals</option>
+                <option value="newest">Newest Arrivals</option>
+                <option value="discount">Biggest Savings %</option>
               </select>
             </div>
           </div>
@@ -339,9 +424,10 @@ function ProductsContent() {
 export default function ProductsPage() {
   return (
     <CustomerLayout>
-      <Suspense fallback={<div className="p-12 text-center text-sm text-[var(--text-muted)]">Loading laptops catalog...</div>}>
+      <Suspense fallback={<div className="p-12 text-center text-sm text-slate-500">Loading certified laptops...</div>}>
         <ProductsContent />
       </Suspense>
     </CustomerLayout>
   );
 }
+

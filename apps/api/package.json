@@ -20,6 +20,9 @@
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio"
   },
+  "prisma": {
+    "seed": "node -r ts-node/register/transpile-only prisma/seed-catalog.ts"
+  },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^12.0.0",

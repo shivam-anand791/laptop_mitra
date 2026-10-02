@@ -19,6 +19,11 @@ export declare class LaptopMitraApiClient {
         refreshToken: string;
         user: User;
     }>;
+    guestLogin(): Promise<{
+        accessToken: string;
+        refreshToken: string;
+        user: User;
+    }>;
     register(data: {
         name: string;
         email: string;

@@ -1,11 +1,25 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, Switch, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  TextInput,
+  Switch,
+  ScrollView,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { colors, radius, spacing, typography } from '../theme/tokens';
+import Button from './ui/Button';
 
 export interface FilterState {
   minPrice: string;
   maxPrice: string;
   stockOnly: boolean;
+  brand?: string | undefined;
+  ram?: string | undefined;
+  storage?: string | undefined;
 }
 
 interface FilterModalProps {
@@ -13,31 +27,58 @@ interface FilterModalProps {
   onClose: () => void;
   onApply: (filters: FilterState) => void;
   currentFilters: FilterState;
+  brandCounts?: Record<string, number>;
+  ramCounts?: Record<string, number>;
+  storageCounts?: Record<string, number>;
 }
 
 const PRESET_RANGES = [
-  { label: 'Under ₹10,000', min: '', max: '10000' },
-  { label: '₹10,000 – ₹25,000', min: '10000', max: '25000' },
-  { label: '₹25,000 – ₹50,000', min: '25000', max: '50000' },
-  { label: '₹50,000 – ₹1,00,000', min: '50000', max: '100000' },
-  { label: 'Above ₹1,00,000', min: '100000', max: '' },
+  { label: 'Under ₹20,000', min: '', max: '20000' },
+  { label: '₹20,000 – ₹35,000', min: '20000', max: '35000' },
+  { label: '₹35,000 – ₹50,000', min: '35000', max: '50000' },
+  { label: 'Above ₹50,000', min: '50000', max: '' },
 ];
 
-export default function FilterModal({ visible, onClose, onApply, currentFilters }: FilterModalProps) {
+const BRANDS = ['Dell', 'HP', 'Lenovo', 'Apple', 'Asus', 'Acer'];
+const RAM_OPTIONS = ['8GB', '16GB', '32GB', '64GB'];
+const STORAGE_OPTIONS = ['128GB SSD', '256GB SSD', '512GB SSD', '1TB SSD', '2TB SSD'];
+
+export default function FilterModal({
+  visible,
+  onClose,
+  onApply,
+  currentFilters,
+  brandCounts = {},
+  ramCounts = {},
+  storageCounts = {},
+}: FilterModalProps) {
   const [minPrice, setMinPrice] = useState(currentFilters.minPrice);
   const [maxPrice, setMaxPrice] = useState(currentFilters.maxPrice);
   const [stockOnly, setStockOnly] = useState(currentFilters.stockOnly);
+  const [brand, setBrand] = useState(currentFilters.brand || '');
+  const [ram, setRam] = useState(currentFilters.ram || '');
+  const [storage, setStorage] = useState(currentFilters.storage || '');
 
   useEffect(() => {
     if (visible) {
       setMinPrice(currentFilters.minPrice);
       setMaxPrice(currentFilters.maxPrice);
       setStockOnly(currentFilters.stockOnly);
+      setBrand(currentFilters.brand || '');
+      setRam(currentFilters.ram || '');
+      setStorage(currentFilters.storage || '');
     }
   }, [visible, currentFilters]);
 
   const handleApply = () => {
-    onApply({ minPrice, maxPrice, stockOnly });
+    onApply({
+      minPrice,
+      maxPrice,
+      stockOnly,
+      brand: brand || undefined,
+      ram: ram || undefined,
+      storage: storage || undefined,
+    });
     onClose();
   };
 
@@ -45,31 +86,63 @@ export default function FilterModal({ visible, onClose, onApply, currentFilters 
     setMinPrice('');
     setMaxPrice('');
     setStockOnly(false);
+    setBrand('');
+    setRam('');
+    setStorage('');
   };
 
   const handlePreset = (preset: { min: string; max: string }) => {
-    setMinPrice(preset.min);
-    setMaxPrice(preset.max);
+    if (minPrice === preset.min && maxPrice === preset.max) {
+      setMinPrice('');
+      setMaxPrice('');
+    } else {
+      setMinPrice(preset.min);
+      setMaxPrice(preset.max);
+    }
   };
 
+  const activeFilterCount =
+    (minPrice ? 1 : 0) +
+    (maxPrice ? 1 : 0) +
+    (stockOnly ? 1 : 0) +
+    (brand ? 1 : 0) +
+    (ram ? 1 : 0) +
+    (storage ? 1 : 0);
+
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.container}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Filters</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#64748b" />
-            </TouchableOpacity>
+            <View style={styles.headerLeft}>
+              <Text style={styles.title}>Filter Products</Text>
+              {activeFilterCount > 0 && (
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>{activeFilterCount}</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.headerActions}>
+              {activeFilterCount > 0 && (
+                <TouchableOpacity onPress={handleClear} style={styles.resetButton}>
+                  <Text style={styles.resetText}>Reset All</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={onClose}
+                style={styles.closeButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
             {/* Price Range */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Price Range</Text>
-
-              {/* Preset ranges */}
               <View style={styles.presets}>
                 {PRESET_RANGES.map((preset) => {
                   const isActive = minPrice === preset.min && maxPrice === preset.max;
@@ -78,6 +151,7 @@ export default function FilterModal({ visible, onClose, onApply, currentFilters 
                       key={preset.label}
                       style={[styles.presetChip, isActive && styles.presetChipActive]}
                       onPress={() => handlePreset(preset)}
+                      activeOpacity={0.7}
                     >
                       <Text style={[styles.presetText, isActive && styles.presetTextActive]}>
                         {preset.label}
@@ -87,24 +161,26 @@ export default function FilterModal({ visible, onClose, onApply, currentFilters 
                 })}
               </View>
 
-              {/* Custom range */}
+              {/* Custom min/max inputs */}
               <View style={styles.priceRow}>
-                <View style={styles.priceInput}>
-                  <Text style={styles.priceLabel}>Min (₹)</Text>
+                <View style={styles.priceInputWrap}>
+                  <Text style={styles.priceLabel}>Min Price (₹)</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="0"
+                    placeholderTextColor={colors.textMuted}
                     keyboardType="numeric"
                     value={minPrice}
                     onChangeText={setMinPrice}
                   />
                 </View>
                 <Text style={styles.priceDash}>—</Text>
-                <View style={styles.priceInput}>
-                  <Text style={styles.priceLabel}>Max (₹)</Text>
+                <View style={styles.priceInputWrap}>
+                  <Text style={styles.priceLabel}>Max Price (₹)</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Any"
+                    placeholderTextColor={colors.textMuted}
                     keyboardType="numeric"
                     value={maxPrice}
                     onChangeText={setMaxPrice}
@@ -113,31 +189,114 @@ export default function FilterModal({ visible, onClose, onApply, currentFilters 
               </View>
             </View>
 
-            {/* Stock filter */}
+            {/* Brand */}
             <View style={styles.section}>
-              <View style={styles.stockRow}>
-                <View>
-                  <Text style={styles.sectionTitle}>In Stock Only</Text>
-                  <Text style={styles.stockHint}>Show only products available for purchase</Text>
-                </View>
-                <Switch
-                  value={stockOnly}
-                  onValueChange={setStockOnly}
-                  trackColor={{ false: '#e2e8f0', true: '#93c5fd' }}
-                  thumbColor={stockOnly ? '#2563eb' : '#f4f4f5'}
-                />
+              <Text style={styles.sectionTitle}>Brand</Text>
+              <View style={styles.pillsGrid}>
+                {BRANDS.map((b) => {
+                  const isActive = brand.toLowerCase() === b.toLowerCase();
+                  const count = brandCounts[b.toLowerCase()];
+                  return (
+                    <TouchableOpacity
+                      key={b}
+                      style={[styles.pill, isActive && styles.pillActive]}
+                      onPress={() => setBrand(isActive ? '' : b)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pillText, isActive && styles.pillTextActive]}>
+                        {b}
+                      </Text>
+                      {count !== undefined && count > 0 && (
+                        <Text style={[styles.pillCount, isActive && styles.pillCountActive]}>
+                          ({count})
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
+            </View>
+
+            {/* RAM */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>RAM</Text>
+              <View style={styles.pillsGrid}>
+                {RAM_OPTIONS.map((r) => {
+                  const isActive = ram.toLowerCase() === r.toLowerCase();
+                  const count = ramCounts[r.toLowerCase()];
+                  return (
+                    <TouchableOpacity
+                      key={r}
+                      style={[styles.pill, isActive && styles.pillActive]}
+                      onPress={() => setRam(isActive ? '' : r)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pillText, isActive && styles.pillTextActive]}>
+                        {r}
+                      </Text>
+                      {count !== undefined && count > 0 && (
+                        <Text style={[styles.pillCount, isActive && styles.pillCountActive]}>
+                          ({count})
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Storage */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Storage</Text>
+              <View style={styles.pillsGrid}>
+                {STORAGE_OPTIONS.map((s) => {
+                  const isActive = storage.toLowerCase() === s.toLowerCase();
+                  const count = storageCounts[s.toLowerCase()];
+                  return (
+                    <TouchableOpacity
+                      key={s}
+                      style={[styles.pill, isActive && styles.pillActive]}
+                      onPress={() => setStorage(isActive ? '' : s)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pillText, isActive && styles.pillTextActive]}>
+                        {s}
+                      </Text>
+                      {count !== undefined && count > 0 && (
+                        <Text style={[styles.pillCount, isActive && styles.pillCountActive]}>
+                          ({count})
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* In Stock Only Switch */}
+            <View style={[styles.section, styles.stockSection]}>
+              <View style={styles.stockInfo}>
+                <Text style={styles.stockTitle}>In Stock Only</Text>
+                <Text style={styles.stockSubtitle}>Hide units currently out of inventory</Text>
+              </View>
+              <Switch
+                value={stockOnly}
+                onValueChange={setStockOnly}
+                trackColor={{ false: '#E2E8F0', true: '#93C5FD' }}
+                thumbColor={stockOnly ? colors.primary : '#FFFFFF'}
+              />
             </View>
           </ScrollView>
 
-          {/* Footer */}
+          {/* Sticky Footer */}
           <View style={styles.footer}>
-            <TouchableOpacity style={styles.clearButton} onPress={handleClear}>
-              <Text style={styles.clearText}>Clear All</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.applyButton} onPress={handleApply}>
-              <Text style={styles.applyText}>Apply Filters</Text>
-            </TouchableOpacity>
+            <Button
+              title="Apply Filters"
+              onPress={handleApply}
+              variant="primary"
+              size="lg"
+              fullWidth
+            />
           </View>
         </View>
       </View>
@@ -148,143 +307,200 @@ export default function FilterModal({ visible, onClose, onApply, currentFilters 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(11, 31, 75, 0.5)',
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
+    backgroundColor: colors.cardBg,
+    borderTopLeftRadius: radius.xxl,
+    borderTopRightRadius: radius.xxl,
+    maxHeight: '85%',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingBottom: 12,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    borderBottomColor: colors.cardBorderLight,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0f172a',
+    ...typography.h2,
+    color: colors.navy,
+  },
+  countBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  countBadgeText: {
+    color: colors.textWhite,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  resetButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  resetText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primary,
   },
   closeButton: {
-    padding: 4,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
-    padding: 20,
+    padding: spacing.xl,
   },
   section: {
-    marginBottom: 28,
+    marginBottom: spacing.xl,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 12,
+    ...typography.bodyBold,
+    color: colors.navy,
+    marginBottom: spacing.sm,
   },
   presets: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
+    gap: spacing.xs + 2,
+    marginBottom: spacing.md,
   },
   presetChip: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    backgroundColor: '#f8fafc',
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: colors.cardBorder,
   },
   presetChipActive: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#2563eb',
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
   },
   presetText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   presetTextActive: {
-    color: '#2563eb',
-    fontWeight: '600',
+    color: colors.primary,
+    fontWeight: '700',
   },
   priceRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  priceInput: {
+  priceInputWrap: {
     flex: 1,
   },
   priceLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   input: {
     height: 44,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    fontSize: 15,
-    color: '#1e293b',
-    backgroundColor: '#fff',
+    borderColor: colors.cardBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    fontSize: 14,
+    color: colors.textPrimary,
+    backgroundColor: colors.cardBg,
   },
   priceDash: {
-    fontSize: 18,
-    color: '#94a3b8',
-    marginBottom: 12,
+    fontSize: 16,
+    color: colors.textMuted,
+    marginTop: 18,
   },
-  stockRow: {
+  pillsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs + 2,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  pillActive: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+  },
+  pillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  pillTextActive: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  pillCount: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  pillCountActive: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  stockSection: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    marginBottom: spacing.xxl,
   },
-  stockHint: {
-    fontSize: 12,
-    color: '#94a3b8',
+  stockInfo: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  stockTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.navy,
+  },
+  stockSubtitle: {
+    fontSize: 11,
+    color: colors.textSecondary,
     marginTop: 2,
   },
   footer: {
-    flexDirection: 'row',
-    padding: 20,
-    paddingBottom: 32,
-    gap: 12,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
     borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-  },
-  clearButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#e2e8f0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  clearText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#64748b',
-  },
-  applyButton: {
-    flex: 1,
-    height: 48,
-    borderRadius: 10,
-    backgroundColor: '#2563eb',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  applyText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#fff',
+    borderTopColor: colors.cardBorderLight,
+    backgroundColor: colors.cardBg,
   },
 });

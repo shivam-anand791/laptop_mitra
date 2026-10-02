@@ -17,16 +17,45 @@ function getAuthToken(): string | null {
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...options.headers,
+    ...((options.headers as Record<string, string>) || {}),
   };
 
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   try {
-    const res = await fetch(url, { ...options, headers });
+    let res = await fetch(url, { ...options, headers });
+    const authEndpoints = ['/auth/login', '/auth/register', '/auth/guest', '/auth/refresh'];
+    const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('lm_refresh_token') : null;
+
+    if (res.status === 401 && refreshToken && !authEndpoints.includes(endpoint)) {
+      try {
+        const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        if (refreshResponse.ok) {
+          const refreshed = await refreshResponse.json() as { accessToken: string; refreshToken: string };
+          localStorage.setItem('lm_token', refreshed.accessToken);
+          localStorage.setItem('lm_refresh_token', refreshed.refreshToken);
+          res = await fetch(url, {
+            ...options,
+            headers: { ...headers, Authorization: `Bearer ${refreshed.accessToken}` },
+          });
+        } else {
+          localStorage.removeItem('lm_token');
+          localStorage.removeItem('lm_refresh_token');
+          localStorage.removeItem('lm_user');
+        }
+      } catch {
+        localStorage.removeItem('lm_token');
+        localStorage.removeItem('lm_refresh_token');
+        localStorage.removeItem('lm_user');
+      }
+    }
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({ message: res.statusText }));
       throw new ApiError(res.status, errorData.message || `Request failed with status ${res.status}`);
@@ -128,16 +157,18 @@ export const api = {
   },
 
   // Auth
-  async login(email: string, password: string): Promise<{ access_token: string; user: User }> {
+  async login(email: string, password: string): Promise<{ access_token: string; refreshToken?: string; user: User }> {
     try {
-      const res = await request<{ access_token: string; user: User }>('/auth/login', {
+      const res = await request<{ accessToken?: string; access_token?: string; refreshToken?: string; user: User }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
-      if (res.access_token) {
-        localStorage.setItem('lm_token', res.access_token);
+      const accessToken = res.accessToken || res.access_token;
+      if (accessToken) {
+        localStorage.setItem('lm_token', accessToken);
+        if (res.refreshToken) localStorage.setItem('lm_refresh_token', res.refreshToken);
         localStorage.setItem('lm_user', JSON.stringify(res.user));
-        return res;
+        return { access_token: accessToken, refreshToken: res.refreshToken, user: res.user };
       }
     } catch (e: any) {
       // If server returns real 401, rethrow
@@ -160,6 +191,16 @@ export const api = {
     localStorage.setItem('lm_token', mockToken);
     localStorage.setItem('lm_user', JSON.stringify(mockUser));
     return { access_token: mockToken, user: mockUser };
+  },
+
+  async guestLogin(): Promise<{ user: User }> {
+    const res = await request<{ accessToken: string; refreshToken: string; user: User }>('/auth/guest', {
+      method: 'POST',
+    });
+    localStorage.setItem('lm_token', res.accessToken);
+    localStorage.setItem('lm_refresh_token', res.refreshToken);
+    localStorage.setItem('lm_user', JSON.stringify(res.user));
+    return { user: res.user };
   },
 
   async register(data: {
@@ -213,9 +254,28 @@ export const api = {
     throw new ApiError(401, 'Unauthorized');
   },
 
-  logout() {
-    localStorage.removeItem('lm_token');
-    localStorage.removeItem('lm_user');
+  async logout() {
+    const accessToken = localStorage.getItem('lm_token');
+    const refreshToken = localStorage.getItem('lm_refresh_token');
+
+    try {
+      if (accessToken && refreshToken) {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ refreshToken }),
+        });
+      }
+    } catch {
+      // Clear local session even if server-side logout is unavailable.
+    } finally {
+      localStorage.removeItem('lm_token');
+      localStorage.removeItem('lm_refresh_token');
+      localStorage.removeItem('lm_user');
+    }
   },
 
   // Cart

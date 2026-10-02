@@ -7,7 +7,11 @@ type BadgeVariant =
   | 'warning'
   | 'danger'
   | 'info'
-  | 'muted';
+  | 'muted'
+  | 'refurb'
+  | 'bestSeller'
+  | 'newArrival'
+  | 'hotDeal';
 
 type BadgeSize = 'sm' | 'md';
 
@@ -21,13 +25,17 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  primary: 'bg-[var(--accent-bg)] text-[var(--accent)]',
-  secondary: 'bg-[var(--bg-elevated)] text-[var(--text-secondary)]',
-  success: 'bg-[rgba(16,185,129,0.15)] text-[#34D399]',
-  warning: 'bg-[rgba(251,191,36,0.15)] text-[var(--warning)]',
-  danger: 'bg-[rgba(248,113,113,0.15)] text-[var(--danger)]',
-  info: 'bg-[rgba(56,189,248,0.15)] text-[var(--info)]',
-  muted: 'bg-[var(--bg-elevated)] text-[var(--text-muted)]',
+  primary: 'bg-blue-50 text-[#1D6FF2] border border-blue-200',
+  secondary: 'bg-slate-100 text-slate-700 border border-slate-200',
+  success: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  warning: 'bg-amber-50 text-amber-700 border border-amber-200',
+  danger: 'bg-rose-50 text-rose-700 border border-rose-200',
+  info: 'bg-sky-50 text-sky-700 border border-sky-200',
+  muted: 'bg-slate-100 text-slate-500 border border-slate-200',
+  refurb: 'bg-blue-50 text-[#1D6FF2] border border-blue-200 font-black',
+  bestSeller: 'bg-amber-50 text-amber-800 border border-amber-200 font-black',
+  newArrival: 'bg-blue-50 text-[#1D6FF2] border border-blue-200 font-bold',
+  hotDeal: 'bg-rose-50 text-rose-700 border border-rose-200 font-black',
 };
 
 const sizeStyles: Record<BadgeSize, string> = {
@@ -46,7 +54,7 @@ export default function Badge({
   return (
     <span
       className={[
-        'inline-flex items-center gap-1.5 rounded-[var(--radius-full)] font-semibold',
+        'inline-flex items-center gap-1.5 rounded-full font-semibold',
         'uppercase tracking-wider leading-none',
         variantStyles[variant],
         sizeStyles[size],
@@ -57,13 +65,13 @@ export default function Badge({
         <span
           className={[
             'w-1.5 h-1.5 rounded-full shrink-0',
-            variant === 'success' && 'bg-[#34D399]',
-            variant === 'warning' && 'bg-[var(--warning)]',
-            variant === 'danger' && 'bg-[var(--danger)]',
-            variant === 'info' && 'bg-[var(--info)]',
-            variant === 'primary' && 'bg-[var(--accent)]',
-            variant === 'secondary' && 'bg-[var(--text-muted)]',
-            variant === 'muted' && 'bg-[var(--text-muted)]',
+            variant === 'success' && 'bg-emerald-500',
+            variant === 'warning' && 'bg-amber-500',
+            variant === 'danger' && 'bg-rose-500',
+            variant === 'info' && 'bg-sky-500',
+            variant === 'primary' && 'bg-[#1D6FF2]',
+            variant === 'secondary' && 'bg-slate-400',
+            variant === 'muted' && 'bg-slate-400',
           ].join(' ')}
         />
       )}
@@ -83,34 +91,38 @@ interface GradeBadgeProps {
   className?: string;
 }
 
-const gradeStyles: Record<Grade, { bg: string; text: string; label: string }> = {
+const gradeStyles: Record<Grade, { bg: string; text: string; label: string; border: string }> = {
   'A+': {
-    bg: 'bg-[var(--accent-bg)]',
-    text: 'text-[var(--accent)]',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
+    border: 'border-emerald-200',
     label: 'Grade A+ Certified',
   },
   A: {
-    bg: 'bg-[rgba(56,189,248,0.15)]',
-    text: 'text-[var(--info)]',
+    bg: 'bg-blue-50',
+    text: 'text-[#1D6FF2]',
+    border: 'border-blue-200',
     label: 'Grade A Certified',
   },
   B: {
-    bg: 'bg-[rgba(251,191,36,0.15)]',
-    text: 'text-[var(--warning)]',
+    bg: 'bg-amber-50',
+    text: 'text-amber-700',
+    border: 'border-amber-200',
     label: 'Grade B',
   },
 };
 
 export function GradeBadge({ grade, size = 'md', className = '' }: GradeBadgeProps) {
-  const style = gradeStyles[grade];
+  const style = gradeStyles[grade] || gradeStyles['A'];
   return (
     <span
       className={[
-        'inline-flex items-center rounded-[var(--radius-full)] font-bold',
-        'uppercase tracking-wider leading-none',
+        'inline-flex items-center rounded-md font-bold border',
+        'uppercase tracking-wider leading-none shadow-sm',
         style.bg,
         style.text,
-        size === 'sm' ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-xs',
+        style.border,
+        size === 'sm' ? 'px-1.5 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs',
         className,
       ].join(' ')}
       role="img"
@@ -120,3 +132,4 @@ export function GradeBadge({ grade, size = 'md', className = '' }: GradeBadgePro
     </span>
   );
 }
+

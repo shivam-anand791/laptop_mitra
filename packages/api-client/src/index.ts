@@ -55,6 +55,12 @@ export class LaptopMitraApiClient {
     });
   }
 
+  async guestLogin(): Promise<{ accessToken: string; refreshToken: string; user: User }> {
+    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/guest', {
+      method: 'POST',
+    });
+  }
+
   async register(data: { name: string; email: string; password: string; phone?: string; referralCode?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
     return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/register', {
       method: 'POST',

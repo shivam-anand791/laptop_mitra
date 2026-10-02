@@ -1,11 +1,9 @@
 import { LaptopMitraApiClient } from '@laptopmitra/api-client';
-import Constants from 'expo-constants';
 import { getAccessToken } from '../utils/storage';
-
-const apiUrl = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:3001';
+import { API_BASE_URL } from '../config';
 
 export const apiClient = new LaptopMitraApiClient({
-  baseUrl: apiUrl,
+  baseUrl: API_BASE_URL,
   getToken: async () => {
     const token = await getAccessToken();
     return token;

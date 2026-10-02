@@ -213,6 +213,43 @@ describe('AuthService', () => {
     });
   });
 
+  describe('guestLogin', () => {
+    it('creates a non-privileged guest user and persists its refresh token', async () => {
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-random-password');
+      (prismaService.user.create as jest.Mock).mockResolvedValue({
+        id: 'guest-1',
+        name: 'Guest',
+        email: 'guest@example.invalid',
+        role: 'USER',
+      });
+      (prismaService.refreshToken.create as jest.Mock).mockResolvedValue({});
+
+      const result = await authService.guestLogin();
+
+      expect(prismaService.user.create).toHaveBeenCalledWith({
+        data: {
+          name: 'Guest',
+          email: expect.stringMatching(/^guest-[0-9a-f-]+@guest\.laptopmitra\.invalid$/),
+          password: 'hashed-random-password',
+          role: 'USER',
+          referralCode: 'REF1234',
+        },
+      });
+      expect(result).toMatchObject({
+        accessToken: 'jwt-token',
+        refreshToken: 'jwt-token',
+        user: { id: 'guest-1', name: 'Guest', role: 'USER' },
+      });
+      expect(prismaService.refreshToken.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'guest-1',
+          token: 'jwt-token',
+          expiresAt: expect.any(Date),
+        },
+      });
+    });
+  });
+
   describe('refreshToken', () => {
     const mockRefreshToken = {
       id: 'token-1',

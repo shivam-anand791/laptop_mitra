@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from './types';
 import HomeScreen from '../screens/main/HomeScreen';
@@ -8,12 +8,14 @@ import CartScreen from '../screens/main/CartScreen';
 import AccountScreen from '../screens/main/AccountScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { useCart } from '../hooks/useApi';
+import { colors, shadows } from '../theme/tokens';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 function CartIcon({ focused, color, size }: { focused: boolean; color: string; size: number }) {
   const { data: cart } = useCart();
-  const itemCount = cart?.items?.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+  const itemCount =
+    cart?.itemCount ?? cart?.items?.reduce((sum: number, item: { quantity?: number }) => sum + (item.quantity || 1), 0) ?? 0;
 
   return (
     <View>
@@ -30,26 +32,31 @@ function CartIcon({ focused, color, size }: { focused: boolean; color: string; s
 export default function MainTabs() {
   return (
     <Tab.Navigator
-      screenOptions={({ route: _route }) => ({
-        tabBarActiveTintColor: '#2563eb',
-        tabBarInactiveTintColor: '#9ca3af',
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          backgroundColor: '#ffffff',
+          backgroundColor: colors.cardBg,
           borderTopWidth: 1,
-          borderTopColor: '#e5e7eb',
-          height: 64,
-          paddingBottom: 8,
+          borderTopColor: colors.cardBorder,
+          height: Platform.OS === 'ios' ? 86 : 64,
+          paddingBottom: Platform.OS === 'ios' ? 24 : 8,
+          paddingTop: 8,
+          ...shadows.md,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
-        tabBarIconStyle: { marginBottom: 2 },
-      })}
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+        },
+      }}
     >
       <Tab.Screen
         name="Home"
         component={HomeScreen}
         options={{
-          tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={focused ? '#2563eb' : '#9ca3af'} />
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} />
           ),
           tabBarLabel: 'Home',
         }}
@@ -58,8 +65,8 @@ export default function MainTabs() {
         name="Store"
         component={StoreScreen}
         options={{
-          tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'storefront' : 'storefront-outline'} size={24} color={focused ? '#2563eb' : '#9ca3af'} />
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'storefront' : 'storefront-outline'} size={size} color={color} />
           ),
           tabBarLabel: 'Store',
         }}
@@ -68,8 +75,8 @@ export default function MainTabs() {
         name="Wishlist"
         component={WishlistScreen}
         options={{
-          tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={24} color={focused ? '#2563eb' : '#9ca3af'} />
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={size} color={color} />
           ),
           tabBarLabel: 'Wishlist',
         }}
@@ -88,8 +95,8 @@ export default function MainTabs() {
         name="Account"
         component={AccountScreen}
         options={{
-          tabBarIcon: ({ focused }) => (
-            <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={focused ? '#2563eb' : '#9ca3af'} />
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
           ),
           tabBarLabel: 'Account',
         }}
@@ -103,7 +110,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -4,
     right: -8,
-    backgroundColor: '#ef4444',
+    backgroundColor: colors.danger,
     borderRadius: 10,
     minWidth: 18,
     height: 18,
@@ -113,7 +120,7 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
+    fontWeight: '800',
+    color: colors.textWhite,
   },
 });

@@ -39,10 +39,10 @@ export default function CheckoutScreen() {
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const items = cart?.items ?? [];
-  const subtotal = items.reduce((sum, item) => {
+  const items: any[] = cart?.items ?? [];
+  const subtotal = items.reduce((sum: number, item: any) => {
     const price = typeof item.priceAtAdd === 'string' ? parseFloat(item.priceAtAdd) : (item.priceAtAdd as number);
-    return sum + price * item.quantity;
+    return sum + (price || 0) * (item.quantity || 1);
   }, 0);
 
   const discountAmount = appliedDiscount?.amount ?? 0;

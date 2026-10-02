@@ -31,7 +31,9 @@ export default function MitraDashboardScreen() {
         message: `Hey! Use my referral code *${referralCode}* on LaptopMitra to get exclusive deals on certified pre-owned laptops. Shop now at LaptopMitra!`,
         title: 'Share Referral Code',
       });
-    } catch {}
+    } catch (e) {
+      void e;
+    }
   };
 
   const handleShareLink = async () => {
@@ -41,7 +43,9 @@ export default function MitraDashboardScreen() {
         message: `Check out LaptopMitra for certified pre-owned laptops! Use my referral link: ${link}`,
         title: 'Share LaptopMitra',
       });
-    } catch {}
+    } catch (e) {
+      void e;
+    }
   };
 
   return (
