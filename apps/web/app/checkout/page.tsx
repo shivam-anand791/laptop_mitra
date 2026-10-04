@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import CustomerLayout from '../../components/CustomerLayout';
 import { useCart } from '../../lib/cart-context';
@@ -29,6 +30,8 @@ export default function CheckoutPage() {
     city: '',
     state: 'Maharashtra',
     pincode: '',
+    gstin: '',
+    companyName: '',
     notes: '',
   });
 
@@ -128,7 +131,7 @@ export default function CheckoutPage() {
           pincode: formData.pincode,
         },
         phone: formData.phone,
-        notes: formData.notes,
+        notes: formData.gstin ? `GSTIN: ${formData.gstin} | Company: ${formData.companyName} | ${formData.notes}` : formData.notes,
       };
 
       const order = await api.createOrder(orderPayload);
@@ -156,92 +159,96 @@ export default function CheckoutPage() {
             theme: {
               color: '#1D6FF2',
             },
-            handler: function () {
+            handler: async (response: any) => {
               clearCart();
-              setCompletedOrder(order);
-              setIsSubmitting(false);
+              setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any });
             },
             modal: {
-              ondismiss: function () {
+              ondismiss: () => {
                 setIsSubmitting(false);
-                clearCart();
-                setCompletedOrder(order);
               },
             },
           };
 
-          const rzp = new window.Razorpay(options);
-          rzp.open();
+          const rzpInstance = new window.Razorpay(options);
+          rzpInstance.open();
         } else {
-          // Fallback if Razorpay SDK script blocked
+          // Fallback if script not loaded
           clearCart();
           setCompletedOrder(order);
-          setIsSubmitting(false);
         }
       } else {
-        // COD order
+        // COD
         clearCart();
         setCompletedOrder(order);
-        setIsSubmitting(false);
       }
-    } catch (err: any) {
-      alert(err.message || 'Failed to complete order. Please try again.');
+    } catch {
+      alert('Could not complete order. Please verify your details and try again.');
+    } finally {
       setIsSubmitting(false);
     }
   };
 
-  // ORDER SUCCESS CONFIRMATION SCREEN
+  // ORDER SUCCESS SCREEN
   if (completedOrder) {
     return (
       <CustomerLayout>
-        <div className="bg-[#F5F7FA] min-h-[75vh] py-16 px-4">
-          <div className="max-w-2xl mx-auto text-center space-y-6 bg-white p-8 sm:p-10 rounded-3xl border border-slate-200/80 shadow-sm">
-            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center text-3xl mx-auto animate-bounce">
+        <div className="bg-[#F8FAFC] min-h-screen py-12 px-4">
+          <div className="max-w-2xl mx-auto bg-white rounded-3xl border border-[#E4E9F2] shadow-sm p-6 sm:p-10 text-center space-y-6">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl mx-auto">
               ✓
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-[#0B1F4B]">
-              Order Confirmed Successfully!
-            </h1>
-            <p className="text-xs text-slate-600 max-w-md mx-auto leading-relaxed">
-              Thank you for choosing LaptopMitra. Our refurbishment lab is preparing your laptop for final dispatch with an authentic 1-year warranty certificate.
-            </p>
 
-            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-left max-w-lg mx-auto space-y-3">
-              <div className="flex justify-between text-xs pb-2.5 border-b border-slate-200">
-                <span className="text-slate-500">Order Number</span>
-                <span className="font-mono font-bold text-slate-900">{completedOrder.orderNumber}</span>
+            <div className="space-y-2">
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                Order Confirmed &amp; In Process
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tracking-tight">
+                Thank You for Choosing LaptopMitra!
+              </h1>
+              <p className="text-xs text-slate-500">
+                Order Reference: <strong className="text-[#0B1F4B] font-mono text-sm">{completedOrder.orderNumber}</strong>
+              </p>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-[#F8FAFC] border border-[#E4E9F2] text-left text-xs space-y-3">
+              <div className="flex justify-between border-b border-[#E4E9F2] pb-2 font-bold text-[#0B1F4B]">
+                <span>Delivery Summary</span>
+                <span className="text-[#1D6FF2]">Express Insured BlueDart</span>
               </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Estimated Delivery</span>
-                <span className="font-bold text-emerald-700">2-3 Business Days (Express Inspected)</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Shipping To</span>
-                <span className="font-medium text-slate-800">
-                  {completedOrder.shippingAddress?.fullName}, {completedOrder.shippingAddress?.city}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs pt-2.5 border-t border-slate-200">
-                <span className="font-bold text-slate-900">Total Paid</span>
-                <span className="font-black text-[#1D6FF2] text-sm">
-                  ₹{Number(completedOrder.finalAmount).toLocaleString('en-IN')}
-                </span>
+              <div className="grid grid-cols-2 gap-2 text-slate-600">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Recipient</span>
+                  <span className="font-bold text-slate-800">{formData.fullName}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Contact Phone</span>
+                  <span className="font-bold text-slate-800 font-mono">{formData.phone}</span>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-slate-400 block text-[10px]">Shipping Destination</span>
+                  <span className="font-medium text-slate-800">
+                    {formData.address}, {formData.city}, {formData.state} - {formData.pincode}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row justify-center gap-3 pt-2">
-              <Link
-                href="/profile"
-                className="px-6 py-3 bg-[#1D6FF2] text-white font-bold rounded-xl text-xs hover:bg-[#1558C0] transition-colors shadow-md shadow-blue-500/20"
-              >
-                Track Order & Warranty
-              </Link>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
               <Link
                 href="/products"
-                className="px-6 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-200 transition-colors"
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#1D6FF2] hover:bg-[#1558C0] text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all"
               >
-                Continue Browsing
+                Continue Shopping
               </Link>
+              <a
+                href={`https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20just%20placed%20Order%20${completedOrder.orderNumber}.%20Please%20send%20tracking%20updates.`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
+              >
+                <span>WhatsApp Tracking Updates</span>
+              </a>
             </div>
           </div>
         </div>
@@ -249,17 +256,17 @@ export default function CheckoutPage() {
     );
   }
 
-  // If cart is empty and no completed order, redirect
+  // EMPTY CHECKOUT REDIRECT
   if (itemCount === 0) {
     return (
       <CustomerLayout>
-        <div className="bg-[#F5F7FA] min-h-[60vh] flex items-center justify-center py-16 px-4">
-          <div className="max-w-md w-full bg-white p-8 rounded-3xl border border-slate-200 text-center space-y-4">
-            <h2 className="text-xl font-bold text-[#0B1F4B]">Your cart is empty</h2>
-            <p className="text-xs text-slate-500">Add a laptop to your cart before proceeding to checkout.</p>
+        <div className="bg-[#F8FAFC] min-h-[70vh] flex items-center justify-center py-16 px-4">
+          <div className="max-w-md w-full text-center space-y-4 bg-white p-8 rounded-3xl border border-[#E4E9F2] shadow-sm">
+            <h2 className="text-xl font-black text-[#0B1F4B]">Your Cart is Empty</h2>
+            <p className="text-xs text-slate-500">Add certified laptops to your cart before proceeding to checkout.</p>
             <Link
               href="/products"
-              className="inline-block px-5 py-2.5 bg-[#1D6FF2] text-white font-bold rounded-xl text-xs"
+              className="inline-block px-6 py-3 bg-[#1D6FF2] text-white font-bold rounded-xl text-xs shadow-md shadow-blue-500/20"
             >
               Browse Certified Laptops
             </Link>
@@ -271,313 +278,341 @@ export default function CheckoutPage() {
 
   return (
     <CustomerLayout>
-      <div className="bg-[#F5F7FA] min-h-screen py-8">
+      <div className="bg-[#F8FAFC] min-h-screen py-6 sm:py-8 lg:py-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mb-6">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B1F4B]">
-              Checkout & Delivery
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Enter your shipping details and select your preferred payment mode.
-            </p>
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tracking-tight mb-6">
+            Secure Checkout
+          </h1>
 
-          <form onSubmit={handlePlaceOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* LEFT: SHIPPING ADDRESS & PAYMENT METHOD */}
-            <div className="lg:col-span-7 space-y-6">
-              {/* Step 1: Shipping Address */}
-              <div className="p-6 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-4">
-                <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-                  <span className="w-6 h-6 rounded-full bg-[#1D6FF2] text-white text-xs font-bold flex items-center justify-center">
-                    1
-                  </span>
-                  <h3 className="font-bold text-base text-[#0B1F4B]">
-                    Shipping & Contact Details
-                  </h3>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      name="fullName"
-                      required
-                      value={formData.fullName}
-                      onChange={handleFormChange}
-                      placeholder="e.g. Rahul Sharma"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#1D6FF2] focus:bg-white text-slate-800 outline-none"
-                    />
+          <form onSubmit={handlePlaceOrder}>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+              
+              {/* LEFT COLUMN: Shipping, GST & Payment (7 cols) */}
+              <div className="lg:col-span-7 space-y-6">
+                {/* 1. Contact & Shipping Address */}
+                <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-4">
+                  <div className="flex items-center gap-2.5 pb-3 border-b border-[#E4E9F2]">
+                    <span className="w-6 h-6 rounded-full bg-[#1D6FF2] text-white flex items-center justify-center text-xs font-bold font-mono">
+                      1
+                    </span>
+                    <h2 className="text-base font-black text-[#0B1F4B]">
+                      Delivery &amp; Contact Address
+                    </h2>
                   </div>
 
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Phone Number (WhatsApp/SMS) *
-                    </label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      required
-                      value={formData.phone}
-                      onChange={handleFormChange}
-                      placeholder="10-digit mobile number"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#1D6FF2] focus:bg-white text-slate-800 outline-none"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Email Address (For Tax Invoice & Warranty Certificate) *
-                    </label>
-                    <input
-                      type="email"
-                      name="email"
-                      required
-                      value={formData.email}
-                      onChange={handleFormChange}
-                      placeholder="you@example.com"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#1D6FF2] focus:bg-white text-slate-800 outline-none"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="block font-bold text-slate-700 mb-1">
-                      Delivery Address (House/Flat No, Street, Landmark) *
-                    </label>
-                    <input
-                      type="text"
-                      name="address"
-                      required
-                      value={formData.address}
-                      onChange={handleFormChange}
-                      placeholder="e.g. Flat 402, Sunshine Heights, MG Road"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#1D6FF2] focus:bg-white text-slate-800 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      City *
-                    </label>
-                    <input
-                      type="text"
-                      name="city"
-                      required
-                      value={formData.city}
-                      onChange={handleFormChange}
-                      placeholder="e.g. Mumbai / Bangalore / Pune"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#1D6FF2] focus:bg-white text-slate-800 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">
-                      PIN Code *
-                    </label>
-                    <input
-                      type="text"
-                      name="pincode"
-                      required
-                      maxLength={6}
-                      value={formData.pincode}
-                      onChange={handleFormChange}
-                      placeholder="6-digit PIN code"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#1D6FF2] focus:bg-white text-slate-800 outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Step 2: Payment Method */}
-              <div className="p-6 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-4">
-                <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-                  <span className="w-6 h-6 rounded-full bg-[#1D6FF2] text-white text-xs font-bold flex items-center justify-center">
-                    2
-                  </span>
-                  <h3 className="font-bold text-base text-[#0B1F4B]">
-                    Select Payment Method
-                  </h3>
-                </div>
-
-                <div className="space-y-3">
-                  {/* Razorpay Option */}
-                  <label
-                    className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                      paymentMethod === 'razorpay'
-                        ? 'border-[#1D6FF2] bg-blue-50/50'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="paymentMethod"
-                      value="razorpay"
-                      checked={paymentMethod === 'razorpay'}
-                      onChange={() => setPaymentMethod('razorpay')}
-                      className="mt-1 text-[#1D6FF2] focus:ring-[#1D6FF2]"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs sm:text-sm text-slate-900">
-                          Razorpay Secure Checkout (UPI, GPay, PhonePe, Cards, NetBanking, EMI)
-                        </span>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-100 text-[#1D6FF2]">
-                          RECOMMENDED
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Instant payment processing with zero transaction fees. Instant 1-Year warranty certificate issue.
-                      </p>
-                    </div>
-                  </label>
-
-                  {/* COD Option */}
-                  <label
-                    className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                      paymentMethod === 'cod'
-                        ? 'border-[#1D6FF2] bg-blue-50/50'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="paymentMethod"
-                      value="cod"
-                      checked={paymentMethod === 'cod'}
-                      onChange={() => setPaymentMethod('cod')}
-                      className="mt-1 text-[#1D6FF2] focus:ring-[#1D6FF2]"
-                    />
-                    <div className="flex-1">
-                      <span className="font-bold text-xs sm:text-sm text-slate-900">
-                        Cash on Delivery (Pay upon Open-Box Inspection)
-                      </span>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Inspect the laptop physically at your doorstep before handing payment to the delivery courier.
-                      </p>
-                    </div>
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {/* RIGHT: ORDER SUMMARY & DISCOUNT CODE */}
-            <div className="lg:col-span-5 space-y-4">
-              <div className="p-6 rounded-2xl bg-white border border-slate-200/90 shadow-md space-y-5">
-                <h3 className="font-bold text-base text-[#0B1F4B] pb-3 border-b border-slate-100">
-                  Order Review ({itemCount} {itemCount === 1 ? 'item' : 'items'})
-                </h3>
-
-                {/* Items summary */}
-                <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
-                  {items.map((item) => (
-                    <div key={item.productId} className="flex items-center justify-between text-xs">
-                      <div className="flex-1 pr-2">
-                        <p className="font-bold text-slate-800 line-clamp-1">{item.product?.name}</p>
-                        <span className="text-slate-400">Qty: {item.quantity}</span>
-                      </div>
-                      <span className="font-bold text-slate-900">
-                        ₹{(Number(item.priceAtAdd) * item.quantity).toLocaleString('en-IN')}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Coupon / Referral Code Box */}
-                <div className="pt-3 border-t border-slate-100 space-y-2">
-                  <label className="block text-xs font-bold text-slate-700">
-                    🎁 Have a Coupon or Mitra Referral Code?
-                  </label>
-                  {appliedDiscount ? (
-                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
-                      <div>
-                        <span className="text-xs font-bold text-emerald-800">
-                          {appliedDiscount.code}
-                        </span>
-                        <p className="text-[11px] text-emerald-600">{appliedDiscount.message}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={removeDiscount}
-                        className="text-xs text-rose-600 font-bold hover:underline"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                    <div className="sm:col-span-2 space-y-1">
+                      <label className="font-bold text-slate-700">Full Name *</label>
                       <input
                         type="text"
-                        value={discountCodeInput}
-                        onChange={(e) => setDiscountCodeInput(e.target.value)}
-                        placeholder="e.g. MITRA500"
-                        className="flex-1 px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg uppercase tracking-wider font-mono outline-none focus:ring-2 focus:ring-[#1D6FF2] focus:bg-white text-slate-800"
+                        name="fullName"
+                        required
+                        value={formData.fullName}
+                        onChange={handleFormChange}
+                        placeholder="e.g. Rahul Sharma"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
                       />
-                      <button
-                        type="button"
-                        onClick={handleApplyDiscount}
-                        className="px-4 py-2 bg-[#0B1F4B] hover:bg-[#162D66] text-white text-xs font-bold rounded-lg transition-colors"
-                      >
-                        Apply
-                      </button>
                     </div>
-                  )}
-                  {discountError && (
-                    <p className="text-xs text-rose-600 font-medium">{discountError}</p>
-                  )}
-                </div>
 
-                {/* Cost Calculations */}
-                <div className="pt-3 border-t border-slate-100 space-y-2 text-xs">
-                  <div className="flex justify-between text-slate-600">
-                    <span>Subtotal</span>
-                    <span className="font-semibold text-slate-900">₹{subtotal.toLocaleString('en-IN')}</span>
-                  </div>
-                  {appliedDiscount && (
-                    <div className="flex justify-between text-emerald-700 font-bold">
-                      <span>Discount ({appliedDiscount.code})</span>
-                      <span>-₹{appliedDiscount.amount.toLocaleString('en-IN')}</span>
+                    <div className="space-y-1">
+                      <label className="font-bold text-slate-700">Phone Number (For BlueDart SMS) *</label>
+                      <input
+                        type="tel"
+                        name="phone"
+                        required
+                        value={formData.phone}
+                        onChange={handleFormChange}
+                        placeholder="10-digit mobile number"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 font-mono focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                      />
                     </div>
-                  )}
-                  <div className="flex justify-between text-slate-600">
-                    <span>Inspected Doorstep Delivery</span>
-                    <span className="text-emerald-700 font-bold">FREE</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>1-Year Doorstep Warranty</span>
-                    <span className="text-emerald-700 font-bold">FREE</span>
+
+                    <div className="space-y-1">
+                      <label className="font-bold text-slate-700">Email Address (For Tax Invoice)</label>
+                      <input
+                        type="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleFormChange}
+                        placeholder="you@company.com"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2 space-y-1">
+                      <label className="font-bold text-slate-700">Street Address &amp; Flat / Office No. *</label>
+                      <input
+                        type="text"
+                        name="address"
+                        required
+                        value={formData.address}
+                        onChange={handleFormChange}
+                        placeholder="Building name, street, locality"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-bold text-slate-700">City *</label>
+                      <input
+                        type="text"
+                        name="city"
+                        required
+                        value={formData.city}
+                        onChange={handleFormChange}
+                        placeholder="City"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-bold text-slate-700">6-Digit PIN Code *</label>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        name="pincode"
+                        required
+                        value={formData.pincode}
+                        onChange={handleFormChange}
+                        placeholder="PIN Code"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 font-mono focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Total */}
-                <div className="pt-3 border-t border-slate-100 flex items-baseline justify-between">
-                  <span className="text-sm font-extrabold text-[#0B1F4B]">Amount Payable</span>
-                  <span className="text-2xl font-black text-[#1D6FF2]">
-                    ₹{finalAmount.toLocaleString('en-IN')}
-                  </span>
+                {/* 2. B2B / GST Information (Optional) */}
+                <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#E4E9F2]">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center text-xs font-bold font-mono">
+                        2
+                      </span>
+                      <h2 className="text-base font-black text-[#0B1F4B]">
+                        Business GST Invoice (Optional)
+                      </h2>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      Save 18% Input Credit
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                    <div className="space-y-1">
+                      <label className="font-bold text-slate-700">Company Legal Name</label>
+                      <input
+                        type="text"
+                        name="companyName"
+                        value={formData.companyName}
+                        onChange={handleFormChange}
+                        placeholder="e.g. Acme Technologies Pvt Ltd"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-bold text-slate-700">GSTIN (15-digit)</label>
+                      <input
+                        type="text"
+                        maxLength={15}
+                        name="gstin"
+                        value={formData.gstin}
+                        onChange={handleFormChange}
+                        placeholder="27AAAAA0000A1Z5"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 font-mono uppercase focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                {/* Place Order CTA */}
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full py-4 bg-[#1D6FF2] hover:bg-[#1558C0] disabled:bg-slate-300 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all text-xs flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  {isSubmitting ? (
-                    <span>Processing Secure Checkout...</span>
-                  ) : (
-                    <>
-                      <span>Confirm &amp; Pay ₹{finalAmount.toLocaleString('en-IN')}</span>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                      </svg>
-                    </>
-                  )}
-                </button>
+                {/* 3. Payment Method */}
+                <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-4">
+                  <div className="flex items-center gap-2.5 pb-3 border-b border-[#E4E9F2]">
+                    <span className="w-6 h-6 rounded-full bg-[#1D6FF2] text-white flex items-center justify-center text-xs font-bold font-mono">
+                      3
+                    </span>
+                    <h2 className="text-base font-black text-[#0B1F4B]">
+                      Payment Method
+                    </h2>
+                  </div>
 
-                <div className="text-center text-[10px] text-slate-400">
-                  🛡️ Backed by LaptopMitra 100% Satisfaction &amp; 7-Day Replacement Guarantee
+                  <div className="space-y-3">
+                    <label className={`p-4 rounded-2xl border-2 flex items-center justify-between cursor-pointer transition-all ${
+                      paymentMethod === 'razorpay' ? 'border-[#1D6FF2] bg-blue-50/30' : 'border-[#E4E9F2] hover:bg-slate-50'
+                    }`}>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          checked={paymentMethod === 'razorpay'}
+                          onChange={() => setPaymentMethod('razorpay')}
+                          className="w-4 h-4 text-[#1D6FF2] focus:ring-[#1D6FF2] cursor-pointer"
+                        />
+                        <div>
+                          <span className="font-black text-sm text-[#0B1F4B] block">
+                            UPI / Credit Card / Debit Card / NetBanking
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            Instant confirmation via Razorpay 256-bit secure gateway
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shrink-0">
+                        ⚡ Recommended
+                      </span>
+                    </label>
+
+                    <label className={`p-4 rounded-2xl border-2 flex items-center justify-between cursor-pointer transition-all ${
+                      paymentMethod === 'cod' ? 'border-[#1D6FF2] bg-blue-50/30' : 'border-[#E4E9F2] hover:bg-slate-50'
+                    }`}>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="paymentMethod"
+                          checked={paymentMethod === 'cod'}
+                          onChange={() => setPaymentMethod('cod')}
+                          className="w-4 h-4 text-[#1D6FF2] focus:ring-[#1D6FF2] cursor-pointer"
+                        />
+                        <div>
+                          <span className="font-black text-sm text-[#0B1F4B] block">
+                            Cash on Delivery (Pay at Doorstep)
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            Verification call required prior to dispatch
+                          </span>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN: Order Review & Total (5 cols) */}
+              <div className="lg:col-span-5 space-y-6">
+                <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-5 sticky top-20">
+                  <h2 className="text-lg font-black text-[#0B1F4B] tracking-tight">
+                    Order Summary ({itemCount})
+                  </h2>
+
+                  {/* Items List Mini */}
+                  <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                    {items.map((item) => (
+                      <div key={item.productId} className="flex items-center justify-between text-xs py-2 border-b border-slate-100 last:border-0">
+                        <div className="min-w-0 pr-2">
+                          <span className="font-bold text-slate-800 block truncate">{item.product?.name}</span>
+                          <span className="text-slate-400 font-mono text-[11px]">Qty: {item.quantity} × ₹{Number(item.priceAtAdd).toLocaleString('en-IN')}</span>
+                        </div>
+                        <span className="font-bold text-[#0B1F4B] tabular-nums shrink-0">
+                          ₹{(Number(item.priceAtAdd) * item.quantity).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Coupon Box */}
+                  <div className="pt-2 border-t border-[#E4E9F2]">
+                    {!appliedDiscount ? (
+                      <div className="space-y-1.5">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={discountCodeInput}
+                            onChange={(e) => setDiscountCodeInput(e.target.value)}
+                            placeholder="Discount / Referral Code"
+                            className="h-10 w-full px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-xs uppercase placeholder:normal-case focus:outline-none focus:border-[#1D6FF2]"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleApplyDiscount}
+                            className="h-10 px-4 rounded-xl bg-[#0B1F4B] hover:bg-[#162D66] text-white font-bold text-xs transition-colors cursor-pointer shrink-0 flex items-center justify-center"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                        {discountError && (
+                          <p className="text-[11px] text-rose-600 font-bold">{discountError}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+                        <div>
+                          <span className="font-bold block">✓ {appliedDiscount.code} Applied</span>
+                          <span className="text-[11px]">{appliedDiscount.message}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={removeDiscount}
+                          className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer ml-2"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Calculations */}
+                  <div className="space-y-2.5 text-xs pt-2 border-t border-[#E4E9F2]">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Subtotal</span>
+                      <span className="font-bold text-[#0B1F4B] tabular-nums">₹{subtotal.toLocaleString('en-IN')}</span>
+                    </div>
+
+                    {appliedDiscount && (
+                      <div className="flex justify-between text-emerald-700 font-bold">
+                        <span>Discount Savings</span>
+                        <span className="tabular-nums">-₹{appliedDiscount.amount.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between text-slate-600">
+                      <span>Pan-India Insured Delivery</span>
+                      <span className="font-bold text-emerald-700 uppercase">FREE</span>
+                    </div>
+
+                    <div className="flex justify-between text-slate-600">
+                      <span>1-Year Comprehensive Warranty</span>
+                      <span className="font-bold text-emerald-700 uppercase">INCLUDED</span>
+                    </div>
+                  </div>
+
+                  {/* Total Amount */}
+                  <div className="pt-3 border-t border-[#E4E9F2] flex items-baseline justify-between">
+                    <div>
+                      <span className="text-sm font-black text-[#0B1F4B] block">Final Payable</span>
+                      <span className="text-[10px] text-slate-400">All Taxes &amp; Shipping Included</span>
+                    </div>
+                    <span className="text-2xl font-black text-[#0B1F4B] tabular-nums">
+                      ₹{finalAmount.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+
+                  {/* Submit CTA */}
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full h-11 px-4 rounded-xl bg-[#1D6FF2] hover:bg-[#1558C0] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-95 transition-all text-center cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Processing Order...
+                      </span>
+                    ) : (
+                      <span>🔒 Place Order • ₹{finalAmount.toLocaleString('en-IN')}</span>
+                    )}
+                  </button>
+
+                  {/* Assurance */}
+                  <div className="pt-3 border-t border-[#E4E9F2] space-y-1.5 text-[11px] text-slate-500">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-600 font-bold">✓</span>
+                      <span>256-Bit SSL Encrypted &amp; Razorpay Secured</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-600 font-bold">✓</span>
+                      <span>7-Day Doorstep Replacement Guarantee</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

@@ -1,231 +1,247 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
-import { randomBytes, randomUUID } from 'node:crypto';
-import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  ServiceUnavailableException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RandomService } from '../shared/random.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
+import { FirebaseService } from '../firebase/firebase.service';
+import { SyncUserDto } from './dto/sync-user.dto';
+
+export interface VerifiedFirebaseIdentity {
+  uid: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  firebase?: { sign_in_provider?: string };
+}
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
-    private prisma: PrismaService,
-    private jwtService: JwtService,
-    private randomService: RandomService,
+    private readonly prisma: PrismaService,
+    private readonly randomService: RandomService,
+    private readonly firebaseService: FirebaseService,
   ) {}
 
-  async register(registerDto: RegisterDto) {
-    const { name, email, password, phone } = registerDto;
-
-    const existingUser = await this.prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
-      throw new ConflictException('Email already registered');
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const referralCode = this.randomService.generateReferralCode();
-
-    const user = await this.prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        referralCode,
-        phone: phone || null,
-      },
-    });
-
-    // Generate tokens
-    const payload = { sub: user.id, email: user.email, role: user.role };
-    const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
-    const refreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
-
-    // Save refresh token
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: refreshToken,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-      },
-    });
-
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    };
+  async login(body: { email?: string; password?: string }) {
+    // Direct passwordless token minting is strictly prohibited (F1)
+    throw new BadRequestException(
+      'Direct passwordless authentication is disabled. Authenticate with Firebase and call /auth/sync.',
+    );
   }
 
-  async login(loginDto: LoginDto) {
-    const { email, password } = loginDto;
-
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        password: true,
-        role: true,
-        status: true,
-      },
-    });
-
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    if (!passwordMatch) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('Account is suspended');
-    }
-
-    const payload = { sub: user.id, email: user.email, role: user.role };
-    const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
-    const refreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
-
-    // Save refresh token
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: refreshToken,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      },
-    });
-
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    };
+  async register(body: { name?: string; email?: string; password?: string; referralCode?: string; phone?: string }) {
+    // Direct unverified registration is strictly prohibited (F1)
+    throw new BadRequestException(
+      'Direct registration without Firebase identity is disabled. Create user with Firebase and call /auth/sync.',
+    );
   }
 
   async guestLogin() {
-    const email = `guest-${randomUUID()}@guest.laptopmitra.invalid`;
-    const password = await bcrypt.hash(randomBytes(32).toString('hex'), 12);
-    const user = await this.prisma.user.create({
-      data: {
-        name: 'Guest',
-        email,
-        password,
-        role: 'USER',
-        referralCode: this.randomService.generateReferralCode(),
-      },
-    });
-
-    const payload = { sub: user.id, email: user.email, role: user.role };
-    const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
-    const refreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
-
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: refreshToken,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      },
-    });
-
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    };
+    // Direct guest token minting is strictly prohibited (F1)
+    throw new BadRequestException(
+      'Direct guest token creation is disabled. Sign in anonymously with Firebase and call /auth/sync.',
+    );
   }
 
-  async refreshToken(token: string) {
-    const refreshToken = await this.prisma.refreshToken.findUnique({
-      where: { token },
-      include: { user: true },
-    });
-
-    if (!refreshToken || refreshToken.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
-    }
-
-    if (refreshToken.user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('User account is not active');
-    }
-
-    // Invalidate old token
-    await this.prisma.refreshToken.delete({ where: { id: refreshToken.id } });
-
-    const payload = {
-      sub: refreshToken.user.id,
-      email: refreshToken.user.email,
-      role: refreshToken.user.role,
-    };
-    const newAccessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
-    const newRefreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
-
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: refreshToken.user.id,
-        token: newRefreshToken,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      },
-    });
-
-    return {
-      accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
-    };
+  async refreshToken(refreshToken?: string) {
+    throw new BadRequestException(
+      'Token refresh is handled directly via the Firebase Auth client SDK.',
+    );
   }
 
-  async logout(userId: string, token: string) {
-    await this.prisma.refreshToken.deleteMany({ where: { token, userId } });
-    return { message: 'Logged out successfully' };
+  async syncUser(identity: VerifiedFirebaseIdentity, profile: SyncUserDto = {}) {
+    if (!identity || !identity.uid) {
+      throw new UnauthorizedException('Invalid Firebase identity: UID missing');
+    }
+
+    const signInProvider = identity.firebase?.sign_in_provider ?? (identity.email ? 'password' : 'anonymous');
+    const isGuest = signInProvider === 'anonymous' || !identity.email;
+    const cleanEmail = identity.email ? identity.email.trim().toLowerCase() : null;
+
+    try {
+      // 1. Look up by firebaseUid first
+      let existingUser = await this.prisma.user.findUnique({
+        where: { firebaseUid: identity.uid },
+      });
+
+      // 2. Email-based linking only if email_verified is TRUE and existing row has NO firebaseUid yet (seeded admin)
+      if (!existingUser && cleanEmail && identity.email_verified === true) {
+        const userByEmail = await this.prisma.user.findFirst({
+          where: { email: cleanEmail },
+        });
+
+        if (userByEmail && !userByEmail.firebaseUid) {
+          existingUser = await this.prisma.user.update({
+            where: { id: userByEmail.id },
+            data: {
+              firebaseUid: identity.uid,
+              emailVerified: userByEmail.emailVerified || new Date(),
+              authProvider: signInProvider,
+            },
+          });
+        }
+      }
+
+      const name = profile.name === undefined ? undefined : profile.name.trim() || null;
+      const phone = profile.phone === undefined ? undefined : profile.phone.trim() || null;
+
+      if (existingUser) {
+        if (existingUser.status !== 'ACTIVE') {
+          throw new UnauthorizedException('Account is inactive or suspended');
+        }
+
+        const verifiedAt = identity.email_verified
+          ? existingUser.emailVerified ?? new Date()
+          : null;
+
+        return await this.prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            email: cleanEmail,
+            emailVerified: verifiedAt,
+            authProvider: signInProvider,
+            isGuest: existingUser.isGuest && !isGuest ? false : existingUser.isGuest,
+            ...(name !== undefined ? { name } : {}),
+            ...(phone !== undefined ? { phone } : {}),
+            ...(existingUser.isGuest && !isGuest ? { role: 'CUSTOMER' } : {}),
+          },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            emailVerified: true,
+            authProvider: true,
+            isGuest: true,
+            role: true,
+            status: true,
+            imageUrl: true,
+            phone: true,
+            createdAt: true,
+            referralCode: true,
+            referralEarnings: true,
+            referralTier: true,
+            firebaseUid: true,
+          },
+        });
+      }
+
+      // 3. First-time registration with verified Firebase token
+      try {
+        return await this.prisma.user.create({
+          data: {
+            firebaseUid: identity.uid,
+            name: name ?? identity.name?.trim() ?? (cleanEmail ? cleanEmail.split('@')[0].toUpperCase() : 'Guest Customer'),
+            email: cleanEmail,
+            emailVerified: identity.email_verified ? new Date() : null,
+            authProvider: signInProvider,
+            isGuest,
+            role: isGuest ? 'GUEST' : 'CUSTOMER',
+            phone: phone ?? null,
+            status: 'ACTIVE',
+            referralCode: this.randomService.generateReferralCode(),
+          },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            emailVerified: true,
+            authProvider: true,
+            isGuest: true,
+            role: true,
+            status: true,
+            imageUrl: true,
+            phone: true,
+            createdAt: true,
+            referralCode: true,
+            referralEarnings: true,
+            referralTier: true,
+            firebaseUid: true,
+          },
+        });
+      } catch (createErr: any) {
+        // Handle concurrent first-login race conditions
+        const recheck = await this.prisma.user.findUnique({
+          where: { firebaseUid: identity.uid },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            emailVerified: true,
+            authProvider: true,
+            isGuest: true,
+            role: true,
+            status: true,
+            imageUrl: true,
+            phone: true,
+            createdAt: true,
+            referralCode: true,
+            referralEarnings: true,
+            referralTier: true,
+            firebaseUid: true,
+          },
+        });
+        if (recheck) {
+          return recheck;
+        }
+        throw createErr;
+      }
+    } catch (err: any) {
+      if (err instanceof UnauthorizedException || err instanceof BadRequestException) {
+        throw err;
+      }
+      this.logger.error(`Database error during user sync: ${err?.message || err}`);
+      throw new ServiceUnavailableException('Authentication service temporarily unavailable');
+    }
   }
 
   async getUserProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        role: true,
-        status: true,
-        imageUrl: true,
-        createdAt: true,
-        referralCode: true,
-        referralEarnings: true,
-        referralTier: true,
-      },
-    });
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          role: true,
+          status: true,
+          imageUrl: true,
+          emailVerified: true,
+          authProvider: true,
+          isGuest: true,
+          createdAt: true,
+          referralCode: true,
+          referralEarnings: true,
+          referralTier: true,
+          firebaseUid: true,
+        },
+      });
 
-    if (!user) {
-      throw new UnauthorizedException('User not found');
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      return user;
+    } catch (err: any) {
+      if (err instanceof UnauthorizedException) {
+        throw err;
+      }
+      this.logger.error(`Database error getting user profile: ${err?.message || err}`);
+      throw new ServiceUnavailableException('Service temporarily unavailable');
     }
-
-    return user;
   }
 
   async updateUserProfile(
     userId: string,
-    data: { name?: string; email?: string; phone?: string },
+    data: { name?: string; phone?: string },
   ) {
-    const updates: { name?: string; email?: string; phone?: string | null } = {};
+    const updates: { name?: string; phone?: string | null } = {};
 
     if (data.name !== undefined) {
       const trimmedName = data.name.trim();
@@ -233,23 +249,6 @@ export class AuthService {
         throw new BadRequestException('Name cannot be empty');
       }
       updates.name = trimmedName;
-    }
-
-    if (data.email !== undefined) {
-      const trimmedEmail = data.email.trim().toLowerCase();
-      if (!trimmedEmail) {
-        throw new BadRequestException('Email cannot be empty');
-      }
-
-      const existingUser = await this.prisma.user.findUnique({
-        where: { email: trimmedEmail },
-      });
-
-      if (existingUser && existingUser.id !== userId) {
-        throw new ConflictException('Email already registered');
-      }
-
-      updates.email = trimmedEmail;
     }
 
     if (data.phone !== undefined) {
@@ -260,85 +259,65 @@ export class AuthService {
       return this.getUserProfile(userId);
     }
 
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: updates,
-    });
-
-    return this.getUserProfile(userId);
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: updates,
+      });
+      return this.getUserProfile(userId);
+    } catch (err: any) {
+      this.logger.error(`Database error updating user profile: ${err?.message || err}`);
+      throw new ServiceUnavailableException('Service temporarily unavailable');
+    }
   }
 
-  async changePassword(
-    userId: string,
-    data: { currentPassword: string; newPassword: string },
-  ) {
-    const currentPassword = data.currentPassword?.trim();
-    const newPassword = data.newPassword?.trim();
-
-    if (!currentPassword) {
-      throw new BadRequestException('Current password is required');
+  async signoutEverywhere(userId: string, firebaseUid?: string) {
+    if (firebaseUid) {
+      try {
+        await this.firebaseService.revokeRefreshTokens(firebaseUid);
+      } catch (err: any) {
+        this.logger.warn(`Failed to revoke Firebase refresh tokens: ${err?.message || err}`);
+      }
     }
-
-    if (!newPassword) {
-      throw new BadRequestException('New password is required');
-    }
-
-    if (newPassword.length < 6) {
-      throw new BadRequestException('New password must be at least 6 characters long');
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, password: true },
-    });
-
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
-
-    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
-
-    if (!isCurrentPasswordValid) {
-      throw new UnauthorizedException('Current password is incorrect');
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 12);
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { password: hashedPassword },
-    });
-
-    return { message: 'Password changed successfully' };
+    return { success: true, message: 'Signed out of all devices successfully' };
   }
 
-  async validateUser(email: string, password: string): Promise<any> {
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        password: true,
-        role: true,
-        status: true,
-      },
-    });
+  async deleteAccount(userId: string, firebaseUid?: string) {
+    try {
+      await this.prisma.address.deleteMany({ where: { userId } });
+      await this.prisma.deviceToken.deleteMany({ where: { userId } });
+      await this.prisma.cart.deleteMany({ where: { userId } });
+      await this.prisma.wishlist.deleteMany({ where: { userId } });
 
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          name: 'Deleted Customer',
+          email: `deleted_${userId.slice(0, 8)}@laptopmitra.local`,
+          phone: null,
+          status: 'DELETED',
+          isGuest: false,
+        },
+      });
+    } catch (err: any) {
+      this.logger.error(`Database error deleting user account: ${err?.message || err}`);
+      throw new ServiceUnavailableException('Service temporarily unavailable');
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    if (!passwordMatch) {
-      throw new UnauthorizedException('Invalid credentials');
+    if (firebaseUid) {
+      try {
+        await this.firebaseService.deleteUser(firebaseUid);
+      } catch (err: any) {
+        this.logger.warn(`Failed to delete Firebase user: ${err?.message || err}`);
+      }
     }
 
-    if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('Account is suspended');
-    }
+    return { success: true, message: 'Account deleted and personal information anonymized' };
+  }
 
-    const { password: _pass, ...result } = user;
-    return result;
+  async linkGuestAccount(userId: string, data: { email: string; password?: string; name?: string }) {
+    throw new BadRequestException(
+      'Account linking must be performed via Firebase Auth client SDK and verified via /auth/sync.',
+    );
   }
 }

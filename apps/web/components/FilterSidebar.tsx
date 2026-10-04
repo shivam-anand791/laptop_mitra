@@ -25,10 +25,10 @@ interface FilterSidebarProps {
   onCloseMobile?: () => void;
 }
 
-export const BRANDS = ['Lenovo', 'Apple', 'Dell', 'HP', 'ASUS', 'Acer'];
-export const PROCESSORS = ['Apple M-Series', 'Intel Core i7', 'Intel Core i5', 'AMD Ryzen'];
-export const RAMS = ['8GB', '16GB', '32GB', '64GB'];
-export const STORAGES = ['256GB SSD', '512GB SSD', '1TB SSD', '2TB SSD'];
+export const BASE_BRANDS = ['Lenovo', 'Apple', 'Dell', 'HP', 'ASUS', 'Acer'];
+export const BASE_PROCESSORS = ['Apple M-Series', 'Intel Core i7', 'Intel Core i5', 'Intel Core i3', 'AMD Ryzen'];
+export const BASE_RAMS = ['8GB', '16GB', '32GB', '64GB'];
+export const BASE_STORAGES = ['256GB SSD', '512GB SSD', '1TB SSD', '2TB SSD'];
 export const GRADES = [
   { id: 'A+', label: 'Grade A+ (Pristine)' },
   { id: 'A', label: 'Grade A (Excellent)' },
@@ -42,10 +42,54 @@ export const PRICE_RANGES = [
   { id: 'above-75k', label: 'Above ₹75,000' },
 ];
 
+/**
+ * Anchored RAM normalizer for display & grouping.
+ * Normalizes pure formatting variants (e.g. "16 gb", "16GB", "16", "16 DDR4" -> "16GB").
+ * Preserves unrecognized / ambiguous values as they are.
+ */
+export function normalizeRam(raw: string | undefined | null): string {
+  if (!raw) return 'Other';
+  const trimmed = raw.trim();
+  const match = trimmed.match(/^(\d+)\s*(gb|gigabytes)?\s*(ddr\d|lpddr\d|ram)?$/i);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    return `${num}GB`;
+  }
+  return trimmed;
+}
+
+/**
+ * Anchored Storage normalizer for display & grouping.
+ * Normalizes pure formatting variants (e.g. "512 gb ssd", "512GB SSD", "1 tb ssd" -> "1TB SSD").
+ * Does NOT reinterpret raw numbers like 225 or 500. Preserves unrecognized values.
+ */
+export function normalizeStorage(raw: string | undefined | null): string {
+  if (!raw) return 'Other';
+  const trimmed = raw.trim();
+  const match = trimmed.match(/^(\d+)\s*(gb|tb)?\s*(ssd|hdd|nvme|emmc|flash|pcie)?$/i);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    const unitRaw = match[2] ? match[2].toUpperCase() : '';
+    const typeRaw = match[3] ? match[3].toUpperCase() : 'SSD';
+
+    if (unitRaw === 'TB' || (unitRaw === '' && num <= 8 && trimmed.toLowerCase().includes('tb'))) {
+      return `${num}TB ${typeRaw}`;
+    }
+    const unit = unitRaw || 'GB';
+    return `${num}${unit} ${typeRaw}`;
+  }
+  return trimmed;
+}
+
 export function getProductBrand(product: Product): string {
+  const metaBrand = product.metadata?.brand;
+  if (metaBrand && metaBrand.trim()) {
+    const match = BASE_BRANDS.find((b) => b.toLowerCase() === metaBrand.toLowerCase());
+    return match || metaBrand.trim();
+  }
   const name = product.name.toLowerCase();
   const tags = (product.tags || '').toLowerCase();
-  for (const b of BRANDS) {
+  for (const b of BASE_BRANDS) {
     if (name.includes(b.toLowerCase()) || tags.includes(b.toLowerCase())) {
       return b;
     }
@@ -55,7 +99,7 @@ export function getProductBrand(product: Product): string {
 
 export function getProductProcessorGroup(product: Product): string {
   const proc = (product.metadata?.processor || product.name).toLowerCase();
-  if (proc.includes('m1') || proc.includes('m2') || proc.includes('m3') || proc.includes('apple')) {
+  if (proc.includes('m1') || proc.includes('m2') || proc.includes('m3') || proc.includes('m4') || proc.includes('apple')) {
     return 'Apple M-Series';
   }
   if (proc.includes('i7') || proc.includes('core i7')) {
@@ -64,6 +108,9 @@ export function getProductProcessorGroup(product: Product): string {
   if (proc.includes('i5') || proc.includes('core i5')) {
     return 'Intel Core i5';
   }
+  if (proc.includes('i3') || proc.includes('core i3')) {
+    return 'Intel Core i3';
+  }
   if (proc.includes('ryzen') || proc.includes('amd')) {
     return 'AMD Ryzen';
   }
@@ -71,27 +118,32 @@ export function getProductProcessorGroup(product: Product): string {
 }
 
 export function getProductRamGroup(product: Product): string {
-  const ram = (product.metadata?.ram || product.name).toUpperCase();
-  if (ram.includes('64GB')) return '64GB';
-  if (ram.includes('32GB')) return '32GB';
-  if (ram.includes('16GB')) return '16GB';
-  if (ram.includes('8GB')) return '8GB';
+  const metaRam = product.metadata?.ram;
+  if (metaRam) {
+    return normalizeRam(metaRam);
+  }
+  const match = product.name.match(/\b(4|8|16|24|32|64|128)\s*GB\b/i);
+  if (match) {
+    return `${match[1]}GB`;
+  }
   return 'Other';
 }
 
 export function getProductStorageGroup(product: Product): string {
-  const storage = (product.metadata?.storage || product.name || '').toUpperCase().trim();
-  if (storage.includes('2TB')) return '2TB SSD';
-  if (storage.includes('1TB')) return '1TB SSD';
-  if (storage.includes('512') || storage.includes('500GB')) return '512GB SSD';
-  if (storage.includes('256')) return '256GB SSD';
-  if (storage.includes('128')) return '128GB SSD';
-  return storage || 'Other';
+  const metaStorage = product.metadata?.storage;
+  if (metaStorage) {
+    return normalizeStorage(metaStorage);
+  }
+  const match = product.name.match(/\b(128|256|512|1024|1TB|2TB)\s*(GB|TB)?\s*(SSD|HDD|NVMe)?\b/i);
+  if (match) {
+    return normalizeStorage(match[0]);
+  }
+  return 'Other';
 }
 
 export function getProductGrade(product: Product): 'A+' | 'A' | 'B' {
-  const condition = (product.metadata?.condition || '').toUpperCase();
-  if (condition.includes('A+') || condition.includes('PRISTINE')) return 'A+';
+  const condition = (product.metadata?.condition || product.name || '').toUpperCase();
+  if (condition.includes('A+') || condition.includes('PRISTINE') || condition.includes('SEALED')) return 'A+';
   if (condition.includes('A') || condition.includes('EXCELLENT')) return 'A';
   return 'B';
 }
@@ -110,13 +162,54 @@ export default function FilterSidebar({
     processor: true,
     ram: true,
     storage: true,
-    price: true,
     grade: true,
+    price: true,
   });
 
   const toggleSection = (section: string) => {
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
+
+  // Dynamically derive available options from catalog + base options
+  const dynamicBrands = useMemo(() => {
+    const set = new Set(BASE_BRANDS);
+    products.forEach((p) => {
+      const b = getProductBrand(p);
+      if (b !== 'Other') set.add(b);
+    });
+    return Array.from(set);
+  }, [products]);
+
+  const dynamicProcessors = useMemo(() => {
+    const set = new Set(BASE_PROCESSORS);
+    products.forEach((p) => {
+      const pr = getProductProcessorGroup(p);
+      if (pr !== 'Other') set.add(pr);
+    });
+    return Array.from(set);
+  }, [products]);
+
+  const dynamicRams = useMemo(() => {
+    const set = new Set(BASE_RAMS);
+    products.forEach((p) => {
+      const r = getProductRamGroup(p);
+      if (r !== 'Other') set.add(r);
+    });
+    return Array.from(set).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
+      return numA - numB;
+    });
+  }, [products]);
+
+  const dynamicStorages = useMemo(() => {
+    const set = new Set(BASE_STORAGES);
+    products.forEach((p) => {
+      const s = getProductStorageGroup(p);
+      if (s !== 'Other') set.add(s);
+    });
+    return Array.from(set);
+  }, [products]);
 
   // Helper matcher function for faceted count computation
   const matchesFilter = (
@@ -183,46 +276,40 @@ export default function FilterSidebar({
     return true;
   };
 
-  // TODO: move counts to API if catalog grows
   // Computes counts for each option after applying ALL OTHER active filters
   const counts = useMemo(() => {
-    // Brand counts (ignore active brands filter)
     const brandCounts: Record<string, number> = {};
-    BRANDS.forEach((b) => {
+    dynamicBrands.forEach((b) => {
       brandCounts[b] = products.filter((p) => {
         if (getProductBrand(p) !== b) return false;
         return matchesFilter(p, { brands: [] });
       }).length;
     });
 
-    // Processor counts (ignore active processor filter)
     const procCounts: Record<string, number> = {};
-    PROCESSORS.forEach((proc) => {
+    dynamicProcessors.forEach((proc) => {
       procCounts[proc] = products.filter((p) => {
         if (getProductProcessorGroup(p) !== proc) return false;
         return matchesFilter(p, { processors: [] });
       }).length;
     });
 
-    // RAM counts (ignore active RAM filter)
     const ramCounts: Record<string, number> = {};
-    RAMS.forEach((ram) => {
+    dynamicRams.forEach((ram) => {
       ramCounts[ram] = products.filter((p) => {
         if (getProductRamGroup(p) !== ram) return false;
         return matchesFilter(p, { rams: [] });
       }).length;
     });
 
-    // Storage counts (ignore active storage filter)
     const storageCounts: Record<string, number> = {};
-    STORAGES.forEach((st) => {
+    dynamicStorages.forEach((st) => {
       storageCounts[st] = products.filter((p) => {
         if (getProductStorageGroup(p) !== st) return false;
         return matchesFilter(p, { storages: [] });
       }).length;
     });
 
-    // Grade counts
     const gradeCounts: Record<string, number> = {};
     GRADES.forEach((g) => {
       gradeCounts[g.id] = products.filter((p) => {
@@ -231,7 +318,6 @@ export default function FilterSidebar({
       }).length;
     });
 
-    // Category counts
     const catCounts: Record<string, number> = {};
     categories.forEach((cat) => {
       catCounts[cat.id] = products.filter((p) => {
@@ -240,7 +326,6 @@ export default function FilterSidebar({
       }).length;
     });
 
-    // Price range counts
     const priceCounts: Record<string, number> = {
       all: products.filter((p) => matchesFilter(p, { priceRange: 'all' })).length,
       'under-25k': products.filter((p) => matchesFilter(p, { priceRange: 'under-25k' })).length,
@@ -250,7 +335,7 @@ export default function FilterSidebar({
     };
 
     return { brandCounts, procCounts, ramCounts, storageCounts, gradeCounts, catCounts, priceCounts };
-  }, [products, filters, categories]);
+  }, [products, filters, categories, dynamicBrands, dynamicProcessors, dynamicRams, dynamicStorages]);
 
   const activeCount = useMemo(() => {
     let count = 0;
@@ -282,7 +367,7 @@ export default function FilterSidebar({
             Filters
           </h3>
           {activeCount > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-[#1D6FF2] text-white text-xs font-bold font-mono">
+            <span className="px-2 py-0.5 rounded-full bg-[#1D6FF2] text-white text-xs font-bold tabular-nums">
               {activeCount}
             </span>
           )}
@@ -300,12 +385,12 @@ export default function FilterSidebar({
       {/* Buy / Lease Model Toggle */}
       <div>
         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-          Purchase Model
+          Procurement Model
         </label>
         <div className="grid grid-cols-3 gap-1 bg-[#F1F5F9] p-1 rounded-xl border border-[#E4E9F2]">
           {(['all', 'buy', 'lease'] as const).map((type) => {
             const isSelected = filters.listingType === type;
-            const label = type === 'all' ? 'All' : type === 'buy' ? 'Outright Buy' : 'Lease';
+            const label = type === 'all' ? 'All' : type === 'buy' ? 'Outright' : 'Lease';
             return (
               <button
                 key={type}
@@ -388,7 +473,7 @@ export default function FilterSidebar({
               }`}
             >
               <span>All Categories</span>
-              <span className="text-[10px] opacity-80 font-mono">{products.length}</span>
+              <span className="text-[10px] opacity-80 font-mono tabular-nums">{products.length}</span>
             </button>
             {categories.map((cat) => {
               const count = counts.catCounts[cat.id] || counts.catCounts[cat.slug] || 0;
@@ -408,7 +493,7 @@ export default function FilterSidebar({
                   }`}
                 >
                   <span className="truncate text-left">{cat.name}</span>
-                  <span className="text-[10px] opacity-80 font-mono shrink-0 ml-1">{count}</span>
+                  <span className="text-[10px] opacity-80 font-mono tabular-nums shrink-0 ml-1">{count}</span>
                 </button>
               );
             })}
@@ -425,7 +510,7 @@ export default function FilterSidebar({
           <div className="flex items-center gap-1.5">
             <span>Brand</span>
             {filters.brands.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1D6FF2] font-bold font-mono">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1D6FF2] font-bold tabular-nums">
                 {filters.brands.length}
               </span>
             )}
@@ -444,7 +529,7 @@ export default function FilterSidebar({
         </button>
         {openSections.brand && (
           <div className="space-y-1.5 pt-1">
-            {BRANDS.map((b) => {
+            {dynamicBrands.map((b) => {
               const count = counts.brandCounts[b] || 0;
               const isChecked = filters.brands.includes(b);
               const isDimmed = count === 0 && !isChecked;
@@ -465,7 +550,7 @@ export default function FilterSidebar({
                     />
                     <span className={isChecked ? 'font-bold text-[#0B1F4B]' : 'text-slate-700'}>{b}</span>
                   </div>
-                  <span className="text-[10px] font-mono font-medium text-slate-400 group-hover:text-slate-600">
+                  <span className="text-[10px] font-mono tabular-nums font-medium text-slate-400 group-hover:text-slate-600">
                     ({count})
                   </span>
                 </label>
@@ -484,7 +569,7 @@ export default function FilterSidebar({
           <div className="flex items-center gap-1.5">
             <span>Processor</span>
             {filters.processors.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1D6FF2] font-bold font-mono">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1D6FF2] font-bold tabular-nums">
                 {filters.processors.length}
               </span>
             )}
@@ -503,7 +588,7 @@ export default function FilterSidebar({
         </button>
         {openSections.processor && (
           <div className="space-y-1.5 pt-1">
-            {PROCESSORS.map((proc) => {
+            {dynamicProcessors.map((proc) => {
               const count = counts.procCounts[proc] || 0;
               const isChecked = filters.processors.includes(proc);
               const isDimmed = count === 0 && !isChecked;
@@ -524,7 +609,7 @@ export default function FilterSidebar({
                     />
                     <span className={isChecked ? 'font-bold text-[#0B1F4B]' : 'text-slate-700'}>{proc}</span>
                   </div>
-                  <span className="text-[10px] font-mono font-medium text-slate-400 group-hover:text-slate-600">
+                  <span className="text-[10px] font-mono tabular-nums font-medium text-slate-400 group-hover:text-slate-600">
                     ({count})
                   </span>
                 </label>
@@ -543,7 +628,7 @@ export default function FilterSidebar({
           <div className="flex items-center gap-1.5">
             <span>RAM</span>
             {filters.rams.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1D6FF2] font-bold font-mono">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1D6FF2] font-bold tabular-nums">
                 {filters.rams.length}
               </span>
             )}
@@ -562,7 +647,7 @@ export default function FilterSidebar({
         </button>
         {openSections.ram && (
           <div className="space-y-1.5 pt-1">
-            {RAMS.map((ram) => {
+            {dynamicRams.map((ram) => {
               const count = counts.ramCounts[ram] || 0;
               const isChecked = filters.rams.includes(ram);
               const isDimmed = count === 0 && !isChecked;
@@ -583,7 +668,7 @@ export default function FilterSidebar({
                     />
                     <span className={isChecked ? 'font-bold text-[#0B1F4B]' : 'text-slate-700'}>{ram}</span>
                   </div>
-                  <span className="text-[10px] font-mono font-medium text-slate-400 group-hover:text-slate-600">
+                  <span className="text-[10px] font-mono tabular-nums font-medium text-slate-400 group-hover:text-slate-600">
                     ({count})
                   </span>
                 </label>
@@ -602,7 +687,7 @@ export default function FilterSidebar({
           <div className="flex items-center gap-1.5">
             <span>Storage (SSD)</span>
             {filters.storages.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1D6FF2] font-bold font-mono">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1D6FF2] font-bold tabular-nums">
                 {filters.storages.length}
               </span>
             )}
@@ -621,7 +706,7 @@ export default function FilterSidebar({
         </button>
         {openSections.storage && (
           <div className="space-y-1.5 pt-1">
-            {STORAGES.map((st) => {
+            {dynamicStorages.map((st) => {
               const count = counts.storageCounts[st] || 0;
               const isChecked = filters.storages.includes(st);
               const isDimmed = count === 0 && !isChecked;
@@ -642,7 +727,7 @@ export default function FilterSidebar({
                     />
                     <span className={isChecked ? 'font-bold text-[#0B1F4B]' : 'text-slate-700'}>{st}</span>
                   </div>
-                  <span className="text-[10px] font-mono font-medium text-slate-400 group-hover:text-slate-600">
+                  <span className="text-[10px] font-mono tabular-nums font-medium text-slate-400 group-hover:text-slate-600">
                     ({count})
                   </span>
                 </label>
@@ -652,7 +737,7 @@ export default function FilterSidebar({
         )}
       </div>
 
-      {/* Condition Grade Filter */}
+      {/* 5. Condition Grade Filter */}
       <div className="border-t border-[#E4E9F2] pt-4">
         <button
           onClick={() => toggleSection('grade')}
@@ -661,7 +746,7 @@ export default function FilterSidebar({
           <div className="flex items-center gap-1.5">
             <span>Condition Grade</span>
             {filters.grades.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1D6FF2] font-bold font-mono">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-[#1D6FF2] font-bold tabular-nums">
                 {filters.grades.length}
               </span>
             )}
@@ -701,7 +786,7 @@ export default function FilterSidebar({
                     />
                     <span className={isChecked ? 'font-bold text-[#0B1F4B]' : 'text-slate-700'}>{g.label}</span>
                   </div>
-                  <span className="text-[10px] font-mono font-medium text-slate-400 group-hover:text-slate-600">
+                  <span className="text-[10px] font-mono tabular-nums font-medium text-slate-400 group-hover:text-slate-600">
                     ({count})
                   </span>
                 </label>
@@ -711,7 +796,7 @@ export default function FilterSidebar({
         )}
       </div>
 
-      {/* Price Range Filter */}
+      {/* 6. Price Range Filter */}
       <div className="border-t border-[#E4E9F2] pt-4">
         <button
           onClick={() => toggleSection('price')}
@@ -754,7 +839,7 @@ export default function FilterSidebar({
                     />
                     <span className={isSelected ? 'font-bold text-[#0B1F4B]' : 'text-slate-700'}>{pr.label}</span>
                   </div>
-                  <span className="text-[10px] font-mono font-medium text-slate-400 group-hover:text-slate-600">
+                  <span className="text-[10px] font-mono tabular-nums font-medium text-slate-400 group-hover:text-slate-600">
                     ({count})
                   </span>
                 </label>
@@ -764,7 +849,7 @@ export default function FilterSidebar({
         )}
       </div>
 
-      {/* In-Stock Only (Ready for Dispatch) */}
+      {/* 7. In-Stock Only (Ready for Dispatch) */}
       <div className="border-t border-[#E4E9F2] pt-4">
         <label className="flex items-center justify-between text-xs font-semibold text-slate-700 cursor-pointer group py-1 px-1.5 rounded-lg hover:bg-slate-50">
           <div className="flex items-center gap-2">
@@ -787,7 +872,7 @@ export default function FilterSidebar({
         <div className="pt-4 border-t border-[#E4E9F2] mt-2">
           <button
             onClick={onCloseMobile}
-            className="w-full py-3 rounded-xl bg-[#1D6FF2] hover:bg-[#1558C0] text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all text-center cursor-pointer"
+            className="w-full h-11 px-4 rounded-xl bg-[#1D6FF2] hover:bg-[#1558C0] text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center text-center cursor-pointer"
           >
             Apply Filters
           </button>
@@ -796,4 +881,3 @@ export default function FilterSidebar({
     </div>
   );
 }
-

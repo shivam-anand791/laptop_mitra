@@ -270,6 +270,71 @@ body {
   animation: check-bounce 400ms var(--ease-spring) forwards;
 }
 
+/* ── Infinite Marquee Keyframe ── */
+@keyframes marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: marquee-scroll 45s linear infinite;
+}
+
+.animate-marquee:hover,
+.animate-marquee:focus-within,
+.animate-marquee:active {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+.brand-mask-edges {
+  mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent);
+}
+
+/* ── Floating Pulse Ring (GPU scale + opacity) ── */
+@keyframes gpu-pulse-ring {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+.pulse-ring {
+  position: relative;
+}
+
+.pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  z-index: -1;
+  animation: gpu-pulse-ring 3s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+}
+
 /* ── Spin (loading) ── */
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -444,8 +509,25 @@ body {
 }
 
 .label {
-  @apply block text-sm font-medium mb-1;
+  @apply block text-sm font-medium mb-1.5;
   color: var(--text-secondary);
+}
+
+/* ── Layout & Spacing Utilities (Standard 4px System) ── */
+.layout-container {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+.layout-section {
+  @apply py-12 sm:py-16 lg:py-20;
+}
+
+.layout-section-heading {
+  @apply mb-6 lg:mb-8;
+}
+
+.scroll-header-offset {
+  scroll-margin-top: 80px;
 }
 
 .badge {

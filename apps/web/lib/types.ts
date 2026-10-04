@@ -29,6 +29,7 @@ export interface Product {
   categoryId?: string | null;
   category?: Category | null;
   images?: ProductImage[];
+  dealEndsAt?: string | null;
   metadata?: {
     processor?: string;
     ram?: string;

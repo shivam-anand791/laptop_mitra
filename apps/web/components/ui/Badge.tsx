@@ -11,7 +11,8 @@ type BadgeVariant =
   | 'refurb'
   | 'bestSeller'
   | 'newArrival'
-  | 'hotDeal';
+  | 'hotDeal'
+  | 'inStock';
 
 type BadgeSize = 'sm' | 'md';
 
@@ -25,22 +26,23 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  primary: 'bg-blue-50 text-[#1D6FF2] border border-blue-200',
+  primary: 'bg-[#EBF2FF] text-[#1D6FF2] border border-blue-200/80',
   secondary: 'bg-slate-100 text-slate-700 border border-slate-200',
   success: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
   warning: 'bg-amber-50 text-amber-700 border border-amber-200',
   danger: 'bg-rose-50 text-rose-700 border border-rose-200',
   info: 'bg-sky-50 text-sky-700 border border-sky-200',
   muted: 'bg-slate-100 text-slate-500 border border-slate-200',
-  refurb: 'bg-blue-50 text-[#1D6FF2] border border-blue-200 font-black',
-  bestSeller: 'bg-amber-50 text-amber-800 border border-amber-200 font-black',
-  newArrival: 'bg-blue-50 text-[#1D6FF2] border border-blue-200 font-bold',
-  hotDeal: 'bg-rose-50 text-rose-700 border border-rose-200 font-black',
+  refurb: 'bg-[#0B1F4B] text-white border border-[#0B1F4B] font-extrabold shadow-xs',
+  bestSeller: 'bg-[#1D6FF2] text-white border border-[#1D6FF2] font-extrabold shadow-xs',
+  newArrival: 'bg-[#EBF2FF] text-[#1D6FF2] border border-blue-200 font-extrabold',
+  hotDeal: 'bg-[#F97316] text-white border border-[#F97316] font-extrabold shadow-xs',
+  inStock: 'bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold',
 };
 
 const sizeStyles: Record<BadgeSize, string> = {
-  sm: 'px-1.5 py-0.5 text-[10px]',
-  md: 'px-2.5 py-0.5 text-xs',
+  sm: 'px-2 py-0.5 text-[10px]',
+  md: 'px-2.5 py-1 text-xs',
 };
 
 export default function Badge({
@@ -54,7 +56,7 @@ export default function Badge({
   return (
     <span
       className={[
-        'inline-flex items-center gap-1.5 rounded-full font-semibold',
+        'inline-flex items-center gap-1.5 rounded-md font-semibold',
         'uppercase tracking-wider leading-none',
         variantStyles[variant],
         sizeStyles[size],
@@ -72,7 +74,9 @@ export default function Badge({
             variant === 'primary' && 'bg-[#1D6FF2]',
             variant === 'secondary' && 'bg-slate-400',
             variant === 'muted' && 'bg-slate-400',
-          ].join(' ')}
+            variant === 'inStock' && 'bg-emerald-500',
+          ].filter(Boolean).join(' ')}
+          aria-hidden="true"
         />
       )}
       {icon && <span className="shrink-0">{icon}</span>}
@@ -118,11 +122,11 @@ export function GradeBadge({ grade, size = 'md', className = '' }: GradeBadgePro
     <span
       className={[
         'inline-flex items-center rounded-md font-bold border',
-        'uppercase tracking-wider leading-none shadow-sm',
+        'uppercase tracking-wider leading-none shadow-xs',
         style.bg,
         style.text,
         style.border,
-        size === 'sm' ? 'px-1.5 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs',
+        size === 'sm' ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs',
         className,
       ].join(' ')}
       role="img"
@@ -132,4 +136,3 @@ export function GradeBadge({ grade, size = 'md', className = '' }: GradeBadgePro
     </span>
   );
 }
-
