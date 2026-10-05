@@ -3,12 +3,13 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { parseCorsOrigins, createCorsOriginCallback } from './common/cors';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
@@ -53,24 +54,21 @@ async function bootstrap() {
     }),
   );
 
-  // Swagger documentation
-  const config = new DocumentBuilder()
-    .setTitle('LaptopMitra API')
-    .setDescription('API for LaptopMitra e-commerce platform')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  // Swagger documentation - mounted only when NODE_ENV !== 'production' or ENABLE_SWAGGER === 'true'
+  const enableSwagger = configService.get<string>('ENABLE_SWAGGER') === 'true';
+  if (!isProduction || enableSwagger) {
+    const config = new DocumentBuilder()
+      .setTitle('LaptopMitra API')
+      .setDescription('API for LaptopMitra e-commerce platform')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api', app, document);
+  }
 
   // Configure trust proxy on Express adapter for accurate client IP resolution behind reverse proxies
-  const httpAdapter = app.getHttpAdapter();
-  if (typeof httpAdapter.getInstance === 'function') {
-    const expressApp = httpAdapter.getInstance();
-    if (typeof expressApp?.set === 'function') {
-      expressApp.set('trust proxy', 1);
-    }
-  }
+  app.set('trust proxy', 1);
 
   const port = configService.get<number>('PORT', 3001);
   await app.listen(port, '0.0.0.0');

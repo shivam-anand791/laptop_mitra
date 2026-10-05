@@ -169,22 +169,63 @@ describe('PaymentService (Security & Integrity Tests)', () => {
   });
 
   describe('Webhook & Signature Verification', () => {
-    it('verifies valid HMAC signature using timing-safe comparison', async () => {
+    it('webhook with a raw body signed by a known test secret is accepted', async () => {
       const payload = { event: 'payment.captured', payload: { payment: { entity: { id: 'pay_123' } } } };
+      const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
       const secret = 'webhooksecret1234567890';
-      const validSig = crypto.createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+      const validSig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
 
-      const result = await paymentService.handlePaymentWebhook(payload, validSig);
+      prisma.payment.findFirst.mockResolvedValue(null);
+
+      const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
       expect(result.valid).toBe(true);
     });
 
-    it('rejects tampered webhook signature', async () => {
-      const payload = { event: 'payment.captured' };
-      const invalidSig = 'deadbeefdeadbeef';
+    it('same body with one byte changed is rejected with 400 (BadRequestException)', async () => {
+      const payload = { event: 'payment.captured', payload: { payment: { entity: { id: 'pay_123' } } } };
+      const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
+      const secret = 'webhooksecret1234567890';
+      const validSig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
 
-      const result = await paymentService.handlePaymentWebhook(payload, invalidSig);
-      expect(result.valid).toBe(false);
-      expect(result.event).toBe('invalid_signature');
+      const tamperedBody = Buffer.from(rawBody);
+      tamperedBody[0] = tamperedBody[0] ^ 1; // Flip 1 byte
+
+      await expect(
+        paymentService.handlePaymentWebhook(tamperedBody, validSig),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('missing signature gives 400 (BadRequestException)', async () => {
+      const rawBody = Buffer.from(JSON.stringify({ event: 'payment.captured' }), 'utf8');
+      await expect(
+        paymentService.handlePaymentWebhook(rawBody, undefined),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('replaying the same event is a no-op (idempotent)', async () => {
+      const payload = {
+        event: 'payment.captured',
+        payload: {
+          payment: {
+            entity: { id: 'pay_already_completed', order_id: 'order_rzp_999' },
+          },
+        },
+      };
+      const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
+      const secret = 'webhooksecret1234567890';
+      const validSig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+
+      prisma.payment.findFirst.mockResolvedValue({
+        id: 'pay-db-1',
+        razorpayPaymentId: 'pay_already_completed',
+        status: 'COMPLETED',
+      });
+
+      const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
+      expect(result.valid).toBe(true);
+      expect(result.event).toBe('already_processed');
+      expect(prisma.order.update).not.toHaveBeenCalled();
+      expect(notificationService.dispatchPaymentUpdate).not.toHaveBeenCalled();
     });
 
     it('rejects webhook with amount mismatch against database order', async () => {
@@ -202,7 +243,8 @@ describe('PaymentService (Security & Integrity Tests)', () => {
           },
         },
       };
-      const validSig = crypto.createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+      const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
+      const validSig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
 
       const dbOrder = {
         id: 'order-100',
@@ -211,9 +253,10 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         paymentStatus: 'PENDING',
         status: 'PENDING',
       };
+      prisma.payment.findFirst.mockResolvedValue(null);
       prisma.order.findFirst.mockResolvedValue(dbOrder);
 
-      const result = await paymentService.handlePaymentWebhook(payload, validSig);
+      const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
       expect(result.valid).toBe(false);
       expect(result.event).toBe('amount_mismatch');
       expect(prisma.order.update).not.toHaveBeenCalled();

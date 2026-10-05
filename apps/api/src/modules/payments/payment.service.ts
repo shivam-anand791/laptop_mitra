@@ -199,19 +199,19 @@ export class PaymentService {
     return { success: true, message: 'Payment verified successfully' };
   }
 
-  async verifyWebhookSignature(
-    payload: string,
+  verifyWebhookSignature(
+    rawBody: Buffer | string,
     signature: string,
-  ): Promise<boolean> {
+  ): boolean {
     const secret = this.configService.get<string>('RAZORPAY_WEBHOOK_SECRET');
     if (!secret) {
       this.logger.error('RAZORPAY_WEBHOOK_SECRET is not configured');
-      return false;
+      throw new BadRequestException('Webhook verification failed: secret not configured');
     }
 
     const expectedSignature = crypto
       .createHmac('sha256', secret)
-      .update(payload)
+      .update(rawBody)
       .digest('hex');
 
     const sigBuffer = Buffer.from(signature, 'utf8');
@@ -225,27 +225,53 @@ export class PaymentService {
   }
 
   async handlePaymentWebhook(
-    payload: any,
-    signature: string,
+    rawBody?: Buffer | string,
+    signature?: string,
   ): Promise<{ valid: boolean; event: string; data?: any }> {
-    const rawPayload = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    const isValid = await this.verifyWebhookSignature(rawPayload, signature);
-
-    if (!isValid) {
-      return { valid: false, event: 'invalid_signature' };
+    if (!signature) {
+      throw new BadRequestException('Missing x-razorpay-signature header');
     }
 
-    const event = payload.event;
-    const paymentEntity = payload.payload?.payment?.entity;
+    if (!rawBody || (Buffer.isBuffer(rawBody) && rawBody.length === 0)) {
+      throw new BadRequestException('Missing raw request body');
+    }
+
+    const isValid = this.verifyWebhookSignature(rawBody, signature);
+    if (!isValid) {
+      throw new BadRequestException('Invalid webhook signature');
+    }
+
+    let payload: any;
+    try {
+      const bodyString = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody);
+      payload = JSON.parse(bodyString);
+    } catch {
+      throw new BadRequestException('Invalid webhook payload: JSON parse failed');
+    }
+
+    const event = payload?.event;
+    const paymentEntity = payload?.payload?.payment?.entity;
 
     if (!paymentEntity) {
       return { valid: true, event: 'ignored_no_entity' };
     }
 
+    const razorpayPaymentId = paymentEntity.id;
+    const razorpayOrderId = paymentEntity.order_id;
+
+    // Idempotency: if payment with this razorpayPaymentId is already COMPLETED, avoid re-processing
+    if (razorpayPaymentId) {
+      const existingPayment = await this.prisma.payment.findFirst({
+        where: { razorpayPaymentId, status: 'COMPLETED' },
+      });
+      if (existingPayment) {
+        return { valid: true, event: 'already_processed', data: paymentEntity };
+      }
+    }
+
     switch (event) {
       case 'payment.authorized':
       case 'payment.captured': {
-        const razorpayOrderId = paymentEntity.order_id;
         if (!razorpayOrderId) {
           return { valid: true, event: 'ignored_no_order_id' };
         }
@@ -259,8 +285,8 @@ export class PaymentService {
           return { valid: true, event: 'order_not_found', data: paymentEntity };
         }
 
-        // Idempotency: if order is already marked COMPLETED, avoid duplicate mutation
-        if (order.paymentStatus === 'COMPLETED') {
+        // Idempotency: if order is already marked COMPLETED or matches this paymentId, avoid duplicate mutation
+        if (order.paymentStatus === 'COMPLETED' || (razorpayPaymentId && order.paymentId === razorpayPaymentId)) {
           return { valid: true, event: 'already_processed', data: paymentEntity };
         }
 

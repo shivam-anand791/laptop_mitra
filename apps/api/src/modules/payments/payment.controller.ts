@@ -3,12 +3,15 @@ import {
   Get,
   Post,
   Body,
+  Req,
+  RawBodyRequest,
   HttpCode,
   HttpStatus,
   Headers,
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { PaymentService } from './payment.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { GetUser } from '../../decorators/get-user.decorator';
@@ -84,13 +87,9 @@ export class PaymentController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Razorpay webhook handler' })
   async handleRazorpayWebhook(
-    @Body() payload: any,
+    @Req() req: RawBodyRequest<Request>,
     @Headers('x-razorpay-signature') signature: string,
   ) {
-    if (!signature) {
-      return { valid: false, event: 'missing_signature' };
-    }
-    const result = await this.paymentService.handlePaymentWebhook(payload, signature);
-    return result;
+    return this.paymentService.handlePaymentWebhook(req?.rawBody, signature);
   }
 }
