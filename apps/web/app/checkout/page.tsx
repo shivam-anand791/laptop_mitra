@@ -9,6 +9,7 @@ import { useCart } from '../../lib/cart-context';
 import { useAuth } from '../../lib/auth-context';
 import { api } from '../../lib/api';
 import { Order } from '../../lib/types';
+import { config } from '../../lib/config';
 
 declare global {
   interface Window {
@@ -144,7 +145,13 @@ export default function CheckoutPage() {
 
       // 2. If Razorpay selected, initialize payment modal
       if (paymentMethod === 'razorpay') {
-        const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_S3KeoVspM7qt2w';
+        const razorpayKey = config.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+
+        if (!razorpayKey) {
+          alert('Payments are not configured');
+          setIsSubmitting(false);
+          return;
+        }
 
         try {
           const rzpOrder = await api.createRazorpayOrder(finalAmount, order.id);
@@ -473,6 +480,11 @@ export default function CheckoutPage() {
                           <span className="text-xs text-slate-500">
                             Instant confirmation via Razorpay 256-bit secure gateway
                           </span>
+                          {!config.NEXT_PUBLIC_RAZORPAY_KEY_ID && (
+                            <span className="text-xs text-rose-600 font-bold block mt-1">
+                              Payments are not configured
+                            </span>
+                          )}
                         </div>
                       </div>
                       <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shrink-0">
