@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ServiceUnavailableException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { allowInMemoryFallback } from '../../common/fallback';
 
 export interface SupportTicketMessage {
   id: string;
@@ -30,9 +31,20 @@ const inMemoryTickets: Map<string, SupportTicket> = new Map();
 
 @Injectable()
 export class SupportService {
+  private readonly logger = new Logger(SupportService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async getUserTickets(userId: string): Promise<SupportTicket[]> {
+    try {
+      await this.prisma.user.findUnique({ where: { id: userId } });
+    } catch (error: any) {
+      this.logger.error(`Database error while fetching support tickets: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Support service is temporarily unavailable');
+      }
+    }
+
     const tickets = Array.from(inMemoryTickets.values()).filter((t) => t.userId === userId);
     return tickets.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
@@ -55,6 +67,15 @@ export class SupportService {
       priority?: 'LOW' | 'MEDIUM' | 'HIGH';
     },
   ): Promise<SupportTicket> {
+    try {
+      await this.prisma.user.findUnique({ where: { id: userId } });
+    } catch (error: any) {
+      this.logger.error(`Database error while creating support ticket: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Support service is temporarily unavailable');
+      }
+    }
+
     const id = `ticket-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const ticketNumber = `LM-TK-${Date.now().toString().slice(-6)}`;
 
@@ -63,7 +84,11 @@ export class SupportService {
       try {
         const order = await this.prisma.order.findUnique({ where: { id: data.orderId } });
         if (order) orderNumber = order.orderNumber;
-      } catch {
+      } catch (error: any) {
+        this.logger.error(`Database error while verifying order for support ticket: ${error?.message || error}`);
+        if (!allowInMemoryFallback()) {
+          throw new ServiceUnavailableException('Support service is temporarily unavailable');
+        }
         orderNumber = `ORD-${data.orderId.slice(0, 6).toUpperCase()}`;
       }
     }

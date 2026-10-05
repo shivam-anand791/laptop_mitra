@@ -1,7 +1,7 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationPreferences } from '../../types';
-
+import { allowInMemoryFallback } from '../../common/fallback';
 
 // In-memory preferences fallback
 const inMemoryPreferences: Map<string, NotificationPreferences> = new Map();
@@ -22,11 +22,27 @@ export class NotificationService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getPreferences(userId: string): Promise<NotificationPreferences> {
+    try {
+      await this.prisma.user.findUnique({ where: { id: userId } });
+    } catch (error: any) {
+      this.logger.error(`Database error while fetching notification preferences: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Notification service is temporarily unavailable');
+      }
+    }
     return inMemoryPreferences.get(userId) || DEFAULT_PREFERENCES;
   }
 
   async updatePreferences(userId: string, prefs: Partial<NotificationPreferences>): Promise<NotificationPreferences> {
-    const current = await this.getPreferences(userId);
+    try {
+      await this.prisma.user.findUnique({ where: { id: userId } });
+    } catch (error: any) {
+      this.logger.error(`Database error while updating notification preferences: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Notification service is temporarily unavailable');
+      }
+    }
+    const current = inMemoryPreferences.get(userId) || DEFAULT_PREFERENCES;
     const updated: NotificationPreferences = {
       ...current,
       ...prefs,
@@ -64,8 +80,11 @@ export class NotificationService {
           platform: normalizedPlatform,
         },
       });
-    } catch {
-      // In-memory device token fallback
+    } catch (error: any) {
+      this.logger.error(`Database error while registering device token: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Notification service is temporarily unavailable');
+      }
     }
 
     return { message: 'Device token registered successfully' };

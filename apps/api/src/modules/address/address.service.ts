@@ -1,7 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ServiceUnavailableException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Address } from '../../types';
-
+import { allowInMemoryFallback } from '../../common/fallback';
 
 export interface AddressDto {
   id?: string;
@@ -22,6 +28,8 @@ const inMemoryAddresses: Map<string, Address[]> = new Map();
 
 @Injectable()
 export class AddressService {
+  private readonly logger = new Logger(AddressService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(userId: string): Promise<Address[]> {
@@ -33,28 +41,14 @@ export class AddressService {
       if (addresses) {
         return addresses.map((a) => this.formatAddress(a));
       }
-    } catch {
-      // fallback
+    } catch (error: any) {
+      this.logger.error(`Database error while finding addresses: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Address service is temporarily unavailable');
+      }
     }
 
-    const userAddrs = inMemoryAddresses.get(userId) || [
-      {
-        id: `addr-default-${userId.slice(0, 5)}`,
-        userId,
-        fullName: 'Demo Customer',
-        phone: '+91 9876543210',
-        address: 'B-402, Prestige Tech Park, Outer Ring Road',
-        city: 'Bengaluru',
-        state: 'Karnataka',
-        pincode: '560103',
-        landmark: 'Near Marathahalli Bridge',
-        label: 'Work',
-        gstin: '29ABCDE1234F1Z5',
-        isDefault: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ];
+    const userAddrs = inMemoryAddresses.get(userId) || [];
     return userAddrs.sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0));
   }
 
@@ -100,8 +94,11 @@ export class AddressService {
         });
       }
       return this.formatAddress({ ...created, label: newAddress.label, gstin: newAddress.gstin });
-    } catch {
-      // Store in memory
+    } catch (error: any) {
+      this.logger.error(`Database error while creating address: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Address service is temporarily unavailable');
+      }
     }
 
     const current = inMemoryAddresses.get(userId) || [];
@@ -142,8 +139,15 @@ export class AddressService {
         }
         return this.formatAddress({ ...updated, label: data.label, gstin: data.gstin });
       }
-    } catch {
-      // In memory fallback
+      if (!allowInMemoryFallback()) {
+        throw new NotFoundException('Address not found');
+      }
+    } catch (error: any) {
+      if (error instanceof NotFoundException) throw error;
+      this.logger.error(`Database error while updating address: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Address service is temporarily unavailable');
+      }
     }
 
     const current = inMemoryAddresses.get(userId) || [];
@@ -184,8 +188,15 @@ export class AddressService {
         await this.prisma.address.delete({ where: { id } });
         return { message: 'Address deleted successfully' };
       }
-    } catch {
-      // In memory fallback
+      if (!allowInMemoryFallback()) {
+        throw new NotFoundException('Address not found');
+      }
+    } catch (error: any) {
+      if (error instanceof NotFoundException) throw error;
+      this.logger.error(`Database error while deleting address: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Address service is temporarily unavailable');
+      }
     }
 
     const current = inMemoryAddresses.get(userId) || [];

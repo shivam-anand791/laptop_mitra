@@ -1,16 +1,26 @@
-import { Injectable, UnauthorizedException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  ServiceUnavailableException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CartService } from '../cart/cart.service';
 import { ProductService } from '../product/product.service';
 import { NotificationService } from '../notifications/notification.service';
 import { Order, OrderItem } from '../../types';
-
+import { allowInMemoryFallback } from '../../common/fallback';
 
 // In-memory orders for fallback
 const inMemoryOrders: Map<string, Order[]> = new Map();
 
 @Injectable()
 export class OrderService {
+  private readonly logger = new Logger(OrderService.name);
+
   constructor(
     private prisma: PrismaService,
     private cartService: CartService,
@@ -64,8 +74,8 @@ export class OrderService {
       phone: o.phone || null,
       email: o.email || '',
       notes: o.notes || null,
-      trackingNumber: delivery?.trackingNumber || (o.status === 'SHIPPING' || o.status === 'DELIVERED' ? `BLUEDART-${o.id.slice(0, 8).toUpperCase()}` : null),
-      carrier: delivery?.carrier || (o.status === 'SHIPPING' || o.status === 'DELIVERED' ? 'BlueDart Express' : null),
+      trackingNumber: delivery?.trackingNumber || o.trackingNumber || null,
+      carrier: delivery?.carrier || o.carrier || null,
       returnStatus: o.returnStatus || 'NONE',
       returnReason: o.returnReason || null,
       items,
@@ -81,11 +91,23 @@ export class OrderService {
     shippingAddress?: any,
     phone?: string,
     notes?: string,
+    email?: string,
+    user?: any,
   ): Promise<Order> {
     const { cart, total, itemCount } = await this.cartService.getCart(userId);
 
     if (itemCount === 0) {
       throw new BadRequestException('Cart is empty');
+    }
+
+    const resolvedEmail = (email || shippingAddress?.email || user?.email)?.trim();
+    const resolvedPhone = (phone || shippingAddress?.phone || user?.phone)?.trim();
+
+    if (!resolvedEmail) {
+      throw new BadRequestException('Email is required to place an order');
+    }
+    if (!resolvedPhone) {
+      throw new BadRequestException('Phone number is required to place an order');
     }
 
     let discountAmount = 0;
@@ -125,33 +147,26 @@ export class OrderService {
       warrantyValidUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     }));
 
-
     const newOrder: Order = {
       id: orderId,
       orderNumber,
       userId,
-      status: 'CONFIRMED',
-      paymentStatus: 'COMPLETED',
+      status: 'PENDING',
+      paymentStatus: 'PENDING',
       paymentMethod: 'razorpay',
-      paymentId: `pay_${Date.now()}`,
+      paymentId: null,
       subtotal: total,
       discountAmount,
       discountType,
       referralCode: referralCode || null,
       referralDiscount,
       finalAmount,
-      shippingAddress: shippingAddress || {
-        fullName: 'Customer',
-        address: 'MG Road',
-        city: 'Bengaluru',
-        state: 'Karnataka',
-        pincode: '560001',
-      },
-      phone: phone || '+91 9876543210',
-      email: 'customer@laptopmitra.com',
+      shippingAddress: shippingAddress || null,
+      phone: resolvedPhone,
+      email: resolvedEmail,
       notes: notes || null,
-      trackingNumber: `BD-${Date.now().toString().slice(-6)}`,
-      carrier: 'BlueDart Express',
+      trackingNumber: null,
+      carrier: null,
       returnStatus: 'NONE',
       returnReason: null,
       items: orderItems,
@@ -159,30 +174,49 @@ export class OrderService {
       updatedAt: now,
     };
 
-    try {
-      await this.prisma.order.create({
+    const orderCreateOp = this.prisma.order.create({
+      data: {
+        id: orderId,
+        orderNumber,
+        userId,
+        status: newOrder.status,
+        paymentStatus: newOrder.paymentStatus,
+        paymentMethod: newOrder.paymentMethod,
+        paymentId: newOrder.paymentId,
+        subtotal: newOrder.subtotal,
+        discountAmount: newOrder.discountAmount,
+        discountType: newOrder.discountType,
+        finalAmount: newOrder.finalAmount,
+        shippingAddress: newOrder.shippingAddress || undefined,
+        phone: newOrder.phone,
+        email: newOrder.email,
+        notes: newOrder.notes,
+        referralCode: newOrder.referralCode,
+        referralDiscount: newOrder.referralDiscount,
+      },
+    });
+
+    const itemCreateOps = cart.items.map((it) => {
+      const itemPrice = typeof it.priceAtAdd === 'number'
+        ? it.priceAtAdd
+        : parseFloat(it.priceAtAdd?.toString() || '0') || 0;
+      return this.prisma.orderItem.create({
         data: {
-          id: orderId,
-          orderNumber,
-          userId,
-          status: newOrder.status,
-          paymentStatus: newOrder.paymentStatus,
-          paymentMethod: newOrder.paymentMethod,
-          paymentId: newOrder.paymentId,
-          subtotal: newOrder.subtotal,
-          discountAmount: newOrder.discountAmount,
-          discountType: newOrder.discountType,
-          finalAmount: newOrder.finalAmount,
-          shippingAddress: newOrder.shippingAddress,
-          phone: newOrder.phone,
-          email: newOrder.email,
-          notes: newOrder.notes,
-          referralCode: newOrder.referralCode,
-          referralDiscount: newOrder.referralDiscount,
+          orderId,
+          productId: it.productId,
+          quantity: it.quantity,
+          price: itemPrice,
         },
       });
-    } catch {
-      // In-memory fallback
+    });
+
+    try {
+      await this.prisma.$transaction([orderCreateOp, ...itemCreateOps]);
+    } catch (error: any) {
+      this.logger.error(`Database error while creating order: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Order service is temporarily unavailable');
+      }
     }
 
     const currentOrders = inMemoryOrders.get(userId) || [];
@@ -191,7 +225,7 @@ export class OrderService {
 
     await this.cartService.clearCart(userId);
     try {
-      await this.notificationService.dispatchOrderUpdate(userId, orderId, 'CONFIRMED');
+      await this.notificationService.dispatchOrderUpdate(userId, orderId, 'PENDING');
     } catch {
       // notification fallback
     }
@@ -214,73 +248,17 @@ export class OrderService {
         },
         orderBy: { createdAt: 'desc' },
       });
-      if (dbOrders && dbOrders.length > 0) {
+      if (dbOrders) {
         return dbOrders.map((o) => this.normalizeOrder(o));
       }
-    } catch {
-      // fallback
+    } catch (error: any) {
+      this.logger.error(`Database error while finding orders for user: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Order service is temporarily unavailable');
+      }
     }
 
-    const memory = inMemoryOrders.get(userId) || [
-      {
-        id: 'ord-demo-001',
-        orderNumber: 'LM-982341',
-        userId,
-        status: 'DELIVERED',
-        paymentStatus: 'COMPLETED',
-        paymentMethod: 'razorpay',
-        paymentId: 'pay_LM982341_RZP',
-        subtotal: 64999,
-        discountAmount: 0,
-        discountType: null,
-        referralCode: null,
-        referralDiscount: 0,
-        finalAmount: 64999,
-        shippingAddress: {
-          fullName: 'Demo User',
-          phone: '+91 9876543210',
-          address: 'B-402, Prestige Tech Park, Outer Ring Road',
-          city: 'Bengaluru',
-          state: 'Karnataka',
-          pincode: '560103',
-          label: 'Work',
-        },
-        phone: '+91 9876543210',
-        email: 'demo@laptopmitra.com',
-        notes: 'Deliver to reception',
-        trackingNumber: 'BD-882349102IN',
-        carrier: 'BlueDart Express',
-        returnStatus: 'NONE',
-        returnReason: null,
-        items: [
-          {
-            id: 'item-demo-1',
-            orderId: 'ord-demo-001',
-            productId: 'prod-thinkpad-x1-carbon-g10',
-            quantity: 1,
-            price: 64999,
-            product: {
-              id: 'prod-thinkpad-x1-carbon-g10',
-              name: 'Lenovo ThinkPad X1 Carbon Gen 10 (Intel Core i7 12th Gen, 16GB, 512GB SSD)',
-              slug: 'lenovo-thinkpad-x1-carbon-gen-10',
-              price: 64999,
-              compareAtPrice: 148000,
-              sku: 'LM-LEN-X1C-G10',
-              stock: 14,
-              status: 'ACTIVE',
-              isFeatured: true,
-              isNewArrival: false,
-              images: [{ id: 'img-4', productId: 'prod-thinkpad-x1-carbon-g10', url: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?auto=format&fit=crop&w=1000&q=80', altText: 'Lenovo ThinkPad', isPrimary: true, sortOrder: 0 }],
-            },
-            warrantyStatus: 'ACTIVE',
-            warrantyValidUntil: new Date(Date.now() + 300 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          },
-        ],
-        createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-        updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-    ];
-
+    const memory = inMemoryOrders.get(userId) || [];
     if (status && status !== 'ALL') {
       return memory.filter((o) => o.status === status);
     }
@@ -303,8 +281,15 @@ export class OrderService {
         }
         return this.normalizeOrder(dbOrder);
       }
-    } catch (e) {
-      if (e instanceof ForbiddenException) throw e;
+      if (!allowInMemoryFallback()) {
+        throw new NotFoundException(`Order with id ${id} not found`);
+      }
+    } catch (e: any) {
+      if (e instanceof ForbiddenException || e instanceof NotFoundException) throw e;
+      this.logger.error(`Database error while finding order: ${e?.message || e}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Order service is temporarily unavailable');
+      }
     }
 
     const allOrders = inMemoryOrders.get(userId) || (await this.findByUser(userId));
@@ -327,7 +312,12 @@ export class OrderService {
         where: { id: order.id },
         data: { status, updatedAt: new Date() },
       });
-    } catch {}
+    } catch (error: any) {
+      this.logger.error(`Database error while updating order status: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Order service is temporarily unavailable');
+      }
+    }
     return order;
   }
 
@@ -360,14 +350,21 @@ export class OrderService {
       // Restore product stock
       for (const item of order.items || []) {
         if (item.productId && item.quantity) {
-          await this.prisma.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
-          }).catch(() => {});
+          try {
+            await this.prisma.product?.update({
+              where: { id: item.productId },
+              data: { stock: { increment: item.quantity } },
+            });
+          } catch {
+            // best-effort product stock restore
+          }
         }
       }
-    } catch {
-      // In-memory updated
+    } catch (error: any) {
+      this.logger.error(`Database error while cancelling order: ${error?.message || error}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Order service is temporarily unavailable');
+      }
     }
 
     return {
@@ -445,7 +442,7 @@ export class OrderService {
     const timeline = [
       { status: 'ORDER_PLACED', time: order.createdAt, note: 'Order placed & confirmed by customer' },
       { status: 'QUALITY_INSPECTED', time: new Date(new Date(order.createdAt).getTime() + 3600000).toISOString(), note: '32-point hardware and battery diagnostic passed' },
-      { status: 'DISPATCHED', time: new Date(new Date(order.createdAt).getTime() + 14400000).toISOString(), note: `Handed over to ${order.carrier || 'BlueDart Express'}` },
+      { status: 'DISPATCHED', time: new Date(new Date(order.createdAt).getTime() + 14400000).toISOString(), note: `Handed over to ${order.carrier || 'courier partner'}` },
       { status: 'IN_TRANSIT', time: new Date(new Date(order.createdAt).getTime() + 43200000).toISOString(), note: 'In transit to destination delivery hub' },
     ];
 
@@ -461,10 +458,10 @@ export class OrderService {
       orderId: order.id,
       orderNumber: order.orderNumber,
       status: order.status,
-      carrier: order.carrier || 'BlueDart Express',
-      trackingNumber: order.trackingNumber || `BD-${order.orderNumber}`,
+      carrier: order.carrier || null,
+      trackingNumber: order.trackingNumber || null,
       estimatedDelivery: new Date(new Date(order.createdAt).getTime() + 72 * 3600000).toISOString().split('T')[0],
-      timeline,
+      timeline: order.trackingNumber ? timeline : [],
     };
   }
 }
