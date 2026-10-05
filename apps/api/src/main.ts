@@ -63,6 +63,15 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
+  // Configure trust proxy on Express adapter for accurate client IP resolution behind reverse proxies
+  const httpAdapter = app.getHttpAdapter();
+  if (typeof httpAdapter.getInstance === 'function') {
+    const expressApp = httpAdapter.getInstance();
+    if (typeof expressApp?.set === 'function') {
+      expressApp.set('trust proxy', 1);
+    }
+  }
+
   const port = configService.get<number>('PORT', 3001);
   await app.listen(port, '0.0.0.0');
   logger.log(`Application is running on: http://0.0.0.0:${port}`);
