@@ -1,7 +1,9 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ProductService } from './product.service';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
+import { Public } from '../../decorators/public.decorator';
+import { RolesGuard } from '../../guards/roles.guard';
+import { Roles } from '../../decorators/roles.decorator';
 
 @ApiTags('products')
 @Controller('products')
@@ -9,6 +11,7 @@ export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
   @Get()
+  @Public()
   @ApiOperation({ summary: 'List products with filters' })
   @ApiQuery({ name: 'limit', required: false, type: Number, default: 50 })
   @ApiQuery({ name: 'offset', required: false, type: Number, default: 0 })
@@ -25,6 +28,7 @@ export class ProductController {
   }
 
   @Get(':id')
+  @Public()
   @ApiOperation({ summary: 'Get product by ID' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
@@ -33,16 +37,20 @@ export class ProductController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Create product' })
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Create product (Admin only)' })
   @ApiResponse({ status: 201 })
   create(@Body() data: any) {
     return this.productService.create(data);
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Update product' })
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Update product (Admin only)' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
   update(@Param('id') id: string, @Body() data: any) {
@@ -50,8 +58,10 @@ export class ProductController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Delete product' })
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Delete product (Admin only)' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
   remove(@Param('id') id: string) {
