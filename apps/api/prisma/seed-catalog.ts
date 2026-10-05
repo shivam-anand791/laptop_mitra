@@ -48,27 +48,21 @@ async function seedCatalog() {
         create: { id: product.id, ...data },
       });
 
-      for (const [sortOrder, image] of (product.images ?? []).entries()) {
-        const existingImage = await tx.productImage.findFirst({
-          where: { productId: savedProduct.id, url: image.url },
-        });
+      // Delete and recreate product images inside the transaction to guarantee idempotency
+      await tx.productImage.deleteMany({
+        where: { productId: savedProduct.id },
+      });
 
-        if (existingImage) {
-          await tx.productImage.update({
-            where: { id: existingImage.id },
-            data: { altText: image.altText, isPrimary: image.isPrimary, sortOrder },
-          });
-        } else {
-          await tx.productImage.create({
-            data: {
-              productId: savedProduct.id,
-              url: image.url,
-              altText: image.altText,
-              isPrimary: image.isPrimary,
-              sortOrder,
-            },
-          });
-        }
+      if (product.images && product.images.length > 0) {
+        await tx.productImage.createMany({
+          data: product.images.map((image, sortOrder) => ({
+            productId: savedProduct.id,
+            url: image.url,
+            altText: image.altText,
+            isPrimary: image.isPrimary,
+            sortOrder,
+          })),
+        });
       }
     }
   }, { maxWait: 10000, timeout: 60000 });
