@@ -1,0 +1,27 @@
+<svg width="800" height="600" viewBox="0 0 800 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- // TODO: replace with final AI generated asset when quota resets -->
+  <rect width="800" height="600" rx="28" fill="#0B1F4B"/>
+  <circle cx="400" cy="300" r="220" fill="#132E6B" fill-opacity="0.4"/>
+  
+  <!-- 404 Glow text backdrop -->
+  <text x="400" y="270" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="140" fill="#1D6FF2" fill-opacity="0.15">404</text>
+  
+  <!-- Floating laptop with detached power plug -->
+  <g transform="translate(250, 240)">
+    <!-- Base -->
+    <path d="M20 160L280 160C290 160 298 166 294 175L278 200C275 205 268 208 262 208L38 208C32 208 25 205 22 200L6 175C2 166 10 160 20 160Z" fill="#1C4294"/>
+    <!-- Screen -->
+    <rect x="40" y="20" width="220" height="145" rx="10" fill="#071433" stroke="#1D6FF2" stroke-width="3"/>
+    <text x="150" y="105" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="32" fill="#38BDF8">404</text>
+    
+    <!-- Disconnected glowing cable -->
+    <path d="M285 180C320 180 340 140 370 140" stroke="#1D6FF2" stroke-width="6" stroke-linecap="round" stroke-dasharray="8 8"/>
+    <circle cx="375" cy="140" r="8" fill="#38BDF8" filter="drop-shadow(0 0 8px #38BDF8)"/>
+  </g>
+  
+  <!-- Subtle decorative stars -->
+  <circle cx="180" cy="150" r="3" fill="#60A5FA"/>
+  <circle cx="650" cy="180" r="4" fill="#38BDF8"/>
+  <circle cx="620" cy="420" r="3" fill="#93C5FD"/>
+  <circle cx="160" cy="450" r="4" fill="#60A5FA"/>
+</svg>

@@ -1,9 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OrderController } from '../../src/modules/order/order.controller';
 import { OrderService } from '../../src/modules/order/order.service';
-import { JwtAuthGuard } from '../../src/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../src/guards/roles.guard';
-import { Roles } from '../../src/decorators/roles.decorator';
 import { Reflector } from '@nestjs/core';
 import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 
@@ -12,7 +10,6 @@ describe('OrderController - Security Tests', () => {
   let orderService: jest.Mocked<OrderService>;
 
   const mockUserA = { id: 'user-a', role: 'USER' };
-  const mockUserB = { id: 'user-b', role: 'USER' };
   const mockAdmin = { id: 'admin-1', role: 'ADMIN' };
 
   // Casts are intentional: controller tests verify security logic, not data shape.
@@ -54,13 +51,6 @@ describe('OrderController - Security Tests', () => {
     user: { id: 'user-b', name: 'B', email: 'b@test.com', role: 'USER' },
   } as any;
 
-  const mockAdminOrder = {
-    ...mockOrderA,
-    id: 'order-3',
-    status: 'SHIPPING',
-    orderNumber: 'ORD-003',
-  } as any;
-
   beforeEach(async () => {
     const mockOrderService = {
       findOne: jest.fn(),
@@ -76,10 +66,6 @@ describe('OrderController - Security Tests', () => {
         {
           provide: OrderService,
           useValue: mockOrderService,
-        },
-        {
-          provide: JwtAuthGuard,
-          useValue: { canActivate: jest.fn(() => true) },
         },
         {
           provide: RolesGuard,
@@ -204,10 +190,6 @@ describe('OrderService - Security Logic', () => {
   let orderService: OrderService;
   let prisma: any;
 
-  const mockUserA = { id: 'user-a', role: 'USER' };
-  const mockUserB = { id: 'user-b', role: 'USER' };
-  const mockAdmin = { id: 'admin-1', role: 'ADMIN' };
-
   beforeEach(() => {
     prisma = {
       order: {
@@ -218,7 +200,12 @@ describe('OrderService - Security Logic', () => {
         update: jest.fn(),
       },
     };
-    orderService = new OrderService(prisma, {} as any, {} as any, {} as any);
+    orderService = new OrderService(
+      prisma,
+      {} as any,
+      {} as any,
+      { dispatchOrderUpdate: jest.fn() } as any,
+    );
   });
 
   describe('findOne', () => {

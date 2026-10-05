@@ -18,8 +18,6 @@ const swagger_1 = require("@nestjs/swagger");
 const users_service_1 = require("./users.service");
 const update_profile_dto_1 = require("./dto/update-profile.dto");
 const update_address_dto_1 = require("./dto/update-address.dto");
-const change_password_dto_1 = require("./dto/change-password.dto");
-const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const get_user_decorator_1 = require("../decorators/get-user.decorator");
 let UsersController = class UsersController {
     usersService;
@@ -34,9 +32,6 @@ let UsersController = class UsersController {
     }
     async updateAddress(user, updateAddressDto) {
         return this.usersService.updateAddress(user.id, updateAddressDto);
-    }
-    async changePassword(user, changePasswordDto) {
-        return this.usersService.changePassword(user.id, changePasswordDto);
     }
     async getStats(user) {
         return this.usersService.getUserStats(user.id);
@@ -79,18 +74,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "updateAddress", null);
 __decorate([
-    (0, common_1.Put)('change-password'),
-    (0, swagger_1.ApiOperation)({ summary: 'Change password' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Password changed successfully' }),
-    (0, swagger_1.ApiResponse)({ status: 401, description: 'Unauthorized' }),
-    (0, swagger_1.ApiResponse)({ status: 400, description: 'Current password is incorrect' }),
-    __param(0, (0, get_user_decorator_1.GetUser)()),
-    __param(1, (0, common_1.Body)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, change_password_dto_1.ChangePasswordDto]),
-    __metadata("design:returntype", Promise)
-], UsersController.prototype, "changePassword", null);
-__decorate([
     (0, common_1.Get)('stats'),
     (0, swagger_1.ApiOperation)({ summary: 'Get user statistics' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Statistics retrieved successfully' }),
@@ -114,7 +97,6 @@ __decorate([
 exports.UsersController = UsersController = __decorate([
     (0, swagger_1.ApiTags)('Users'),
     (0, common_1.Controller)('users'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, swagger_1.ApiBearerAuth)(),
     __metadata("design:paramtypes", [users_service_1.UsersService])
 ], UsersController);

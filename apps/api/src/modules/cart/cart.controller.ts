@@ -1,7 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
 import { CartService } from './cart.service';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { GetUser } from '../../decorators/get-user.decorator';
 
 @ApiTags('cart')
@@ -9,7 +8,6 @@ import { GetUser } from '../../decorators/get-user.decorator';
 export class CartController {
   constructor(private readonly cartService: CartService) {}
 
-  @UseGuards(JwtAuthGuard)
   @Get()
   @ApiOperation({ summary: 'Get cart for authenticated user' })
   @ApiResponse({ status: 200 })
@@ -17,7 +15,6 @@ export class CartController {
     return this.cartService.getCart(user.id);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Post('items')
   @ApiOperation({ summary: 'Add item to cart' })
   @ApiResponse({ status: 201 })
@@ -30,7 +27,6 @@ export class CartController {
     return { cartItem: result, message: 'Item added to cart' };
   }
 
-  @UseGuards(JwtAuthGuard)
   @Put('items/:itemId')
   @ApiOperation({ summary: 'Update cart item quantity' })
   @ApiResponse({ status: 200 })
@@ -43,7 +39,6 @@ export class CartController {
     return { cartItem: result, message: 'Cart item updated' };
   }
 
-  @UseGuards(JwtAuthGuard)
   @Delete('items/:itemId')
   @ApiOperation({ summary: 'Remove item from cart' })
   @ApiResponse({ status: 200 })
@@ -55,7 +50,6 @@ export class CartController {
     return { message: 'Item removed from cart' };
   }
 
-  @UseGuards(JwtAuthGuard)
   @Delete()
   @ApiOperation({ summary: 'Clear cart' })
   @ApiResponse({ status: 200 })

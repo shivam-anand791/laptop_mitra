@@ -1,7 +1,7 @@
 // Prisma schema for LaptopMitra migration
 // Designed from scratch based on business logic (not DB introspection)
 // Improvements over PHP original:
-// - JWT auth replacing PHP sessions/OTP
+// - Firebase Authentication with local user profiles
 // - Unified discount + referral/affiliate system (was separate in PHP)
 // - S3/Cloudinary storage (was local disk)
 // - Razorpay sandbox-ready with test keys only
@@ -23,10 +23,13 @@ datasource db {
 model User {
   id          String      @id @default(uuid())
   name        String?
-  email       String      @unique
+  email       String?     @unique
   emailVerified  DateTime?
-  password    String
-  role        String      @default("USER") // USER | ADMIN | MODERATOR
+  // Firebase identity is external; business data continues to reference this local ID.
+  firebaseUid String      @unique
+  authProvider String?
+  isGuest     Boolean     @default(false)
+  role        String      @default("CUSTOMER") // CUSTOMER | ADMIN | MODERATOR | GUEST
   status      String      @default("ACTIVE") // ACTIVE | SUSPENDED | DELETED
   imageUrl    String?
   phone       String?
@@ -39,26 +42,17 @@ model User {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
-  // Authentication (JWT-based, replaces PHP sessions/OTP)
-  refreshTokens RefreshToken[]
-
   // Referral/Affiliate tracking
   referralCode      String      @unique
   referralEarnings  Decimal     @default(0)
   referralTier      String      @default("BASIC") // BASIC | GOLD | PLATINUM
   referralLinkClickedCount Int      @default(0)
 
-  // OTP (kept for backward compatibility but not primary auth)
-  otp           String?
-  otpExpiresAt    DateTime?
-  otpAttemptCount Int         @default(0)
-
   // Relations
   orders            Order[]
   wishlists         Wishlist[]
   carts             Cart[]
   referrals         Referral[]
-  otpAttempts       OtpAttempt[]
   addresses         Address[]
   deviceTokens      DeviceToken[]
 }
@@ -87,17 +81,6 @@ model DeviceToken {
   userId    String
   token     String   @unique
   platform  String
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-}
-
-model RefreshToken {
-  id        String   @id @default(uuid())
-  user      User     @relation(fields: [userId], references: [id])
-  userId    String
-  token     String   @unique
-  expiresAt DateTime
   createdAt DateTime @default(now())
 
   @@index([userId])
@@ -342,21 +325,4 @@ model Referral {
 
   @@index([userId])
   @@index([code])
-}
-
-// ---------------------------------------------------------------------------
-// OTP (kept for backward compatibility but secondary to JWT)
-// ---------------------------------------------------------------------------
-
-model OtpAttempt {
-  id        String   @id @default(uuid())
-  user      User     @relation(fields: [userId], references: [id])
-  userId    String
-  purpose   String   // "login" | "password_reset" | "email_verify"
-  otp       String
-  expiresAt DateTime
-  attempts  Int      @default(0)
-  createdAt DateTime @default(now())
-
-  @@index([userId, purpose])
 }

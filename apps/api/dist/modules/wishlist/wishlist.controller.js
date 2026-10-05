@@ -16,7 +16,6 @@ exports.WishlistController = void 0;
 const common_1 = require("@nestjs/common");
 const wishlist_service_1 = require("./wishlist.service");
 const swagger_1 = require("@nestjs/swagger");
-const jwt_auth_guard_1 = require("../../auth/guards/jwt-auth.guard");
 const get_user_decorator_1 = require("../../decorators/get-user.decorator");
 let WishlistController = class WishlistController {
     wishlistService;
@@ -41,7 +40,6 @@ let WishlistController = class WishlistController {
 };
 exports.WishlistController = WishlistController;
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'Get wishlist for authenticated user' }),
     (0, swagger_1.ApiResponse)({ status: 200 }),
@@ -51,7 +49,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], WishlistController.prototype, "getWishlist", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('items'),
     (0, swagger_1.ApiOperation)({ summary: 'Add item to wishlist' }),
     (0, swagger_1.ApiResponse)({ status: 201 }),
@@ -62,7 +59,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], WishlistController.prototype, "addItem", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Delete)('items/:itemId'),
     (0, swagger_1.ApiOperation)({ summary: 'Remove item from wishlist' }),
     (0, swagger_1.ApiResponse)({ status: 200 }),
@@ -73,7 +69,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], WishlistController.prototype, "removeItem", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Delete)(),
     (0, swagger_1.ApiOperation)({ summary: 'Clear wishlist' }),
     (0, swagger_1.ApiResponse)({ status: 200 }),

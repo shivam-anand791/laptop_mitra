@@ -12,14 +12,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
-const config_1 = require("@nestjs/config");
-const bcrypt = require("bcrypt");
 let UsersService = class UsersService {
     prisma;
-    configService;
-    constructor(prisma, configService) {
+    constructor(prisma) {
         this.prisma = prisma;
-        this.configService = configService;
     }
     async findById(id) {
         const user = await this.prisma.user.findUnique({
@@ -100,28 +96,6 @@ let UsersService = class UsersService {
         });
         return user;
     }
-    async changePassword(userId, changePasswordDto) {
-        const { currentPassword, newPassword } = changePasswordDto;
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
-            select: { id: true, password: true },
-        });
-        if (!user) {
-            throw new common_1.NotFoundException('User not found');
-        }
-        const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
-        if (!isCurrentPasswordValid) {
-            throw new common_1.BadRequestException('Current password is incorrect');
-        }
-        const hashedPassword = await bcrypt.hash(newPassword, parseInt(this.configService.get('BCRYPT_ROUNDS', '12')));
-        await this.prisma.user.update({
-            where: { id: userId },
-            data: {
-                password: hashedPassword,
-            },
-        });
-        return { message: 'Password changed successfully' };
-    }
     async getUserStats(userId) {
         const [cartItems, wishlistCount, orderCount] = await Promise.all([
             this.prisma.cartItem.aggregate({
@@ -145,7 +119,6 @@ let UsersService = class UsersService {
 exports.UsersService = UsersService;
 exports.UsersService = UsersService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        config_1.ConfigService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
 ], UsersService);
 //# sourceMappingURL=users.service.js.map

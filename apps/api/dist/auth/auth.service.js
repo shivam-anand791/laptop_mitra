@@ -8,194 +8,202 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var AuthService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
-const node_crypto_1 = require("node:crypto");
-const jwt_1 = require("@nestjs/jwt");
-const bcrypt = require("bcrypt");
 const prisma_service_1 = require("../prisma/prisma.service");
 const random_service_1 = require("../shared/random.service");
-let AuthService = class AuthService {
+const firebase_service_1 = require("../firebase/firebase.service");
+let AuthService = AuthService_1 = class AuthService {
     prisma;
-    jwtService;
     randomService;
-    constructor(prisma, jwtService, randomService) {
+    firebaseService;
+    logger = new common_1.Logger(AuthService_1.name);
+    constructor(prisma, randomService, firebaseService) {
         this.prisma = prisma;
-        this.jwtService = jwtService;
         this.randomService = randomService;
+        this.firebaseService = firebaseService;
     }
-    async register(registerDto) {
-        const { name, email, password, phone } = registerDto;
-        const existingUser = await this.prisma.user.findUnique({ where: { email } });
-        if (existingUser) {
-            throw new common_1.ConflictException('Email already registered');
-        }
-        const hashedPassword = await bcrypt.hash(password, 12);
-        const referralCode = this.randomService.generateReferralCode();
-        const user = await this.prisma.user.create({
-            data: {
-                name,
-                email,
-                password: hashedPassword,
-                referralCode,
-                phone: phone || null,
-            },
-        });
-        const payload = { sub: user.id, email: user.email, role: user.role };
-        const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
-        const refreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
-        await this.prisma.refreshToken.create({
-            data: {
-                userId: user.id,
-                token: refreshToken,
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            },
-        });
-        return {
-            accessToken,
-            refreshToken,
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-            },
-        };
+    async login(body) {
+        throw new common_1.BadRequestException('Direct passwordless authentication is disabled. Authenticate with Firebase and call /auth/sync.');
     }
-    async login(loginDto) {
-        const { email, password } = loginDto;
-        const user = await this.prisma.user.findUnique({
-            where: { email },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                password: true,
-                role: true,
-                status: true,
-            },
-        });
-        if (!user) {
-            throw new common_1.UnauthorizedException('Invalid credentials');
-        }
-        const passwordMatch = await bcrypt.compare(password, user.password);
-        if (!passwordMatch) {
-            throw new common_1.UnauthorizedException('Invalid credentials');
-        }
-        if (user.status !== 'ACTIVE') {
-            throw new common_1.UnauthorizedException('Account is suspended');
-        }
-        const payload = { sub: user.id, email: user.email, role: user.role };
-        const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
-        const refreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
-        await this.prisma.refreshToken.create({
-            data: {
-                userId: user.id,
-                token: refreshToken,
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            },
-        });
-        return {
-            accessToken,
-            refreshToken,
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-            },
-        };
+    async register(body) {
+        throw new common_1.BadRequestException('Direct registration without Firebase identity is disabled. Create user with Firebase and call /auth/sync.');
     }
     async guestLogin() {
-        const email = `guest-${(0, node_crypto_1.randomUUID)()}@guest.laptopmitra.invalid`;
-        const password = await bcrypt.hash((0, node_crypto_1.randomBytes)(32).toString('hex'), 12);
-        const user = await this.prisma.user.create({
-            data: {
-                name: 'Guest',
-                email,
-                password,
-                role: 'USER',
-                referralCode: this.randomService.generateReferralCode(),
-            },
-        });
-        const payload = { sub: user.id, email: user.email, role: user.role };
-        const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
-        const refreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
-        await this.prisma.refreshToken.create({
-            data: {
-                userId: user.id,
-                token: refreshToken,
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            },
-        });
-        return {
-            accessToken,
-            refreshToken,
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-            },
-        };
+        throw new common_1.BadRequestException('Direct guest token creation is disabled. Sign in anonymously with Firebase and call /auth/sync.');
     }
-    async refreshToken(token) {
-        const refreshToken = await this.prisma.refreshToken.findUnique({
-            where: { token },
-            include: { user: true },
-        });
-        if (!refreshToken || refreshToken.expiresAt < new Date()) {
-            throw new common_1.UnauthorizedException('Invalid or expired refresh token');
-        }
-        if (refreshToken.user.status !== 'ACTIVE') {
-            throw new common_1.UnauthorizedException('User account is not active');
-        }
-        await this.prisma.refreshToken.delete({ where: { id: refreshToken.id } });
-        const payload = {
-            sub: refreshToken.user.id,
-            email: refreshToken.user.email,
-            role: refreshToken.user.role,
-        };
-        const newAccessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
-        const newRefreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
-        await this.prisma.refreshToken.create({
-            data: {
-                userId: refreshToken.user.id,
-                token: newRefreshToken,
-                expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            },
-        });
-        return {
-            accessToken: newAccessToken,
-            refreshToken: newRefreshToken,
-        };
+    async refreshToken(refreshToken) {
+        throw new common_1.BadRequestException('Token refresh is handled directly via the Firebase Auth client SDK.');
     }
-    async logout(userId, token) {
-        await this.prisma.refreshToken.deleteMany({ where: { token, userId } });
-        return { message: 'Logged out successfully' };
+    async syncUser(identity, profile = {}) {
+        if (!identity || !identity.uid) {
+            throw new common_1.UnauthorizedException('Invalid Firebase identity: UID missing');
+        }
+        const signInProvider = identity.firebase?.sign_in_provider ?? (identity.email ? 'password' : 'anonymous');
+        const isGuest = signInProvider === 'anonymous' || !identity.email;
+        const cleanEmail = identity.email ? identity.email.trim().toLowerCase() : null;
+        try {
+            let existingUser = await this.prisma.user.findUnique({
+                where: { firebaseUid: identity.uid },
+            });
+            if (!existingUser && cleanEmail && identity.email_verified === true) {
+                const userByEmail = await this.prisma.user.findFirst({
+                    where: { email: cleanEmail },
+                });
+                if (userByEmail && !userByEmail.firebaseUid) {
+                    existingUser = await this.prisma.user.update({
+                        where: { id: userByEmail.id },
+                        data: {
+                            firebaseUid: identity.uid,
+                            emailVerified: userByEmail.emailVerified || new Date(),
+                            authProvider: signInProvider,
+                        },
+                    });
+                }
+            }
+            const name = profile.name === undefined ? undefined : profile.name.trim() || null;
+            const phone = profile.phone === undefined ? undefined : profile.phone.trim() || null;
+            if (existingUser) {
+                if (existingUser.status !== 'ACTIVE') {
+                    throw new common_1.UnauthorizedException('Account is inactive or suspended');
+                }
+                const verifiedAt = identity.email_verified
+                    ? existingUser.emailVerified ?? new Date()
+                    : null;
+                return await this.prisma.user.update({
+                    where: { id: existingUser.id },
+                    data: {
+                        email: cleanEmail,
+                        emailVerified: verifiedAt,
+                        authProvider: signInProvider,
+                        isGuest: existingUser.isGuest && !isGuest ? false : existingUser.isGuest,
+                        ...(name !== undefined ? { name } : {}),
+                        ...(phone !== undefined ? { phone } : {}),
+                        ...(existingUser.isGuest && !isGuest ? { role: 'CUSTOMER' } : {}),
+                    },
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        emailVerified: true,
+                        authProvider: true,
+                        isGuest: true,
+                        role: true,
+                        status: true,
+                        imageUrl: true,
+                        phone: true,
+                        createdAt: true,
+                        referralCode: true,
+                        referralEarnings: true,
+                        referralTier: true,
+                        firebaseUid: true,
+                    },
+                });
+            }
+            try {
+                return await this.prisma.user.create({
+                    data: {
+                        firebaseUid: identity.uid,
+                        name: name ?? identity.name?.trim() ?? (cleanEmail ? cleanEmail.split('@')[0].toUpperCase() : 'Guest Customer'),
+                        email: cleanEmail,
+                        emailVerified: identity.email_verified ? new Date() : null,
+                        authProvider: signInProvider,
+                        isGuest,
+                        role: isGuest ? 'GUEST' : 'CUSTOMER',
+                        phone: phone ?? null,
+                        status: 'ACTIVE',
+                        referralCode: this.randomService.generateReferralCode(),
+                    },
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        emailVerified: true,
+                        authProvider: true,
+                        isGuest: true,
+                        role: true,
+                        status: true,
+                        imageUrl: true,
+                        phone: true,
+                        createdAt: true,
+                        referralCode: true,
+                        referralEarnings: true,
+                        referralTier: true,
+                        firebaseUid: true,
+                    },
+                });
+            }
+            catch (createErr) {
+                const recheck = await this.prisma.user.findUnique({
+                    where: { firebaseUid: identity.uid },
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        emailVerified: true,
+                        authProvider: true,
+                        isGuest: true,
+                        role: true,
+                        status: true,
+                        imageUrl: true,
+                        phone: true,
+                        createdAt: true,
+                        referralCode: true,
+                        referralEarnings: true,
+                        referralTier: true,
+                        firebaseUid: true,
+                    },
+                });
+                if (recheck) {
+                    return recheck;
+                }
+                throw createErr;
+            }
+        }
+        catch (err) {
+            if (err instanceof common_1.UnauthorizedException || err instanceof common_1.BadRequestException) {
+                throw err;
+            }
+            this.logger.error(`Database error during user sync: ${err?.message || err}`);
+            throw new common_1.ServiceUnavailableException('Authentication service temporarily unavailable');
+        }
     }
     async getUserProfile(userId) {
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                phone: true,
-                role: true,
-                status: true,
-                imageUrl: true,
-                createdAt: true,
-                referralCode: true,
-                referralEarnings: true,
-                referralTier: true,
-            },
-        });
-        if (!user) {
-            throw new common_1.UnauthorizedException('User not found');
+        try {
+            const user = await this.prisma.user.findUnique({
+                where: { id: userId },
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone: true,
+                    role: true,
+                    status: true,
+                    imageUrl: true,
+                    emailVerified: true,
+                    authProvider: true,
+                    isGuest: true,
+                    createdAt: true,
+                    referralCode: true,
+                    referralEarnings: true,
+                    referralTier: true,
+                    firebaseUid: true,
+                },
+            });
+            if (!user) {
+                throw new common_1.UnauthorizedException('User not found');
+            }
+            return user;
         }
-        return user;
+        catch (err) {
+            if (err instanceof common_1.UnauthorizedException) {
+                throw err;
+            }
+            this.logger.error(`Database error getting user profile: ${err?.message || err}`);
+            throw new common_1.ServiceUnavailableException('Service temporarily unavailable');
+        }
     }
     async updateUserProfile(userId, data) {
         const updates = {};
@@ -206,92 +214,75 @@ let AuthService = class AuthService {
             }
             updates.name = trimmedName;
         }
-        if (data.email !== undefined) {
-            const trimmedEmail = data.email.trim().toLowerCase();
-            if (!trimmedEmail) {
-                throw new common_1.BadRequestException('Email cannot be empty');
-            }
-            const existingUser = await this.prisma.user.findUnique({
-                where: { email: trimmedEmail },
-            });
-            if (existingUser && existingUser.id !== userId) {
-                throw new common_1.ConflictException('Email already registered');
-            }
-            updates.email = trimmedEmail;
-        }
         if (data.phone !== undefined) {
             updates.phone = data.phone?.trim() || null;
         }
         if (Object.keys(updates).length === 0) {
             return this.getUserProfile(userId);
         }
-        await this.prisma.user.update({
-            where: { id: userId },
-            data: updates,
-        });
-        return this.getUserProfile(userId);
+        try {
+            await this.prisma.user.update({
+                where: { id: userId },
+                data: updates,
+            });
+            return this.getUserProfile(userId);
+        }
+        catch (err) {
+            this.logger.error(`Database error updating user profile: ${err?.message || err}`);
+            throw new common_1.ServiceUnavailableException('Service temporarily unavailable');
+        }
     }
-    async changePassword(userId, data) {
-        const currentPassword = data.currentPassword?.trim();
-        const newPassword = data.newPassword?.trim();
-        if (!currentPassword) {
-            throw new common_1.BadRequestException('Current password is required');
+    async signoutEverywhere(userId, firebaseUid) {
+        if (firebaseUid) {
+            try {
+                await this.firebaseService.revokeRefreshTokens(firebaseUid);
+            }
+            catch (err) {
+                this.logger.warn(`Failed to revoke Firebase refresh tokens: ${err?.message || err}`);
+            }
         }
-        if (!newPassword) {
-            throw new common_1.BadRequestException('New password is required');
-        }
-        if (newPassword.length < 6) {
-            throw new common_1.BadRequestException('New password must be at least 6 characters long');
-        }
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
-            select: { id: true, password: true },
-        });
-        if (!user) {
-            throw new common_1.UnauthorizedException('User not found');
-        }
-        const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
-        if (!isCurrentPasswordValid) {
-            throw new common_1.UnauthorizedException('Current password is incorrect');
-        }
-        const hashedPassword = await bcrypt.hash(newPassword, 12);
-        await this.prisma.user.update({
-            where: { id: userId },
-            data: { password: hashedPassword },
-        });
-        return { message: 'Password changed successfully' };
+        return { success: true, message: 'Signed out of all devices successfully' };
     }
-    async validateUser(email, password) {
-        const user = await this.prisma.user.findUnique({
-            where: { email },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                password: true,
-                role: true,
-                status: true,
-            },
-        });
-        if (!user) {
-            throw new common_1.UnauthorizedException('Invalid credentials');
+    async deleteAccount(userId, firebaseUid) {
+        try {
+            await this.prisma.address.deleteMany({ where: { userId } });
+            await this.prisma.deviceToken.deleteMany({ where: { userId } });
+            await this.prisma.cart.deleteMany({ where: { userId } });
+            await this.prisma.wishlist.deleteMany({ where: { userId } });
+            await this.prisma.user.update({
+                where: { id: userId },
+                data: {
+                    name: 'Deleted Customer',
+                    email: `deleted_${userId.slice(0, 8)}@laptopmitra.local`,
+                    phone: null,
+                    status: 'DELETED',
+                    isGuest: false,
+                },
+            });
         }
-        const passwordMatch = await bcrypt.compare(password, user.password);
-        if (!passwordMatch) {
-            throw new common_1.UnauthorizedException('Invalid credentials');
+        catch (err) {
+            this.logger.error(`Database error deleting user account: ${err?.message || err}`);
+            throw new common_1.ServiceUnavailableException('Service temporarily unavailable');
         }
-        if (user.status !== 'ACTIVE') {
-            throw new common_1.UnauthorizedException('Account is suspended');
+        if (firebaseUid) {
+            try {
+                await this.firebaseService.deleteUser(firebaseUid);
+            }
+            catch (err) {
+                this.logger.warn(`Failed to delete Firebase user: ${err?.message || err}`);
+            }
         }
-        const { password: _pass, ...result } = user;
-        return result;
+        return { success: true, message: 'Account deleted and personal information anonymized' };
+    }
+    async linkGuestAccount(userId, data) {
+        throw new common_1.BadRequestException('Account linking must be performed via Firebase Auth client SDK and verified via /auth/sync.');
     }
 };
 exports.AuthService = AuthService;
-exports.AuthService = AuthService = __decorate([
+exports.AuthService = AuthService = AuthService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        jwt_1.JwtService,
-        random_service_1.RandomService])
+        random_service_1.RandomService,
+        firebase_service_1.FirebaseService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

@@ -17,13 +17,13 @@ export declare class CartService {
                     sortOrder: number;
                 }[];
             } & {
+                tags: string | null;
                 description: string | null;
                 name: string;
                 id: string;
                 status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                tags: string | null;
                 sku: string;
                 shortDescription: string | null;
                 slug: string;
@@ -53,13 +53,13 @@ export declare class CartService {
     }>;
     addItem(userId: string, productId: string, quantity?: number): Promise<{
         product: {
+            tags: string | null;
             description: string | null;
             name: string;
             id: string;
             status: string;
             createdAt: Date;
             updatedAt: Date;
-            tags: string | null;
             sku: string;
             shortDescription: string | null;
             slug: string;
@@ -84,13 +84,13 @@ export declare class CartService {
     removeItem(userId: string, itemId: string): Promise<void>;
     updateQuantity(userId: string, itemId: string, quantity: number): Promise<{
         product: {
+            tags: string | null;
             description: string | null;
             name: string;
             id: string;
             status: string;
             createdAt: Date;
             updatedAt: Date;
-            tags: string | null;
             sku: string;
             shortDescription: string | null;
             slug: string;
@@ -127,13 +127,13 @@ export declare class CartService {
                         sortOrder: number;
                     }[];
                 } & {
+                    tags: string | null;
                     description: string | null;
                     name: string;
                     id: string;
                     status: string;
                     createdAt: Date;
                     updatedAt: Date;
-                    tags: string | null;
                     sku: string;
                     shortDescription: string | null;
                     slug: string;

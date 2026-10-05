@@ -10,5 +10,18 @@ export declare class DiscountService {
     private readonly prisma;
     constructor(prisma: PrismaService);
     validateDiscount(code?: string, cartTotal?: number): Promise<DiscountValidationResponse>;
+    getReferralStats(userId: string): Promise<{
+        referralCode: string;
+        referralTier: string;
+        referralEarnings: number;
+        referredUsersCount: number;
+        referralLinkClickedCount: number;
+        payoutHistory: {
+            id: string;
+            amount: number;
+            date: string;
+            status: string;
+        }[];
+    }>;
     private invalidResult;
 }

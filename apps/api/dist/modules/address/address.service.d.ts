@@ -1,4 +1,5 @@
 import { PrismaService } from '../../prisma/prisma.service';
+import { Address } from '../../types';
 export interface AddressDto {
     id?: string;
     fullName?: string;
@@ -8,55 +9,19 @@ export interface AddressDto {
     state?: string;
     pincode?: string;
     landmark?: string;
+    label?: 'Home' | 'Work' | 'Other' | string;
+    gstin?: string;
     isDefault?: boolean;
 }
 export declare class AddressService {
     private readonly prisma;
     constructor(prisma: PrismaService);
-    findAll(userId: string): Promise<{
-        address: string;
-        phone: string | null;
-        id: string;
-        city: string | null;
-        state: string | null;
-        pincode: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string;
-        fullName: string | null;
-        landmark: string | null;
-        isDefault: boolean;
-    }[]>;
-    create(userId: string, data: AddressDto): Promise<{
-        address: string;
-        phone: string | null;
-        id: string;
-        city: string | null;
-        state: string | null;
-        pincode: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string;
-        fullName: string | null;
-        landmark: string | null;
-        isDefault: boolean;
-    }>;
-    update(userId: string, id: string, data: AddressDto): Promise<{
-        address: string;
-        phone: string | null;
-        id: string;
-        city: string | null;
-        state: string | null;
-        pincode: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-        userId: string;
-        fullName: string | null;
-        landmark: string | null;
-        isDefault: boolean;
-    }>;
+    findAll(userId: string): Promise<Address[]>;
+    create(userId: string, data: AddressDto): Promise<Address>;
+    update(userId: string, id: string, data: AddressDto): Promise<Address>;
     remove(userId: string, id: string): Promise<{
         message: string;
     }>;
+    private formatAddress;
     private validateAddressPayload;
 }

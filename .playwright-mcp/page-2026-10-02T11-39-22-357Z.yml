@@ -1,0 +1,119 @@
+- generic [active] [ref=f6e1]:
+  - generic [ref=f6e2]:
+    - banner [ref=f6e3]:
+      - generic [ref=f6e5]:
+        - link "LaptopMitra" [ref=f6e6] [cursor=pointer]:
+          - /url: /
+        - generic [ref=f6e11]:
+          - link "Sign In" [ref=f6e12] [cursor=pointer]:
+            - /url: /login
+          - link "Wishlist with 0 items" [ref=f6e15] [cursor=pointer]:
+            - /url: /wishlist
+          - link "Shopping Cart with 0 items" [ref=f6e18] [cursor=pointer]:
+            - /url: /cart
+          - link "Get a Quote" [ref=f6e21] [cursor=pointer]:
+            - /url: https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20would%20like%20to%20request%20a%20quote%20for%20enterprise%20laptops.
+          - button "Toggle Navigation Menu" [ref=f6e22] [cursor=pointer]
+    - main [ref=f6e25]:
+      - generic [ref=f6e28]:
+        - img "Your cart is empty" [ref=f6e30]
+        - heading "Your cart is empty" [level=3] [ref=f6e31]
+        - paragraph [ref=f6e32]: Looks like you haven't added any laptops yet. Browse our certified collection to find your perfect match.
+        - link "Browse Certified Laptops" [ref=f6e33] [cursor=pointer]:
+          - /url: /products
+    - contentinfo [ref=f6e34]:
+      - generic [ref=f6e36]:
+        - generic [ref=f6e37]:
+          - generic [ref=f6e38]: 🛡️
+          - heading "1-Year Warranty" [level=4] [ref=f6e39]
+          - paragraph [ref=f6e40]: Comprehensive hardware replacement & doorstep service
+        - generic [ref=f6e41]:
+          - generic [ref=f6e42]: 🔍
+          - heading "32-Point Inspected" [level=4] [ref=f6e43]
+          - paragraph [ref=f6e44]: Certified Grade A+ diagnostics, battery & thermal testing
+        - generic [ref=f6e45]:
+          - generic [ref=f6e46]: 🔄
+          - heading "7-Day Replacement" [level=4] [ref=f6e47]
+          - paragraph [ref=f6e48]: Zero-friction replacement guarantee for complete peace of mind
+        - generic [ref=f6e49]:
+          - generic [ref=f6e50]: ⚡
+          - heading "PAN India Delivery" [level=4] [ref=f6e51]
+          - paragraph [ref=f6e52]: Free insured express delivery with real-time tracking
+      - generic [ref=f6e53]:
+        - generic [ref=f6e54]:
+          - generic [ref=f6e55]:
+            - link "LM LaptopMitra" [ref=f6e56] [cursor=pointer]:
+              - /url: /
+              - generic [ref=f6e57]: LM
+              - generic [ref=f6e58]: LaptopMitra
+            - paragraph [ref=f6e59]: LaptopMitra is India's leading platform for certified pre-owned and enterprise refurbished laptops. Every device passes a rigorous 32-point engineering inspection with genuine OS licenses.
+            - generic [ref=f6e60]:
+              - generic [ref=f6e61]: "Brands We Deal In:"
+              - generic [ref=f6e62]:
+                - generic [ref=f6e63]: Lenovo
+                - generic [ref=f6e64]: HP
+                - generic [ref=f6e65]: DELL
+          - generic [ref=f6e66]:
+            - heading "Shop Categories" [level=3] [ref=f6e67]
+            - list [ref=f6e68]:
+              - listitem [ref=f6e69]:
+                - link "Business Laptops" [ref=f6e70] [cursor=pointer]:
+                  - /url: /products?category=cat-business
+              - listitem [ref=f6e71]:
+                - link "Apple MacBooks" [ref=f6e72] [cursor=pointer]:
+                  - /url: /products?category=cat-apple
+              - listitem [ref=f6e73]:
+                - link "Gaming Laptops" [ref=f6e74] [cursor=pointer]:
+                  - /url: /products?category=cat-gaming
+              - listitem [ref=f6e75]:
+                - link "Student Laptops Under ₹25k" [ref=f6e76] [cursor=pointer]:
+                  - /url: /products?category=cat-student
+              - listitem [ref=f6e77]:
+                - link "Corporate Leasing" [ref=f6e78] [cursor=pointer]:
+                  - /url: /products?type=lease
+          - generic [ref=f6e79]:
+            - heading "Customer Support" [level=3] [ref=f6e80]
+            - list [ref=f6e81]:
+              - listitem [ref=f6e82]:
+                - link "Warranty & Returns Policy" [ref=f6e83] [cursor=pointer]:
+                  - /url: /products
+              - listitem [ref=f6e84]:
+                - link "Track My Order" [ref=f6e85] [cursor=pointer]:
+                  - /url: /profile#orders
+              - listitem [ref=f6e86]:
+                - link "Mitra Partner Program (10% Cash)" [ref=f6e87] [cursor=pointer]:
+                  - /url: /profile#referral
+              - listitem [ref=f6e88]:
+                - 'link "Direct Call: +91 99999 99999" [ref=f6e89] [cursor=pointer]':
+                  - /url: tel:+919999999999
+              - listitem [ref=f6e90]:
+                - link "WhatsApp Support" [ref=f6e91] [cursor=pointer]:
+                  - /url: https://wa.me/919999999999
+          - generic [ref=f6e92]:
+            - heading "Company" [level=3] [ref=f6e93]
+            - list [ref=f6e94]:
+              - listitem [ref=f6e95]:
+                - link "About LaptopMitra" [ref=f6e96] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=f6e97]:
+                - link "32-Point Quality Process" [ref=f6e98] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=f6e99]:
+                - link "Enterprise Bulk Quotations" [ref=f6e100] [cursor=pointer]:
+                  - /url: /products
+              - listitem [ref=f6e101]: "Mon-Sat: 10:00 AM - 7:00 PM IST"
+        - generic [ref=f6e102]:
+          - paragraph [ref=f6e103]: © 2026 LaptopMitra. All rights reserved. Certified Refurbished Hardware.
+          - generic [ref=f6e104]:
+            - link "Privacy Policy" [ref=f6e105] [cursor=pointer]:
+              - /url: /
+            - link "Terms of Service" [ref=f6e106] [cursor=pointer]:
+              - /url: /
+            - link "Security & Warranty" [ref=f6e107] [cursor=pointer]:
+              - /url: /
+    - complementary "Quick contact shortcuts":
+      - link "Chat with LaptopMitra on WhatsApp" [ref=f6e108] [cursor=pointer]:
+        - /url: https://wa.me/919999999999?text=Hi%20LaptopMitra%20team%2C%20I%20would%20like%20to%20inquire%20about%20certified%20laptops.
+      - link "Call LaptopMitra customer support" [ref=f6e111] [cursor=pointer]:
+        - /url: tel:+919999999999
+  - button "Open Next.js Dev Tools" [ref=f6e119] [cursor=pointer]

@@ -19,7 +19,12 @@ let PrismaService = class PrismaService extends client_1.PrismaClient {
         });
     }
     async onModuleInit() {
-        await this.$connect();
+        try {
+            await this.$connect();
+        }
+        catch (err) {
+            console.warn(`[PrismaService] Database connection deferred/unavailable at startup: ${err?.message || err}`);
+        }
     }
     async onModuleDestroy() {
         await this.$disconnect();

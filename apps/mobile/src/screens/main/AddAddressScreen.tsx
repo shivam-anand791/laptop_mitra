@@ -6,6 +6,17 @@ import { MainStackParamList, MainStackNavigationProp } from '../../navigation/ty
 
 type AddAddressRouteProp = RouteProp<MainStackParamList, 'AddAddress'>;
 
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
+  'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
+  'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
+  'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+  'Delhi', 'Jammu & Kashmir', 'Ladakh'
+];
+
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
 export default function AddAddressScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
   const route = useRoute<AddAddressRouteProp>();
@@ -15,13 +26,15 @@ export default function AddAddressScreen() {
   const createAddress = useCreateAddress();
   const updateAddress = useUpdateAddress();
 
+  const [label, setLabel] = useState<'HOME' | 'WORK' | 'OTHER'>('HOME');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
-  const [state, setState] = useState('');
+  const [state, setState] = useState('Delhi');
   const [pincode, setPincode] = useState('');
   const [landmark, setLandmark] = useState('');
+  const [gstin, setGstin] = useState('');
   const [isDefault, setIsDefault] = useState(false);
 
   const isEditing = !!addressId;
@@ -30,13 +43,15 @@ export default function AddAddressScreen() {
     if (isEditing && addresses) {
       const existing = addresses.find((a) => a.id === addressId);
       if (existing) {
+        setLabel((existing.label as any) || 'HOME');
         setFullName(existing.fullName || '');
         setPhone(existing.phone || '');
         setAddress(existing.address || '');
         setCity(existing.city || '');
-        setState(existing.state || '');
+        setState(existing.state || 'Delhi');
         setPincode(existing.pincode || '');
         setLandmark(existing.landmark || '');
+        setGstin(existing.gstin || '');
         setIsDefault(existing.isDefault);
       }
     }
@@ -44,34 +59,42 @@ export default function AddAddressScreen() {
 
   const handleSave = () => {
     if (!fullName.trim()) {
-      Alert.alert('Error', 'Full name is required');
+      Alert.alert('Validation Error', 'Full name is required');
       return;
     }
     if (!address.trim()) {
-      Alert.alert('Error', 'Address is required');
+      Alert.alert('Validation Error', 'Street address is required');
       return;
     }
     if (!city.trim()) {
-      Alert.alert('Error', 'City is required');
+      Alert.alert('Validation Error', 'City is required');
       return;
     }
     if (!state.trim()) {
-      Alert.alert('Error', 'State is required');
+      Alert.alert('Validation Error', 'State is required');
       return;
     }
-    if (!pincode.trim()) {
-      Alert.alert('Error', 'Pincode is required');
+    const cleanPin = pincode.trim();
+    if (!/^\d{6}$/.test(cleanPin)) {
+      Alert.alert('Validation Error', 'Please enter a valid 6-digit Indian PIN code');
+      return;
+    }
+    const cleanGst = gstin.trim().toUpperCase();
+    if (cleanGst && !GSTIN_REGEX.test(cleanGst)) {
+      Alert.alert('Validation Error', 'Invalid GSTIN format (e.g. 07AAAAA0000A1Z5)');
       return;
     }
 
     const payload = {
+      label,
       fullName: fullName.trim(),
       phone: phone.trim() || undefined,
       address: address.trim(),
       city: city.trim(),
       state: state.trim(),
-      pincode: pincode.trim(),
+      pincode: cleanPin,
       landmark: landmark.trim() || undefined,
+      gstin: cleanGst || undefined,
       isDefault,
     };
 
@@ -99,33 +122,60 @@ export default function AddAddressScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {/* Address Label Selector */}
+        <Text style={styles.label}>Address Type</Text>
+        <View style={styles.labelRow}>
+          {(['HOME', 'WORK', 'OTHER'] as const).map((l) => (
+            <TouchableOpacity
+              key={l}
+              style={[styles.labelChip, label === l && styles.labelChipActive]}
+              onPress={() => setLabel(l)}
+            >
+              <Text style={[styles.labelChipText, label === l && styles.labelChipTextActive]}>
+                {l}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <Text style={styles.label}>Full Name *</Text>
         <TextInput
           style={styles.input}
           value={fullName}
           onChangeText={setFullName}
-          placeholder="Enter full name"
+          placeholder="Contact person name"
           autoCapitalize="words"
         />
 
-        <Text style={styles.label}>Phone</Text>
+        <Text style={styles.label}>Phone Number</Text>
         <TextInput
           style={styles.input}
           value={phone}
           onChangeText={setPhone}
-          placeholder="Phone number"
+          placeholder="10-digit mobile number"
           keyboardType="phone-pad"
+          maxLength={10}
         />
 
-        <Text style={styles.label}>Address *</Text>
+        <Text style={styles.label}>Street Address & House No *</Text>
         <TextInput
           style={[styles.input, styles.inputMultiline]}
           value={address}
           onChangeText={setAddress}
-          placeholder="Street address, building, etc."
+          placeholder="Flat / Building, Road, Area"
           multiline
           numberOfLines={3}
           textAlignVertical="top"
+        />
+
+        <Text style={styles.label}>PIN Code * (6 Digits)</Text>
+        <TextInput
+          style={styles.input}
+          value={pincode}
+          onChangeText={setPincode}
+          placeholder="e.g. 110001"
+          keyboardType="numeric"
+          maxLength={6}
         />
 
         <Text style={styles.label}>City *</Text>
@@ -133,7 +183,7 @@ export default function AddAddressScreen() {
           style={styles.input}
           value={city}
           onChangeText={setCity}
-          placeholder="City"
+          placeholder="e.g. New Delhi"
           autoCapitalize="words"
         />
 
@@ -142,30 +192,41 @@ export default function AddAddressScreen() {
           style={styles.input}
           value={state}
           onChangeText={setState}
-          placeholder="State"
+          placeholder="e.g. Delhi, Maharashtra, Karnataka"
           autoCapitalize="words"
         />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.stateRow}>
+          {INDIAN_STATES.slice(0, 10).map((st) => (
+            <TouchableOpacity
+              key={st}
+              style={[styles.stateChip, state === st && styles.stateChipActive]}
+              onPress={() => setState(st)}
+            >
+              <Text style={[styles.stateChipText, state === st && styles.stateChipTextActive]}>{st}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
-        <Text style={styles.label}>Pincode *</Text>
-        <TextInput
-          style={styles.input}
-          value={pincode}
-          onChangeText={setPincode}
-          placeholder="Pincode"
-          keyboardType="numeric"
-          maxLength={6}
-        />
-
-        <Text style={styles.label}>Landmark</Text>
+        <Text style={styles.label}>Landmark (Optional)</Text>
         <TextInput
           style={styles.input}
           value={landmark}
           onChangeText={setLandmark}
-          placeholder="Nearby landmark (optional)"
+          placeholder="Nearby landmark (e.g. Opposite Metro Gate 2)"
+        />
+
+        <Text style={styles.label}>GSTIN for Business Invoicing (Optional)</Text>
+        <TextInput
+          style={styles.input}
+          value={gstin}
+          onChangeText={(v) => setGstin(v.toUpperCase())}
+          placeholder="15-digit GSTIN (e.g. 07AAAAA0000A1Z5)"
+          autoCapitalize="characters"
+          maxLength={15}
         />
 
         <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>Set as default address</Text>
+          <Text style={styles.toggleLabel}>Set as default delivery address</Text>
           <Switch
             value={isDefault}
             onValueChange={setIsDefault}
@@ -207,6 +268,57 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginTop: 14,
   },
+  labelRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 6,
+  },
+  labelChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  labelChipActive: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#2563eb',
+  },
+  labelChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  labelChipTextActive: {
+    color: '#2563eb',
+  },
+  stateRow: {
+    flexDirection: 'row',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  stateChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#f1f5f9',
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  stateChipActive: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#2563eb',
+  },
+  stateChipText: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  stateChipTextActive: {
+    color: '#2563eb',
+    fontWeight: '600',
+  },
   input: {
     width: '100%',
     height: 50,
@@ -214,7 +326,7 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     borderRadius: 10,
     paddingHorizontal: 16,
-    fontSize: 16,
+    fontSize: 15,
     color: '#1e293b',
     backgroundColor: '#f8fafc',
   },

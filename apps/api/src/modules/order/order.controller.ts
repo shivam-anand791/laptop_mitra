@@ -1,23 +1,25 @@
 import { Controller, Post, Get, Put, Patch, Param, Body, UseGuards, Query } from '@nestjs/common';
 import { OrderService } from './order.service';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { GetUser } from '../../decorators/get-user.decorator';
 import { RolesGuard } from '../../guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
 
 @ApiTags('orders')
 @Controller('orders')
+@ApiBearerAuth()
+@UseGuards(RolesGuard)
+@Roles('CUSTOMER', 'ADMIN')
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
 
-  @UseGuards(JwtAuthGuard)
   @Post()
   @ApiOperation({ summary: 'Create order (checkout) with discount/referral' })
   @ApiResponse({ status: 201 })
   async createOrder(
     @GetUser() user: any,
-    @Body() body: {
+    @Body()
+    body: {
       referralCode?: string;
       discountCode?: string;
       shippingAddress?: any;
@@ -35,7 +37,6 @@ export class OrderController {
     );
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get()
   @ApiOperation({ summary: 'Get orders for authenticated user' })
   @ApiResponse({ status: 200 })
@@ -43,7 +44,6 @@ export class OrderController {
     return this.orderService.findByUser(user.id, status);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Get(':id')
   @ApiOperation({ summary: 'Get order by ID (ownership checked)' })
   @ApiParam({ name: 'id', type: String })
@@ -53,13 +53,11 @@ export class OrderController {
     return this.orderService.findOne(id, user.id, user.role);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
   @Put(':id/status')
-  @ApiOperation({ summary: 'Update order status (admin only)' })
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Update order status (Admin only)' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
-  @ApiResponse({ status: 403, description: 'Forbidden: Admin access required' })
   async updateStatus(
     @GetUser() user: any,
     @Param('id') id: string,
@@ -68,15 +66,47 @@ export class OrderController {
     return this.orderService.updateStatus(id, status, user.id, user.role);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Patch(':id/cancel')
   @ApiOperation({ summary: 'Cancel order (ownership checked, only PENDING/CONFIRMED)' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'Order cancelled successfully' })
-  @ApiResponse({ status: 400, description: 'Bad Request: Order cannot be cancelled in current status' })
-  @ApiResponse({ status: 403, description: 'Forbidden: You can only cancel your own orders' })
-  @ApiResponse({ status: 404, description: 'Order not found' })
   async cancelOrder(@GetUser() user: any, @Param('id') id: string) {
     return this.orderService.cancelOrder(id, user.id, user.role);
+  }
+
+  @Post(':id/return')
+  @ApiOperation({ summary: 'Request return / replacement for a delivered order' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Return requested' })
+  async requestReturn(
+    @GetUser() user: any,
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+  ) {
+    return this.orderService.requestReturn(id, user.id, reason || 'Quality / performance issue');
+  }
+
+  @Post(':id/reorder')
+  @ApiOperation({ summary: 'Reorder items from a past order into current cart' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Items added to cart' })
+  async reorder(@GetUser() user: any, @Param('id') id: string) {
+    return this.orderService.reorder(id, user.id);
+  }
+
+  @Get(':id/invoice')
+  @ApiOperation({ summary: 'Get order tax invoice details' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Tax invoice' })
+  async getInvoice(@GetUser() user: any, @Param('id') id: string) {
+    return this.orderService.getInvoice(id, user.id);
+  }
+
+  @Get(':id/track')
+  @ApiOperation({ summary: 'Track order shipment live status' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Shipment tracking' })
+  async getTracking(@GetUser() user: any, @Param('id') id: string) {
+    return this.orderService.getTracking(id, user.id);
   }
 }

@@ -1,0 +1,111 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2026-10-02T15:30:00+05:30",
+  "assets": [
+    {
+      "filename": "hero-enterprise-laptop.jpg",
+      "placement": "Home Hero Section (Desktop)",
+      "dimensions": "1920x1080 (16:9)",
+      "prompt": "Sleek unbranded premium dark enterprise laptop slightly open at an elegant angle on a dark slate studio surface, soft cinematic ambient blue edge-lighting, deep navy blue background (#0B1F4B) with subtle geometric gradient shadows, ultra-clean studio lighting, professional corporate aesthetic, 8k render, no text, no logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "hero-enterprise-laptop-mobile.jpg",
+      "placement": "Home Hero Section (Mobile Crop)",
+      "dimensions": "800x1000 (3:4)",
+      "prompt": "Vertical portrait composition of a sleek unbranded premium dark enterprise laptop slightly open, soft cinematic ambient blue edge-lighting, deep navy blue background (#0B1F4B), ultra-clean studio lighting, no text, no logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "more-than-purchase-banner.jpg",
+      "placement": "Home 'More than a purchase' Quality Banner",
+      "dimensions": "1920x1080 (16:9)",
+      "prompt": "Futuristic close-up view of an open premium sleek laptop keyboard and chassis illuminated by smooth cyan and royal blue studio rim light, deep navy blue background (#0B1F4B), pristine clean metallic texture, subtle depth of field, high-tech enterprise engineering aesthetic, 8k resolution, no text, no brand logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "bulk-order-callout.jpg",
+      "placement": "Store Page Bulk Quote Callout Banner & B2B Card",
+      "dimensions": "1920x1080 (16:9)",
+      "prompt": "Modern enterprise office desk setup with multiple sleek unbranded laptops neatly arranged in a row, soft ambient corporate office lighting with navy and blue accents, high-end business workspace environment, clean shallow depth of field, 8k render, no text, no logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "cat-business.jpg",
+      "placement": "Shop by Category: Business Laptops",
+      "dimensions": "800x600 (4:3)",
+      "prompt": "Ultra-durable matte black executive business laptop standing open on a clean modern office desk with soft blue lighting accents, professional enterprise aesthetic, high-end studio product photograph, minimalist, sharp focus, no text, no logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "cat-apple.jpg",
+      "placement": "Shop by Category: Apple MacBooks",
+      "dimensions": "800x600 (4:3)",
+      "prompt": "Ultra-slim precision CNC machined space-gray ultrabook floating at an elegant angle, luxury minimalist aesthetic, reflective glass studio surface with subtle royal blue highlights, ultra-crisp studio lighting, no text, no logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "cat-gaming.jpg",
+      "placement": "Shop by Category: Gaming Laptops",
+      "dimensions": "800x600 (4:3)",
+      "prompt": "High-performance stealth gaming laptop with subtle RGB keyboard backlighting, open on a dark minimalist gaming desk, cool cyan and purple ambient glow in the background, sharp industrial design, no text, no logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "cat-ultrabook.jpg",
+      "placement": "Shop by Category: Ultrabooks & Thin",
+      "dimensions": "800x600 (4:3)",
+      "prompt": "Precision aluminum ultraportable laptop open on a modern glass desk, soft clean ambient daylight with blue studio accents, sleek minimalist aesthetic, no text, no logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "cat-student.jpg",
+      "placement": "Shop by Category: Student & Budget",
+      "dimensions": "800x600 (4:3)",
+      "prompt": "Modern lightweight sleek silver laptop open on a clean bright wooden study desk with minimal study accessories, soft natural lighting with cool blue ambient tones, neat educational productivity workspace, no text, no logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "service-leasing.jpg",
+      "placement": "Flexible Leasing Program Card",
+      "dimensions": "1920x1080 (16:9)",
+      "prompt": "Isometric 3D render of modern corporate hardware fleet deployment, multiple neat laptops with glowing blue connection lines, deep navy background (#0B1F4B), sleek business tech visualization, clean minimalist aesthetic, no text, no logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "service-exchange.jpg",
+      "placement": "Sell / Exchange for Cash Card",
+      "dimensions": "1920x1080 (16:9)",
+      "prompt": "Isometric 3D tech trade-in concept illustration, circular recycle arrows glowing with emerald green and cyan light around a sleek laptop, deep navy background (#0B1F4B), premium corporate aesthetic, clean lighting, no text, no logos.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "empty-cart.jpg",
+      "placement": "Cart Page Empty State",
+      "dimensions": "600x600 (1:1)",
+      "prompt": "3D minimalist illustration of a stylized shopping cart with soft blue and cyan glassmorphism materials, floating gently in front of a clean soft slate-grey backdrop (#F5F7FA), friendly clean e-commerce art, no text.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "empty-wishlist.jpg",
+      "placement": "Wishlist Page Empty State",
+      "dimensions": "600x600 (1:1)",
+      "prompt": "3D minimalist illustration of a sleek laptop with a floating holographic glass heart icon above it, soft pastel blue and rose reflections on a clean studio surface (#F5F7FA), friendly modern art, no text.",
+      "status": "GENERATED"
+    },
+    {
+      "filename": "empty-search.svg",
+      "placement": "Catalog No Search Results State",
+      "dimensions": "600x600 (1:1)",
+      "prompt": "3D minimalist illustration of a sleek magnifying glass inspecting a laptop with glowing blue interface lines, clean soft slate-grey backdrop (#F5F7FA), modern tech aesthetic, no text.",
+      "status": "VECTOR_PLACEHOLDER_TODO_REPLACE_WHEN_QUOTA_RESETS"
+    },
+    {
+      "filename": "error-404.svg",
+      "placement": "404 Error Page",
+      "dimensions": "800x600 (4:3)",
+      "prompt": "3D illustration of an unplugged or floating futuristic laptop cable with gentle glowing cyan light sparks, modern tech error concept, soft deep navy and blue background, friendly sleek UI art, no text.",
+      "status": "VECTOR_PLACEHOLDER_TODO_REPLACE_WHEN_QUOTA_RESETS"
+    }
+  ]
+}

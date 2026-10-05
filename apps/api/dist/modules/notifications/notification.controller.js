@@ -15,8 +15,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.NotificationController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
-const jwt_auth_guard_1 = require("../../auth/guards/jwt-auth.guard");
 const notification_service_1 = require("./notification.service");
+const roles_guard_1 = require("../../guards/roles.guard");
+const roles_decorator_1 = require("../../decorators/roles.decorator");
 let NotificationController = class NotificationController {
     notificationService;
     constructor(notificationService) {
@@ -25,12 +26,16 @@ let NotificationController = class NotificationController {
     async registerToken(req, body) {
         return this.notificationService.registerDeviceToken(req.user.id, body.token, body.platform);
     }
+    async getPreferences(req) {
+        return this.notificationService.getPreferences(req.user.id);
+    }
+    async updatePreferences(req, body) {
+        return this.notificationService.updatePreferences(req.user.id, body);
+    }
 };
 exports.NotificationController = NotificationController;
 __decorate([
     (0, common_1.Post)('register'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
-    (0, swagger_1.ApiBearerAuth)(),
     (0, swagger_1.ApiOperation)({ summary: 'Register an Expo device token for the current user' }),
     (0, swagger_1.ApiResponse)({ status: 201, description: 'Device token registered successfully' }),
     __param(0, (0, common_1.Request)()),
@@ -39,9 +44,31 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], NotificationController.prototype, "registerToken", null);
+__decorate([
+    (0, common_1.Get)('preferences'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get current user notification preferences' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Notification preferences' }),
+    __param(0, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], NotificationController.prototype, "getPreferences", null);
+__decorate([
+    (0, common_1.Put)('preferences'),
+    (0, swagger_1.ApiOperation)({ summary: 'Update current user notification preferences' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Preferences updated' }),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], NotificationController.prototype, "updatePreferences", null);
 exports.NotificationController = NotificationController = __decorate([
     (0, swagger_1.ApiTags)('notifications'),
     (0, common_1.Controller)('notifications'),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)('CUSTOMER', 'ADMIN'),
     __metadata("design:paramtypes", [notification_service_1.NotificationService])
 ], NotificationController);
 //# sourceMappingURL=notification.controller.js.map

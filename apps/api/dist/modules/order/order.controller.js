@@ -16,7 +16,6 @@ exports.OrderController = void 0;
 const common_1 = require("@nestjs/common");
 const order_service_1 = require("./order.service");
 const swagger_1 = require("@nestjs/swagger");
-const jwt_auth_guard_1 = require("../../auth/guards/jwt-auth.guard");
 const get_user_decorator_1 = require("../../decorators/get-user.decorator");
 const roles_guard_1 = require("../../guards/roles.guard");
 const roles_decorator_1 = require("../../decorators/roles.decorator");
@@ -40,10 +39,21 @@ let OrderController = class OrderController {
     async cancelOrder(user, id) {
         return this.orderService.cancelOrder(id, user.id, user.role);
     }
+    async requestReturn(user, id, reason) {
+        return this.orderService.requestReturn(id, user.id, reason || 'Quality / performance issue');
+    }
+    async reorder(user, id) {
+        return this.orderService.reorder(id, user.id);
+    }
+    async getInvoice(user, id) {
+        return this.orderService.getInvoice(id, user.id);
+    }
+    async getTracking(user, id) {
+        return this.orderService.getTracking(id, user.id);
+    }
 };
 exports.OrderController = OrderController;
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)(),
     (0, swagger_1.ApiOperation)({ summary: 'Create order (checkout) with discount/referral' }),
     (0, swagger_1.ApiResponse)({ status: 201 }),
@@ -54,7 +64,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], OrderController.prototype, "createOrder", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'Get orders for authenticated user' }),
     (0, swagger_1.ApiResponse)({ status: 200 }),
@@ -65,7 +74,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], OrderController.prototype, "getOrders", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)(':id'),
     (0, swagger_1.ApiOperation)({ summary: 'Get order by ID (ownership checked)' }),
     (0, swagger_1.ApiParam)({ name: 'id', type: String }),
@@ -78,13 +86,11 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], OrderController.prototype, "getOrder", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)('ADMIN'),
     (0, common_1.Put)(':id/status'),
-    (0, swagger_1.ApiOperation)({ summary: 'Update order status (admin only)' }),
+    (0, roles_decorator_1.Roles)('ADMIN'),
+    (0, swagger_1.ApiOperation)({ summary: 'Update order status (Admin only)' }),
     (0, swagger_1.ApiParam)({ name: 'id', type: String }),
     (0, swagger_1.ApiResponse)({ status: 200 }),
-    (0, swagger_1.ApiResponse)({ status: 403, description: 'Forbidden: Admin access required' }),
     __param(0, (0, get_user_decorator_1.GetUser)()),
     __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Body)('status')),
@@ -93,23 +99,67 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], OrderController.prototype, "updateStatus", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Patch)(':id/cancel'),
     (0, swagger_1.ApiOperation)({ summary: 'Cancel order (ownership checked, only PENDING/CONFIRMED)' }),
     (0, swagger_1.ApiParam)({ name: 'id', type: String }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Order cancelled successfully' }),
-    (0, swagger_1.ApiResponse)({ status: 400, description: 'Bad Request: Order cannot be cancelled in current status' }),
-    (0, swagger_1.ApiResponse)({ status: 403, description: 'Forbidden: You can only cancel your own orders' }),
-    (0, swagger_1.ApiResponse)({ status: 404, description: 'Order not found' }),
     __param(0, (0, get_user_decorator_1.GetUser)()),
     __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], OrderController.prototype, "cancelOrder", null);
+__decorate([
+    (0, common_1.Post)(':id/return'),
+    (0, swagger_1.ApiOperation)({ summary: 'Request return / replacement for a delivered order' }),
+    (0, swagger_1.ApiParam)({ name: 'id', type: String }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Return requested' }),
+    __param(0, (0, get_user_decorator_1.GetUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)('reason')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", Promise)
+], OrderController.prototype, "requestReturn", null);
+__decorate([
+    (0, common_1.Post)(':id/reorder'),
+    (0, swagger_1.ApiOperation)({ summary: 'Reorder items from a past order into current cart' }),
+    (0, swagger_1.ApiParam)({ name: 'id', type: String }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Items added to cart' }),
+    __param(0, (0, get_user_decorator_1.GetUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], OrderController.prototype, "reorder", null);
+__decorate([
+    (0, common_1.Get)(':id/invoice'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get order tax invoice details' }),
+    (0, swagger_1.ApiParam)({ name: 'id', type: String }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Tax invoice' }),
+    __param(0, (0, get_user_decorator_1.GetUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], OrderController.prototype, "getInvoice", null);
+__decorate([
+    (0, common_1.Get)(':id/track'),
+    (0, swagger_1.ApiOperation)({ summary: 'Track order shipment live status' }),
+    (0, swagger_1.ApiParam)({ name: 'id', type: String }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Shipment tracking' }),
+    __param(0, (0, get_user_decorator_1.GetUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], OrderController.prototype, "getTracking", null);
 exports.OrderController = OrderController = __decorate([
     (0, swagger_1.ApiTags)('orders'),
     (0, common_1.Controller)('orders'),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)('CUSTOMER', 'ADMIN'),
     __metadata("design:paramtypes", [order_service_1.OrderService])
 ], OrderController);
 //# sourceMappingURL=order.controller.js.map

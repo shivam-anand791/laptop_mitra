@@ -63,7 +63,7 @@ export default function ProfilePage() {
           <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-[#0B1F4B] via-[#0F296B] to-[#1D6FF2] text-white mb-6 sm:mb-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-2xl font-black text-white shadow-inner">
-                {user.name ? user.name[0].toUpperCase() : user.email[0].toUpperCase()}
+                {user.name ? user.name[0].toUpperCase() : (user.email ? user.email[0].toUpperCase() : 'G')}
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -72,7 +72,7 @@ export default function ProfilePage() {
                     ⭐ {user.referralTier || 'GOLD'} Mitra
                   </span>
                 </div>
-                <p className="text-xs text-blue-100 mt-0.5">{user.email}</p>
+                <p className="text-xs text-blue-100 mt-0.5">{user.email || 'Guest Session'}</p>
               </div>
             </div>
 
@@ -271,7 +271,7 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <span className="text-slate-400 block mb-0.5">Email Address</span>
-                  <span className="font-bold text-slate-900">{user.email}</span>
+                  <span className="font-bold text-slate-900">{user.email || 'None (Guest)'}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block mb-0.5">Account Status</span>

@@ -2,10 +2,10 @@ import { AdminService } from './admin.service';
 export declare class AdminController {
     private readonly adminService;
     constructor(adminService: AdminService);
-    getAllUsers(user: any): Promise<{
+    getAllUsers(): Promise<{
         name: string;
-        email: string;
         id: string;
+        email: string;
         referralCode: string;
         role: string;
         status: string;
@@ -14,33 +14,32 @@ export declare class AdminController {
         referralEarnings: import("@prisma/client/runtime/library").Decimal;
         referralTier: string;
     }[]>;
-    updateUserStatus(user: any, id: string, status: string): Promise<{
+    updateUserStatus(id: string, status: string): Promise<{
         address: string | null;
         name: string | null;
-        email: string;
-        password: string;
         phone: string | null;
         id: string;
+        email: string | null;
+        firebaseUid: string;
         referralCode: string;
         emailVerified: Date | null;
+        authProvider: string | null;
+        isGuest: boolean;
         role: string;
         status: string;
         imageUrl: string | null;
-        gender: string | null;
-        dob: Date | null;
         city: string | null;
         state: string | null;
         pincode: string | null;
+        gender: string | null;
+        dob: Date | null;
         createdAt: Date;
         updatedAt: Date;
         referralEarnings: import("@prisma/client/runtime/library").Decimal;
         referralTier: string;
         referralLinkClickedCount: number;
-        otp: string | null;
-        otpExpiresAt: Date | null;
-        otpAttemptCount: number;
     }>;
-    getAllProducts(user: any): Promise<({
+    getAllProducts(): Promise<({
         category: {
             description: string | null;
             name: string;
@@ -60,13 +59,13 @@ export declare class AdminController {
             sortOrder: number;
         }[];
     } & {
+        tags: string | null;
         description: string | null;
         name: string;
         id: string;
         status: string;
         createdAt: Date;
         updatedAt: Date;
-        tags: string | null;
         sku: string;
         shortDescription: string | null;
         slug: string;
@@ -80,21 +79,21 @@ export declare class AdminController {
         isNewArrival: boolean;
         categoryId: string | null;
     })[]>;
-    getAllOrders(user: any): Promise<({
+    getAllOrders(): Promise<({
         user: {
             name: string;
-            email: string;
             id: string;
+            email: string;
         };
         items: ({
             product: {
+                tags: string | null;
                 description: string | null;
                 name: string;
                 id: string;
                 status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                tags: string | null;
                 sku: string;
                 shortDescription: string | null;
                 slug: string;
@@ -128,9 +127,9 @@ export declare class AdminController {
             deliveredAt: Date | null;
         }[];
     } & {
-        email: string;
         phone: string | null;
         id: string;
+        email: string;
         referralCode: string | null;
         status: string;
         createdAt: Date;
@@ -150,10 +149,10 @@ export declare class AdminController {
         notes: string | null;
         referralDiscount: import("@prisma/client/runtime/library").Decimal;
     })[]>;
-    updateOrderStatus(user: any, id: string, status: string): Promise<{
-        email: string;
+    updateOrderStatus(id: string, status: string): Promise<{
         phone: string | null;
         id: string;
+        email: string;
         referralCode: string | null;
         status: string;
         createdAt: Date;
@@ -173,7 +172,7 @@ export declare class AdminController {
         notes: string | null;
         referralDiscount: import("@prisma/client/runtime/library").Decimal;
     }>;
-    getDashboardStats(user: any): Promise<{
+    getDashboardStats(): Promise<{
         totalUsers: number;
         totalProducts: number;
         totalOrders: number;

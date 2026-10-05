@@ -77,21 +77,25 @@ export default function CheckoutPage() {
     };
   }, []);
 
-  const handleApplyDiscount = () => {
+  const handleApplyDiscount = async () => {
     setDiscountError(null);
     if (!discountCodeInput.trim()) return;
 
-    const res = api.validateDiscount(discountCodeInput, subtotal);
-    if (res.valid) {
-      setAppliedDiscount({
-        code: discountCodeInput.trim().toUpperCase(),
-        amount: res.discountAmount,
-        message: res.message,
-        type: discountCodeInput.toUpperCase().startsWith('MITRA') ? 'referral' : 'coupon',
-      });
-      setDiscountCodeInput('');
-    } else {
-      setDiscountError(res.message);
+    try {
+      const res = await api.validateDiscount(discountCodeInput, subtotal);
+      if (res.valid) {
+        setAppliedDiscount({
+          code: discountCodeInput.trim().toUpperCase(),
+          amount: res.discountAmount,
+          message: res.message,
+          type: discountCodeInput.toUpperCase().startsWith('MITRA') ? 'referral' : 'coupon',
+        });
+        setDiscountCodeInput('');
+      } else {
+        setDiscountError(res.message);
+      }
+    } catch (err: any) {
+      setDiscountError(err?.message || 'Failed to validate discount code');
     }
   };
 
@@ -122,6 +126,8 @@ export default function CheckoutPage() {
       const orderPayload = {
         discountCode: appliedDiscount?.type === 'coupon' ? appliedDiscount.code : undefined,
         referralCode: appliedDiscount?.type === 'referral' ? appliedDiscount.code : undefined,
+        paymentMethod: paymentMethod,
+        email: formData.email,
         shippingAddress: {
           fullName: formData.fullName,
           phone: formData.phone,
@@ -140,45 +146,51 @@ export default function CheckoutPage() {
       if (paymentMethod === 'razorpay') {
         const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_S3KeoVspM7qt2w';
 
-        const rzpOrder = await api.createRazorpayOrder(finalAmount, order.id);
+        try {
+          const rzpOrder = await api.createRazorpayOrder(finalAmount, order.id);
 
-        if (typeof window !== 'undefined' && window.Razorpay) {
-          const options = {
-            key: razorpayKey,
-            amount: rzpOrder.amount || Math.round(finalAmount * 100),
-            currency: 'INR',
-            name: 'LaptopMitra',
-            description: `Order ${order.orderNumber} - Certified Refurbished Laptop`,
-            order_id: rzpOrder.id.startsWith('order_mock_') ? undefined : rzpOrder.id,
-            image: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=200&q=80',
-            prefill: {
-              name: formData.fullName,
-              email: formData.email,
-              contact: formData.phone,
-            },
-            theme: {
-              color: '#1D6FF2',
-            },
-            handler: async (response: any) => {
-              clearCart();
-              setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any });
-            },
-            modal: {
-              ondismiss: () => {
-                setIsSubmitting(false);
+          if (typeof window !== 'undefined' && window.Razorpay) {
+            const options = {
+              key: razorpayKey,
+              amount: rzpOrder.amount || Math.round(finalAmount * 100),
+              currency: 'INR',
+              name: 'LaptopMitra',
+              description: `Order ${order.orderNumber} - Certified Refurbished Laptop`,
+              order_id: rzpOrder.id.startsWith('order_mock_') ? undefined : rzpOrder.id,
+              image: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=200&q=80',
+              prefill: {
+                name: formData.fullName,
+                email: formData.email,
+                contact: formData.phone,
               },
-            },
-          };
+              theme: {
+                color: '#1D6FF2',
+              },
+              handler: async (response: any) => {
+                clearCart();
+                setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any });
+              },
+              modal: {
+                ondismiss: () => {
+                  setIsSubmitting(false);
+                },
+              },
+            };
 
-          const rzpInstance = new window.Razorpay(options);
-          rzpInstance.open();
-        } else {
-          // Fallback if script not loaded
+            const rzpInstance = new window.Razorpay(options);
+            rzpInstance.open();
+          } else {
+            // Fallback if script not loaded
+            clearCart();
+            setCompletedOrder(order);
+          }
+        } catch {
+          // Fallback to order confirmation
           clearCart();
           setCompletedOrder(order);
         }
       } else {
-        // COD
+        // COD (Cash on Delivery)
         clearCart();
         setCompletedOrder(order);
       }
@@ -236,8 +248,14 @@ export default function CheckoutPage() {
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
               <Link
-                href="/products"
+                href="/profile"
                 className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#1D6FF2] hover:bg-[#1558C0] text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all"
+              >
+                📦 View Order in Account
+              </Link>
+              <Link
+                href="/products"
+                className="w-full sm:w-auto px-6 py-3 rounded-xl border border-[#E4E9F2] hover:bg-[#F8FAFC] text-slate-700 font-bold text-xs transition-all"
               >
                 Continue Shopping
               </Link>
@@ -247,7 +265,7 @@ export default function CheckoutPage() {
                 rel="noopener noreferrer"
                 className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
               >
-                <span>WhatsApp Tracking Updates</span>
+                <span>WhatsApp Updates</span>
               </a>
             </div>
           </div>

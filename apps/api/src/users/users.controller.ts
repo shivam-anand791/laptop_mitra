@@ -1,15 +1,12 @@
-import { Controller, Get, Put, Body, UseGuards, Request, Param } from '@nestjs/common';
+import { Controller, Get, Put, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
-import { ChangePasswordDto } from './dto/change-password.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetUser } from '../decorators/get-user.decorator';
 
 @ApiTags('Users')
 @Controller('users')
-@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -36,15 +33,6 @@ export class UsersController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async updateAddress(@GetUser() user: any, @Body() updateAddressDto: UpdateAddressDto) {
     return this.usersService.updateAddress(user.id, updateAddressDto);
-  }
-
-  @Put('change-password')
-  @ApiOperation({ summary: 'Change password' })
-  @ApiResponse({ status: 200, description: 'Password changed successfully' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 400, description: 'Current password is incorrect' })
-  async changePassword(@GetUser() user: any, @Body() changePasswordDto: ChangePasswordDto) {
-    return this.usersService.changePassword(user.id, changePasswordDto);
   }
 
   @Get('stats')

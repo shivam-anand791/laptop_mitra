@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import CustomerLayout from '../../components/CustomerLayout';
 import { useAuth } from '../../lib/auth-context';
+import { formatAuthError } from '../../lib/utils';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function LoginPage() {
       await login(email, password);
       router.push('/profile');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Invalid email or password');
+      setError(formatAuthError(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -42,7 +43,7 @@ export default function LoginPage() {
       await guestLogin();
       router.push('/profile');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Unable to start a guest session. Please try again.');
+      setError(formatAuthError(err));
     } finally {
       setIsSubmitting(false);
     }

@@ -4,8 +4,8 @@ export declare class AdminService {
     constructor(prisma: PrismaService);
     getAllUsers(): Promise<{
         name: string;
-        email: string;
         id: string;
+        email: string;
         referralCode: string;
         role: string;
         status: string;
@@ -17,28 +17,27 @@ export declare class AdminService {
     updateUserStatus(userId: string, status: string): Promise<{
         address: string | null;
         name: string | null;
-        email: string;
-        password: string;
         phone: string | null;
         id: string;
+        email: string | null;
+        firebaseUid: string;
         referralCode: string;
         emailVerified: Date | null;
+        authProvider: string | null;
+        isGuest: boolean;
         role: string;
         status: string;
         imageUrl: string | null;
-        gender: string | null;
-        dob: Date | null;
         city: string | null;
         state: string | null;
         pincode: string | null;
+        gender: string | null;
+        dob: Date | null;
         createdAt: Date;
         updatedAt: Date;
         referralEarnings: import("@prisma/client/runtime/library").Decimal;
         referralTier: string;
         referralLinkClickedCount: number;
-        otp: string | null;
-        otpExpiresAt: Date | null;
-        otpAttemptCount: number;
     }>;
     getAllProducts(): Promise<({
         category: {
@@ -60,13 +59,13 @@ export declare class AdminService {
             sortOrder: number;
         }[];
     } & {
+        tags: string | null;
         description: string | null;
         name: string;
         id: string;
         status: string;
         createdAt: Date;
         updatedAt: Date;
-        tags: string | null;
         sku: string;
         shortDescription: string | null;
         slug: string;
@@ -83,18 +82,18 @@ export declare class AdminService {
     getAllOrders(): Promise<({
         user: {
             name: string;
-            email: string;
             id: string;
+            email: string;
         };
         items: ({
             product: {
+                tags: string | null;
                 description: string | null;
                 name: string;
                 id: string;
                 status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                tags: string | null;
                 sku: string;
                 shortDescription: string | null;
                 slug: string;
@@ -128,9 +127,9 @@ export declare class AdminService {
             deliveredAt: Date | null;
         }[];
     } & {
-        email: string;
         phone: string | null;
         id: string;
+        email: string;
         referralCode: string | null;
         status: string;
         createdAt: Date;
@@ -151,9 +150,9 @@ export declare class AdminService {
         referralDiscount: import("@prisma/client/runtime/library").Decimal;
     })[]>;
     updateOrderStatus(orderId: string, status: string): Promise<{
-        email: string;
         phone: string | null;
         id: string;
+        email: string;
         referralCode: string | null;
         status: string;
         createdAt: Date;

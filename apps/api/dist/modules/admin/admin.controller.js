@@ -17,30 +17,28 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const admin_service_1 = require("./admin.service");
 const roles_guard_1 = require("../../guards/roles.guard");
-const jwt_auth_guard_1 = require("../../auth/guards/jwt-auth.guard");
-const get_user_decorator_1 = require("../../decorators/get-user.decorator");
 const roles_decorator_1 = require("../../decorators/roles.decorator");
 let AdminController = class AdminController {
     adminService;
     constructor(adminService) {
         this.adminService = adminService;
     }
-    async getAllUsers(user) {
+    async getAllUsers() {
         return this.adminService.getAllUsers();
     }
-    async updateUserStatus(user, id, status) {
+    async updateUserStatus(id, status) {
         return this.adminService.updateUserStatus(id, status);
     }
-    async getAllProducts(user) {
+    async getAllProducts() {
         return this.adminService.getAllProducts();
     }
-    async getAllOrders(user) {
+    async getAllOrders() {
         return this.adminService.getAllOrders();
     }
-    async updateOrderStatus(user, id, status) {
+    async updateOrderStatus(id, status) {
         return this.adminService.updateOrderStatus(id, status);
     }
-    async getDashboardStats(user) {
+    async getDashboardStats() {
         return this.adminService.getDashboardStats();
     }
 };
@@ -49,9 +47,8 @@ __decorate([
     (0, common_1.Get)('users'),
     (0, swagger_1.ApiOperation)({ summary: 'Get all users (admin only)' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'List of all users' }),
-    __param(0, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "getAllUsers", null);
 __decorate([
@@ -59,29 +56,26 @@ __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Update user status (admin only)' }),
     (0, swagger_1.ApiParam)({ name: 'id', type: String }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'User status updated' }),
-    __param(0, (0, get_user_decorator_1.GetUser)()),
-    __param(1, (0, common_1.Param)('id')),
-    __param(2, (0, common_1.Body)('status')),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)('status')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "updateUserStatus", null);
 __decorate([
     (0, common_1.Get)('products'),
     (0, swagger_1.ApiOperation)({ summary: 'Get all products (admin only)' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'List of all products' }),
-    __param(0, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "getAllProducts", null);
 __decorate([
     (0, common_1.Get)('orders'),
     (0, swagger_1.ApiOperation)({ summary: 'Get all orders (admin only)' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'List of all orders' }),
-    __param(0, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "getAllOrders", null);
 __decorate([
@@ -89,24 +83,22 @@ __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Update order status (admin only)' }),
     (0, swagger_1.ApiParam)({ name: 'id', type: String }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Order status updated' }),
-    __param(0, (0, get_user_decorator_1.GetUser)()),
-    __param(1, (0, common_1.Param)('id')),
-    __param(2, (0, common_1.Body)('status')),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)('status')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "updateOrderStatus", null);
 __decorate([
     (0, common_1.Get)('dashboard/stats'),
     (0, swagger_1.ApiOperation)({ summary: 'Get admin dashboard stats' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Dashboard statistics' }),
-    __param(0, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "getDashboardStats", null);
 exports.AdminController = AdminController = __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
+    (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('ADMIN'),
     (0, swagger_1.ApiTags)('admin'),
     (0, common_1.Controller)('admin'),

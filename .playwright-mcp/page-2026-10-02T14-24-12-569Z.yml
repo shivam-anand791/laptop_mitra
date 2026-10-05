@@ -1,0 +1,474 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e5]:
+        - link "LaptopMitra" [ref=e6] [cursor=pointer]:
+          - /url: /
+        - generic [ref=e17]:
+          - link "Sign In" [ref=e18] [cursor=pointer]:
+            - /url: /login
+          - link "Wishlist with 0 items" [ref=e21] [cursor=pointer]:
+            - /url: /wishlist
+          - link "Shopping Cart with 0 items" [ref=e24] [cursor=pointer]:
+            - /url: /cart
+          - button "Toggle Navigation Menu" [ref=e442] [cursor=pointer]
+    - main [ref=e43]:
+      - generic [ref=e44]:
+        - img "Premium unbranded enterprise laptop on office desk overlooking twilight city skyline" [ref=e46]
+        - generic [ref=e49]:
+          - generic [ref=e50]: ENTERPRISE HARDWARE PARTNER
+          - heading "Certified Laptops for Your Business." [level=1] [ref=e51]: Certified Laptopsfor Your Business.
+          - paragraph [ref=e52]: Genuine products. Trusted brands. Bulk pricing.LaptopMitra helps businesses get the right devices,with the right support.
+          - generic [ref=e53]:
+            - link "Explore Laptops →" [ref=e54] [cursor=pointer]:
+              - /url: /products
+              - generic [ref=e55]: Explore Laptops
+              - generic [ref=e56]: →
+            - link "Get a Quote" [ref=e57] [cursor=pointer]:
+              - /url: https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20would%20like%20to%20request%20a%20quote%20for%20enterprise%20laptops.
+        - generic [ref=e61]:
+          - generic [ref=e66]:
+            - heading "100% Genuine Products" [level=4] [ref=e67]
+            - paragraph [ref=e68]: with Brand Warranty
+          - generic [ref=e73]:
+            - heading "Bulk Orders" [level=4] [ref=e74]
+            - paragraph [ref=e75]: "& Special Pricing"
+          - generic [ref=e81]:
+            - heading "PAN India Delivery" [level=4] [ref=e82]
+            - paragraph [ref=e83]: All Major Locations
+          - generic [ref=e88]:
+            - heading "Dedicated Support" [level=4] [ref=e89]
+            - paragraph [ref=e90]: Before & After Purchase
+      - generic [ref=e92]:
+        - generic [ref=e93]:
+          - generic [ref=e94]:
+            - generic [ref=e95]: Certified Catalog
+            - heading "Shop by Purpose & Category" [level=2] [ref=e96]
+          - link "Explore All Models →" [ref=e97] [cursor=pointer]:
+            - /url: /products
+            - generic [ref=e98]: Explore All Models
+            - generic [ref=e99]: →
+        - generic [ref=e100]:
+          - link "Business Laptops Work Smarter Business Laptops ThinkPad, Latitude & EliteBook" [ref=e101] [cursor=pointer]:
+            - /url: /products?category=cat-business
+            - generic [ref=e102]:
+              - img "Business Laptops" [ref=e103]
+              - generic [ref=e104]: Work Smarter
+            - generic [ref=e105]:
+              - heading "Business Laptops" [level=3] [ref=e106]
+              - paragraph [ref=e107]: ThinkPad, Latitude & EliteBook
+          - link "Student Laptops Learn Better Student Laptops Budget & Coding Laptops Under ₹25k" [ref=e108] [cursor=pointer]:
+            - /url: /products?category=cat-student
+            - generic [ref=e109]:
+              - img "Student Laptops" [ref=e110]
+              - generic [ref=e111]: Learn Better
+            - generic [ref=e112]:
+              - heading "Student Laptops" [level=3] [ref=e113]
+              - paragraph [ref=e114]: Budget & Coding Laptops Under ₹25k
+          - link "Gaming Laptops Play Harder Gaming Laptops NVIDIA RTX & 120Hz+ Displays" [ref=e115] [cursor=pointer]:
+            - /url: /products?category=cat-gaming
+            - generic [ref=e116]:
+              - img "Gaming Laptops" [ref=e117]
+              - generic [ref=e118]: Play Harder
+            - generic [ref=e119]:
+              - heading "Gaming Laptops" [level=3] [ref=e120]
+              - paragraph [ref=e121]: NVIDIA RTX & 120Hz+ Displays
+          - link "Premium Series For Creators Premium Series Ultra-slim Aluminum Portables" [ref=e122] [cursor=pointer]:
+            - /url: /products?category=cat-ultrabook
+            - generic [ref=e123]:
+              - img "Premium Series" [ref=e124]
+              - generic [ref=e125]: For Creators
+            - generic [ref=e126]:
+              - heading "Premium Series" [level=3] [ref=e127]
+              - paragraph [ref=e128]: Ultra-slim Aluminum Portables
+          - link "Apple MacBooks Apple Silicon Apple MacBooks M1, M2 & Pro Silicon Chips" [ref=e129] [cursor=pointer]:
+            - /url: /products?category=cat-apple
+            - generic [ref=e130]:
+              - img "Apple MacBooks" [ref=e131]
+              - generic [ref=e132]: Apple Silicon
+            - generic [ref=e133]:
+              - heading "Apple MacBooks" [level=3] [ref=e134]
+              - paragraph [ref=e135]: M1, M2 & Pro Silicon Chips
+      - generic [ref=e139]:
+        - generic [ref=e140]:
+          - generic [ref=e141]: 🔥 Deal of the Day
+          - heading "ThinkPad Executive Ultrabook" [level=2] [ref=e144]
+          - paragraph [ref=e145]: Enterprise-grade durability with 32-point inspection certification. Save up to ₹38,000 on tested business inventory today.
+          - generic [ref=e146]: ⚡ Daily Special Price While Stock Lasts
+          - generic [ref=e148]:
+            - generic [ref=e149]: ₹1,54,999
+            - generic [ref=e150]: ₹2,49,900
+            - generic [ref=e151]: Save 38%
+          - generic [ref=e152]:
+            - link "Claim Flash Deal →" [ref=e153] [cursor=pointer]:
+              - /url: /products/prod-macbook-pro-16
+            - link "WhatsApp" [ref=e154] [cursor=pointer]:
+              - /url: https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20want%20to%20order%20the%20Deal%20of%20the%20Day%20laptop.
+        - img "ThinkPad Daily Deal Laptop" [ref=e158]
+      - generic [ref=e161]:
+        - generic [ref=e162]:
+          - generic "1500+" [ref=e164]: 1,500+
+          - paragraph [ref=e165]: Devices Sold & Certified
+          - paragraph [ref=e166]: Inspected across 32 checkpoints
+        - generic [ref=e167]:
+          - generic "27+" [ref=e169]
+          - paragraph [ref=e170]: Corporate Clients
+          - paragraph [ref=e171]: Equipped with bulk IT fleets
+        - generic [ref=e172]:
+          - generic "95%" [ref=e174]
+          - paragraph [ref=e175]: Satisfaction Rate
+          - paragraph [ref=e176]: Backed by 7-day returns
+        - generic [ref=e177]:
+          - generic "2+ Yrs" [ref=e179]
+          - paragraph [ref=e180]: Industry Experience
+          - paragraph [ref=e181]: Dedicated engineer team
+      - generic [ref=e183]:
+        - generic [ref=e184]: Enterprise Brands We Service & Supply
+        - generic [ref=e187]:
+          - img "HP" [ref=e189]
+          - img "Dell" [ref=e191]
+          - img "Lenovo" [ref=e193]
+          - img "HP" [ref=e195]
+          - img "Dell" [ref=e197]
+          - img "Lenovo" [ref=e199]
+          - img "HP" [ref=e201]
+          - img "Dell" [ref=e203]
+          - img "Lenovo" [ref=e205]
+          - img "HP" [ref=e207]
+          - img "Dell" [ref=e209]
+          - img "Lenovo" [ref=e211]
+          - img "HP" [ref=e213]
+          - img "Dell" [ref=e215]
+          - img "Lenovo" [ref=e217]
+          - img "HP" [ref=e219]
+          - img "Dell" [ref=e221]
+          - img "Lenovo" [ref=e223]
+        - paragraph [ref=e243]: Brand names and logos are trademarks of their respective owners. LaptopMitra is not affiliated with or endorsed by them.
+      - generic [ref=e245]:
+        - generic [ref=e246]:
+          - generic [ref=e247]:
+            - generic [ref=e248]: Quality Verified Laptops
+            - heading "Trending Inventory" [level=2] [ref=e249]
+          - generic [ref=e250]:
+            - button "Featured Models" [ref=e251] [cursor=pointer]
+            - button "New Arrivals" [ref=e252] [cursor=pointer]
+        - generic [ref=e253]:
+          - article "Apple MacBook Pro 16\" (M2 Pro, 16GB, 512GB SSD) - Space Gray" [ref=e445]:
+            - generic:
+              - generic: REFURB
+              - generic: ⭐ Best Seller
+              - generic: 38% OFF
+            - generic [ref=e446]:
+              - button "Get WhatsApp quote for Apple MacBook Pro 16\" (M2 Pro, 16GB, 512GB SSD) - Space Gray" [ref=e447] [cursor=pointer]
+              - button "Add Apple MacBook Pro 16\" (M2 Pro, 16GB, 512GB SSD) - Space Gray to wishlist" [ref=e450] [cursor=pointer]
+            - link [ref=e453] [cursor=pointer]:
+              - /url: /products/prod-macbook-pro-16
+              - img "Apple MacBook Pro 16\" (M2 Pro, 16GB, 512GB SSD) - Space Gray" [ref=e454]
+              - generic:
+                - img "Grade A+ Certified": A+
+                - generic: 1-Yr Warranty
+            - generic [ref=e455]:
+              - generic [ref=e456]:
+                - generic [ref=e457]:
+                  - generic [ref=e458]: Apple MacBooks
+                  - generic [ref=e459]: Ready for Dispatch • 8 left
+                - link [ref=e461] [cursor=pointer]:
+                  - /url: /products/prod-macbook-pro-16
+                  - heading "Apple MacBook Pro 16\" (M2 Pro, 16GB, 512GB SSD) - Space Gray" [level=3] [ref=e462]
+                - generic [ref=e463]:
+                  - generic [ref=e464]: 16 Unified Memory
+                  - generic [ref=e465]: 512 Superfast SSD
+                  - generic [ref=e466]: Apple M2 Pro
+                - generic [ref=e467]:
+                  - generic [ref=e468]: "Bulk (5+ units):"
+                  - strong [ref=e469]: ₹1,44,149/pc
+              - generic [ref=e470]:
+                - generic [ref=e471]:
+                  - generic [ref=e472]:
+                    - generic [ref=e473]: ₹1,54,999
+                    - generic [ref=e474]: ₹2,49,900
+                  - paragraph [ref=e475]: Save ₹94,901 (38% off)
+                - button "Add Apple MacBook Pro 16\" (M2 Pro, 16GB, 512GB SSD) - Space Gray to cart" [ref=e476] [cursor=pointer]:
+                  - generic [ref=e479]: Add to Cart
+          - article "Lenovo ThinkPad X1 Carbon Gen 10 (Intel Core i7 12th Gen, 16GB, 512GB SSD)" [ref=e480]:
+            - generic:
+              - generic: REFURB
+              - generic: ⭐ Best Seller
+              - generic: 56% OFF
+            - generic [ref=e481]:
+              - button "Get WhatsApp quote for Lenovo ThinkPad X1 Carbon Gen 10 (Intel Core i7 12th Gen, 16GB, 512GB SSD)" [ref=e482] [cursor=pointer]
+              - button "Add Lenovo ThinkPad X1 Carbon Gen 10 (Intel Core i7 12th Gen, 16GB, 512GB SSD) to wishlist" [ref=e485] [cursor=pointer]
+            - link [ref=e488] [cursor=pointer]:
+              - /url: /products/prod-thinkpad-x1-carbon-g10
+              - img "Lenovo ThinkPad X1 Carbon Gen 10 (Intel Core i7 12th Gen, 16GB, 512GB SSD)" [ref=e489]
+              - generic:
+                - img "Grade A+ Certified": A+
+                - generic: 1-Yr Warranty
+            - generic [ref=e490]:
+              - generic [ref=e491]:
+                - generic [ref=e492]:
+                  - generic [ref=e493]: Business Laptops
+                  - generic [ref=e494]: Ready for Dispatch • 14 left
+                - link [ref=e496] [cursor=pointer]:
+                  - /url: /products/prod-thinkpad-x1-carbon-g10
+                  - heading "Lenovo ThinkPad X1 Carbon Gen 10 (Intel Core i7 12th Gen, 16GB, 512GB SSD)" [level=3] [ref=e497]
+                - generic [ref=e498]:
+                  - generic [ref=e499]: 16 LPDDR5 5200MHz Dual Channel
+                  - generic [ref=e500]: 512 M.2 PCIe 4.0 SSD (Upgradable)
+                  - generic [ref=e501]: Intel Core i7-1260P
+                - generic [ref=e502]:
+                  - generic [ref=e503]: "Bulk (5+ units):"
+                  - strong [ref=e504]: ₹60,449/pc
+              - generic [ref=e505]:
+                - generic [ref=e506]:
+                  - generic [ref=e507]:
+                    - generic [ref=e508]: ₹64,999
+                    - generic [ref=e509]: ₹1,48,000
+                  - paragraph [ref=e510]: Save ₹83,001 (56% off)
+                - button "Add Lenovo ThinkPad X1 Carbon Gen 10 (Intel Core i7 12th Gen, 16GB, 512GB SSD) to cart" [ref=e511] [cursor=pointer]:
+                  - generic [ref=e514]: Add to Cart
+          - article "Dell XPS 15 9520 (Intel Core i7 12th Gen, 32GB RAM, 1TB SSD, RTX 3050 Ti)" [ref=e515]:
+            - generic:
+              - generic: REFURB
+              - generic: ⭐ Best Seller
+              - generic: 54% OFF
+            - generic [ref=e516]:
+              - button "Get WhatsApp quote for Dell XPS 15 9520 (Intel Core i7 12th Gen, 32GB RAM, 1TB SSD, RTX 3050 Ti)" [ref=e517] [cursor=pointer]
+              - button "Add Dell XPS 15 9520 (Intel Core i7 12th Gen, 32GB RAM, 1TB SSD, RTX 3050 Ti) to wishlist" [ref=e520] [cursor=pointer]
+            - link [ref=e523] [cursor=pointer]:
+              - /url: /products/prod-dell-xps-15-9520
+              - img "Dell XPS 15 9520 (Intel Core i7 12th Gen, 32GB RAM, 1TB SSD, RTX 3050 Ti)" [ref=e524]
+              - generic:
+                - img "Grade A+ Certified": A+
+                - generic: 1-Yr Warranty
+            - generic [ref=e525]:
+              - generic [ref=e526]:
+                - generic [ref=e527]:
+                  - generic [ref=e528]: Ultrabooks & Thin
+                  - generic [ref=e529]: Ready for Dispatch • 6 left
+                - link [ref=e531] [cursor=pointer]:
+                  - /url: /products/prod-dell-xps-15-9520
+                  - heading "Dell XPS 15 9520 (Intel Core i7 12th Gen, 32GB RAM, 1TB SSD, RTX 3050 Ti)" [level=3] [ref=e532]
+                - generic [ref=e533]:
+                  - generic [ref=e534]: 32 DDR5 4800MHz Dual Channel
+                  - generic [ref=e535]: 1TB Samsung Gen4 M.2 SSD
+                  - generic [ref=e536]: Intel Core i7-12700H
+                - generic [ref=e537]:
+                  - generic [ref=e538]: "Bulk (5+ units):"
+                  - strong [ref=e539]: ₹83,699/pc
+              - generic [ref=e540]:
+                - generic [ref=e541]:
+                  - generic [ref=e542]:
+                    - generic [ref=e543]: ₹89,999
+                    - generic [ref=e544]: ₹1,95,000
+                  - paragraph [ref=e545]: Save ₹1,05,001 (54% off)
+                - button "Add Dell XPS 15 9520 (Intel Core i7 12th Gen, 32GB RAM, 1TB SSD, RTX 3050 Ti) to cart" [ref=e546] [cursor=pointer]:
+                  - generic [ref=e549]: Add to Cart
+          - article "ASUS ROG Zephyrus G14 (AMD Ryzen 9 6900HS, 16GB, 1TB SSD, Radeon RX 6700S)" [ref=e550]:
+            - generic:
+              - generic: REFURB
+              - generic: ⭐ Best Seller
+              - generic: 52% OFF
+            - generic [ref=e551]:
+              - button "Get WhatsApp quote for ASUS ROG Zephyrus G14 (AMD Ryzen 9 6900HS, 16GB, 1TB SSD, Radeon RX 6700S)" [ref=e552] [cursor=pointer]
+              - button "Add ASUS ROG Zephyrus G14 (AMD Ryzen 9 6900HS, 16GB, 1TB SSD, Radeon RX 6700S) to wishlist" [ref=e555] [cursor=pointer]
+            - link [ref=e558] [cursor=pointer]:
+              - /url: /products/prod-asus-rog-zephyrus-g14
+              - img "ASUS ROG Zephyrus G14 (AMD Ryzen 9 6900HS, 16GB, 1TB SSD, Radeon RX 6700S)" [ref=e559]
+              - generic:
+                - img "Grade A+ Certified": A+
+                - generic: 1-Yr Warranty
+            - generic [ref=e560]:
+              - generic [ref=e561]:
+                - generic [ref=e562]:
+                  - generic [ref=e563]: Gaming & High-Perf
+                  - generic [ref=e564]: Ready for Dispatch • 10 left
+                - link [ref=e566] [cursor=pointer]:
+                  - /url: /products/prod-asus-rog-zephyrus-g14
+                  - heading "ASUS ROG Zephyrus G14 (AMD Ryzen 9 6900HS, 16GB, 1TB SSD, Radeon RX 6700S)" [level=3] [ref=e567]
+                - generic [ref=e568]:
+                  - generic [ref=e569]: 16 DDR5 4800MHz (expandable to 32)
+                  - generic [ref=e570]: 1TB PCIe 4.0 M.2 SSD
+                  - generic [ref=e571]: AMD Ryzen 9 6900HS
+                - generic [ref=e572]:
+                  - generic [ref=e573]: "Bulk (5+ units):"
+                  - strong [ref=e574]: ₹73,469/pc
+              - generic [ref=e575]:
+                - generic [ref=e576]:
+                  - generic [ref=e577]:
+                    - generic [ref=e578]: ₹78,999
+                    - generic [ref=e579]: ₹1,65,000
+                  - paragraph [ref=e580]: Save ₹86,001 (52% off)
+                - button "Add ASUS ROG Zephyrus G14 (AMD Ryzen 9 6900HS, 16GB, 1TB SSD, Radeon RX 6700S) to cart" [ref=e581] [cursor=pointer]:
+                  - generic [ref=e584]: Add to Cart
+          - article "Apple MacBook Air 13.3\" (M1 Chip, 8GB RAM, 256GB SSD) - Gold" [ref=e585]:
+            - generic:
+              - generic: REFURB
+              - generic: ⭐ Best Seller
+              - generic: 46% OFF
+            - generic [ref=e586]:
+              - button "Get WhatsApp quote for Apple MacBook Air 13.3\" (M1 Chip, 8GB RAM, 256GB SSD) - Gold" [ref=e587] [cursor=pointer]
+              - button "Add Apple MacBook Air 13.3\" (M1 Chip, 8GB RAM, 256GB SSD) - Gold to wishlist" [ref=e590] [cursor=pointer]
+            - link [ref=e593] [cursor=pointer]:
+              - /url: /products/prod-macbook-air-m1
+              - img "Apple MacBook Air 13.3\" (M1 Chip, 8GB RAM, 256GB SSD) - Gold" [ref=e594]
+              - generic:
+                - img "Grade A+ Certified": A+
+                - generic: 1-Yr Warranty
+            - generic [ref=e595]:
+              - generic [ref=e596]:
+                - generic [ref=e597]:
+                  - generic [ref=e598]: Apple MacBooks
+                  - generic [ref=e599]: Ready for Dispatch • 16 left
+                - link [ref=e601] [cursor=pointer]:
+                  - /url: /products/prod-macbook-air-m1
+                  - heading "Apple MacBook Air 13.3\" (M1 Chip, 8GB RAM, 256GB SSD) - Gold" [level=3] [ref=e602]
+                - generic [ref=e603]:
+                  - generic [ref=e604]: 8 Unified Memory
+                  - generic [ref=e605]: 256 Superfast SSD
+                  - generic [ref=e606]: Apple M1 Chip
+                - generic [ref=e607]:
+                  - generic [ref=e608]: "Bulk (5+ units):"
+                  - strong [ref=e609]: ₹46,499/pc
+              - generic [ref=e610]:
+                - generic [ref=e611]:
+                  - generic [ref=e612]:
+                    - generic [ref=e613]: ₹49,999
+                    - generic [ref=e614]: ₹92,900
+                  - paragraph [ref=e615]: Save ₹42,901 (46% off)
+                - button "Add Apple MacBook Air 13.3\" (M1 Chip, 8GB RAM, 256GB SSD) - Gold to cart" [ref=e616] [cursor=pointer]:
+                  - generic [ref=e619]: Add to Cart
+      - generic [ref=e313]:
+        - generic [ref=e314]:
+          - generic [ref=e315]: LaptopMitra Certified Standard
+          - heading "More than a purchase. A long-term hardware partnership." [level=2] [ref=e316]: More than a purchase.A long-term hardware partnership.
+          - paragraph [ref=e317]: Every laptop delivered by LaptopMitra is covered under our 1-Year Comprehensive Warranty with doorstep pickup and 7-day replacement guarantee.
+          - link "View All Certified Laptops" [ref=e319] [cursor=pointer]:
+            - /url: /products
+        - img "Certified laptop engineering inspection" [ref=e322]
+      - generic [ref=e324]:
+        - generic [ref=e325]:
+          - generic [ref=e326]: Verified Feedback
+          - heading "Trusted by IT Leaders & Creators" [level=2] [ref=e327]
+        - generic [ref=e328]:
+          - generic [ref=e329]:
+            - generic [ref=e330]:
+              - generic [ref=e331]: ★★★★★
+              - paragraph [ref=e332]: “Received in pristine condition with 94% battery health. Saved more than ₹45,000 compared to new. LaptopMitra’s 1-year warranty gave my firm complete peace of mind.”
+            - generic [ref=e333]:
+              - heading "Rajesh Sharma" [level=4] [ref=e334]
+              - paragraph [ref=e335]: IT Consultant, Bengaluru
+              - generic [ref=e336]: Purchased ThinkPad T480 (i7, 16GB, 512GB)
+          - generic [ref=e337]:
+            - generic [ref=e338]:
+              - generic [ref=e339]: ★★★★★
+              - paragraph [ref=e340]: “Zero scratches, perfect Retina display, and the battery lasts a full day of Figma work. The door-to-door delivery was prompt with tamper-proof packaging.”
+            - generic [ref=e341]:
+              - heading "Pooja Iyer" [level=4] [ref=e342]
+              - paragraph [ref=e343]: Product Designer, Pune
+              - generic [ref=e344]: Purchased Apple MacBook Pro 14" M1 Pro
+          - generic [ref=e345]:
+            - generic [ref=e346]:
+              - generic [ref=e347]: ★★★★★
+              - paragraph [ref=e348]: “Equipped our engineering team through LaptopMitra’s bulk program. Saved 60% on our IT hardware budget with prompt doorstep warranty support.”
+            - generic [ref=e349]:
+              - heading "Vikram Mehta" [level=4] [ref=e350]
+              - paragraph [ref=e351]: Startup Founder, Gurugram
+              - generic [ref=e352]: Purchased Dell Latitude 7490 (Batch of 6)
+    - contentinfo [ref=e353]:
+      - generic [ref=e355]:
+        - generic [ref=e356]:
+          - generic [ref=e357]: 🛡️
+          - heading "1-Year Warranty" [level=4] [ref=e358]
+          - paragraph [ref=e359]: Comprehensive hardware replacement & doorstep service
+        - generic [ref=e360]:
+          - generic [ref=e361]: 🔍
+          - heading "32-Point Inspected" [level=4] [ref=e362]
+          - paragraph [ref=e363]: Certified Grade A+ diagnostics, battery & thermal testing
+        - generic [ref=e364]:
+          - generic [ref=e365]: 🔄
+          - heading "7-Day Replacement" [level=4] [ref=e366]
+          - paragraph [ref=e367]: Zero-friction replacement guarantee for complete peace of mind
+        - generic [ref=e368]:
+          - generic [ref=e369]: ⚡
+          - heading "PAN India Delivery" [level=4] [ref=e370]
+          - paragraph [ref=e371]: Free insured express delivery with real-time tracking
+      - generic [ref=e372]:
+        - generic [ref=e373]:
+          - generic [ref=e374]:
+            - link "LM LaptopMitra" [ref=e375] [cursor=pointer]:
+              - /url: /
+              - generic [ref=e376]: LM
+              - generic [ref=e377]: LaptopMitra
+            - paragraph [ref=e378]: LaptopMitra is India's leading platform for certified pre-owned and enterprise refurbished laptops. Every device passes a rigorous 32-point engineering inspection with genuine OS licenses.
+            - generic [ref=e379]:
+              - generic [ref=e380]: "Brands We Deal In:"
+              - generic [ref=e381]:
+                - generic [ref=e382]: Lenovo
+                - generic [ref=e383]: HP
+                - generic [ref=e384]: DELL
+          - generic [ref=e385]:
+            - heading "Shop Categories" [level=3] [ref=e386]
+            - list [ref=e387]:
+              - listitem [ref=e388]:
+                - link "Business Laptops" [ref=e389] [cursor=pointer]:
+                  - /url: /products?category=cat-business
+              - listitem [ref=e390]:
+                - link "Apple MacBooks" [ref=e391] [cursor=pointer]:
+                  - /url: /products?category=cat-apple
+              - listitem [ref=e392]:
+                - link "Gaming Laptops" [ref=e393] [cursor=pointer]:
+                  - /url: /products?category=cat-gaming
+              - listitem [ref=e394]:
+                - link "Student Laptops Under ₹25k" [ref=e395] [cursor=pointer]:
+                  - /url: /products?category=cat-student
+              - listitem [ref=e396]:
+                - link "Corporate Leasing" [ref=e397] [cursor=pointer]:
+                  - /url: /products?type=lease
+          - generic [ref=e398]:
+            - heading "Customer Support" [level=3] [ref=e399]
+            - list [ref=e400]:
+              - listitem [ref=e401]:
+                - link "Warranty & Returns Policy" [ref=e402] [cursor=pointer]:
+                  - /url: /products
+              - listitem [ref=e403]:
+                - link "Track My Order" [ref=e404] [cursor=pointer]:
+                  - /url: /profile#orders
+              - listitem [ref=e405]:
+                - link "Mitra Partner Program (10% Cash)" [ref=e406] [cursor=pointer]:
+                  - /url: /profile#referral
+              - listitem [ref=e407]:
+                - 'link "Direct Call: +91 99999 99999" [ref=e408] [cursor=pointer]':
+                  - /url: tel:+919999999999
+              - listitem [ref=e409]:
+                - link "WhatsApp Support" [ref=e410] [cursor=pointer]:
+                  - /url: https://wa.me/919999999999
+          - generic [ref=e411]:
+            - heading "Company" [level=3] [ref=e412]
+            - list [ref=e413]:
+              - listitem [ref=e414]:
+                - link "About LaptopMitra" [ref=e415] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=e416]:
+                - link "32-Point Quality Process" [ref=e417] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=e418]:
+                - link "Enterprise Bulk Quotations" [ref=e419] [cursor=pointer]:
+                  - /url: /products
+              - listitem [ref=e420]: "Mon-Sat: 10:00 AM - 7:00 PM IST"
+        - generic [ref=e421]:
+          - paragraph [ref=e422]: © 2026 LaptopMitra. All rights reserved. Certified Refurbished Hardware.
+          - generic [ref=e423]:
+            - link "Privacy Policy" [ref=e424] [cursor=pointer]:
+              - /url: /
+            - link "Terms of Service" [ref=e425] [cursor=pointer]:
+              - /url: /
+            - link "Security & Warranty" [ref=e426] [cursor=pointer]:
+              - /url: /
+    - complementary "Quick contact shortcuts":
+      - link "Chat with LaptopMitra on WhatsApp" [ref=e427] [cursor=pointer]:
+        - /url: https://wa.me/919999999999?text=Hi%20LaptopMitra%20team%2C%20I%20would%20like%20to%20inquire%20about%20certified%20laptops.
+      - link "Call LaptopMitra customer support" [ref=e430] [cursor=pointer]:
+        - /url: tel:+919999999999
+  - button "Open Next.js Dev Tools" [ref=e438] [cursor=pointer]
+  - alert [ref=e620]

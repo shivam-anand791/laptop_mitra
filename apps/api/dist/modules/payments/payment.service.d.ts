@@ -2,12 +2,17 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 export declare class PaymentService {
-    private configService;
-    private prisma;
-    private notificationService;
+    private readonly configService;
+    private readonly prisma;
+    private readonly notificationService;
+    private readonly logger;
     private readonly razorpay;
     constructor(configService: ConfigService, prisma: PrismaService, notificationService: NotificationService);
-    createOrder(amount: number, currency: string, receipt: string): Promise<any>;
+    createOrderForUser(orderId: string, userId: string, userRole: string): Promise<any>;
+    verifyPayment(orderId: string, razorpayOrderId: string, razorpayPaymentId: string, razorpaySignature: string, userId: string, userRole: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
     verifyWebhookSignature(payload: string, signature: string): Promise<boolean>;
     handlePaymentWebhook(payload: any, signature: string): Promise<{
         valid: boolean;
@@ -17,13 +22,13 @@ export declare class PaymentService {
     getOrderForUser(orderId: string, userId: string): Promise<{
         items: ({
             product: {
+                tags: string | null;
                 description: string | null;
                 name: string;
                 id: string;
                 status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                tags: string | null;
                 sku: string;
                 shortDescription: string | null;
                 slug: string;
@@ -60,9 +65,9 @@ export declare class PaymentService {
             attemptCount: number;
         }[];
     } & {
-        email: string;
         phone: string | null;
         id: string;
+        email: string;
         referralCode: string | null;
         status: string;
         createdAt: Date;
@@ -82,4 +87,17 @@ export declare class PaymentService {
         notes: string | null;
         referralDiscount: import("@prisma/client/runtime/library").Decimal;
     }>;
+    getPaymentHistory(userId: string): Promise<{
+        id: string;
+        orderId: string;
+        orderNumber: string;
+        razorpayPaymentId: string;
+        razorpayOrderId: string;
+        amount: number;
+        currency: string;
+        status: string;
+        refundStatus: string;
+        refundAmount: number;
+        createdAt: string;
+    }[]>;
 }

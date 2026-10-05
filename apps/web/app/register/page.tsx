@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import CustomerLayout from '../../components/CustomerLayout';
 import { useAuth } from '../../lib/auth-context';
+import { formatAuthError } from '../../lib/utils';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -40,7 +41,7 @@ export default function RegisterPage() {
       });
       router.push('/profile');
     } catch (err: any) {
-      setError(err.message || 'Registration failed. Email may already be in use.');
+      setError(formatAuthError(err));
     } finally {
       setIsSubmitting(false);
     }

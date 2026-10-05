@@ -16,13 +16,13 @@ export declare class WishlistController {
                         sortOrder: number;
                     }[];
                 } & {
+                    tags: string | null;
                     description: string | null;
                     name: string;
                     id: string;
                     status: string;
                     createdAt: Date;
                     updatedAt: Date;
-                    tags: string | null;
                     sku: string;
                     shortDescription: string | null;
                     slug: string;
@@ -53,13 +53,13 @@ export declare class WishlistController {
     addItem(user: any, productId: string): Promise<{
         wishlistItem: {
             product: {
+                tags: string | null;
                 description: string | null;
                 name: string;
                 id: string;
                 status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                tags: string | null;
                 sku: string;
                 shortDescription: string | null;
                 slug: string;

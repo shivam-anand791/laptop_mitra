@@ -601,17 +601,15 @@ export default function HomePage() {
             <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-[#E4E9F2]">
               <button
                 onClick={() => setActiveTab('featured')}
-                className={`h-9 px-4 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center ${
-                  activeTab === 'featured' ? 'bg-[#1D6FF2] text-white' : 'text-slate-600 hover:text-[#0B1F4B]'
-                }`}
+                className={`h-9 px-4 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center ${activeTab === 'featured' ? 'bg-[#1D6FF2] text-white' : 'text-slate-600 hover:text-[#0B1F4B]'
+                  }`}
               >
                 Featured Models
               </button>
               <button
                 onClick={() => setActiveTab('new')}
-                className={`h-9 px-4 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center ${
-                  activeTab === 'new' ? 'bg-[#1D6FF2] text-white' : 'text-slate-600 hover:text-[#0B1F4B]'
-                }`}
+                className={`h-9 px-4 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center ${activeTab === 'new' ? 'bg-[#1D6FF2] text-white' : 'text-slate-600 hover:text-[#0B1F4B]'
+                  }`}
               >
                 New Arrivals
               </button>

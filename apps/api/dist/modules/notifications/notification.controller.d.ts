@@ -1,4 +1,5 @@
 import { NotificationService } from './notification.service';
+import { NotificationPreferences } from '../../types';
 export declare class NotificationController {
     private readonly notificationService;
     constructor(notificationService: NotificationService);
@@ -8,4 +9,6 @@ export declare class NotificationController {
     }): Promise<{
         message: string;
     }>;
+    getPreferences(req: any): Promise<NotificationPreferences>;
+    updatePreferences(req: any, body: Partial<NotificationPreferences>): Promise<NotificationPreferences>;
 }

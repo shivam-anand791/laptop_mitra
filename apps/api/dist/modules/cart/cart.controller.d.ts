@@ -16,13 +16,13 @@ export declare class CartController {
                         sortOrder: number;
                     }[];
                 } & {
+                    tags: string | null;
                     description: string | null;
                     name: string;
                     id: string;
                     status: string;
                     createdAt: Date;
                     updatedAt: Date;
-                    tags: string | null;
                     sku: string;
                     shortDescription: string | null;
                     slug: string;
@@ -56,13 +56,13 @@ export declare class CartController {
     addItem(user: any, productId: string, quantity?: number): Promise<{
         cartItem: {
             product: {
+                tags: string | null;
                 description: string | null;
                 name: string;
                 id: string;
                 status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                tags: string | null;
                 sku: string;
                 shortDescription: string | null;
                 slug: string;
@@ -89,13 +89,13 @@ export declare class CartController {
     updateQuantity(user: any, itemId: string, quantity: number): Promise<{
         cartItem: {
             product: {
+                tags: string | null;
                 description: string | null;
                 name: string;
                 id: string;
                 status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                tags: string | null;
                 sku: string;
                 shortDescription: string | null;
                 slug: string;

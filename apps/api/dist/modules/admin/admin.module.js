@@ -11,7 +11,6 @@ const common_1 = require("@nestjs/common");
 const admin_controller_1 = require("./admin.controller");
 const admin_service_1 = require("./admin.service");
 const prisma_module_1 = require("../../prisma/prisma.module");
-const jwt_auth_guard_1 = require("../../auth/guards/jwt-auth.guard");
 const roles_guard_1 = require("../../guards/roles.guard");
 let AdminModule = class AdminModule {
 };
@@ -20,7 +19,7 @@ exports.AdminModule = AdminModule = __decorate([
     (0, common_1.Module)({
         imports: [prisma_module_1.PrismaModule],
         controllers: [admin_controller_1.AdminController],
-        providers: [admin_service_1.AdminService, jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard],
+        providers: [admin_service_1.AdminService, roles_guard_1.RolesGuard],
     })
 ], AdminModule);
 //# sourceMappingURL=admin.module.js.map

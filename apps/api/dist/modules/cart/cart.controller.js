@@ -16,7 +16,6 @@ exports.CartController = void 0;
 const common_1 = require("@nestjs/common");
 const cart_service_1 = require("./cart.service");
 const swagger_1 = require("@nestjs/swagger");
-const jwt_auth_guard_1 = require("../../auth/guards/jwt-auth.guard");
 const get_user_decorator_1 = require("../../decorators/get-user.decorator");
 let CartController = class CartController {
     cartService;
@@ -45,7 +44,6 @@ let CartController = class CartController {
 };
 exports.CartController = CartController;
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)(),
     (0, swagger_1.ApiOperation)({ summary: 'Get cart for authenticated user' }),
     (0, swagger_1.ApiResponse)({ status: 200 }),
@@ -55,7 +53,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], CartController.prototype, "getCart", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('items'),
     (0, swagger_1.ApiOperation)({ summary: 'Add item to cart' }),
     (0, swagger_1.ApiResponse)({ status: 201 }),
@@ -67,7 +64,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], CartController.prototype, "addItem", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Put)('items/:itemId'),
     (0, swagger_1.ApiOperation)({ summary: 'Update cart item quantity' }),
     (0, swagger_1.ApiResponse)({ status: 200 }),
@@ -79,7 +75,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], CartController.prototype, "updateQuantity", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Delete)('items/:itemId'),
     (0, swagger_1.ApiOperation)({ summary: 'Remove item from cart' }),
     (0, swagger_1.ApiResponse)({ status: 200 }),
@@ -90,7 +85,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], CartController.prototype, "removeItem", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Delete)(),
     (0, swagger_1.ApiOperation)({ summary: 'Clear cart' }),
     (0, swagger_1.ApiResponse)({ status: 200 }),

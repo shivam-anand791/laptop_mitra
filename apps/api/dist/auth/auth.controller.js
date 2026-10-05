@@ -17,28 +17,31 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const throttler_1 = require("@nestjs/throttler");
 const auth_service_1 = require("./auth.service");
-const register_dto_1 = require("./dto/register.dto");
-const login_dto_1 = require("./dto/login.dto");
-const jwt_auth_guard_1 = require("./guards/jwt-auth.guard");
+const allow_firebase_sync_decorator_1 = require("../decorators/allow-firebase-sync.decorator");
+const public_decorator_1 = require("../decorators/public.decorator");
+const sync_user_dto_1 = require("./dto/sync-user.dto");
 let AuthController = class AuthController {
     authService;
     constructor(authService) {
         this.authService = authService;
     }
-    async register(registerDto) {
-        return this.authService.register(registerDto);
+    async login(body) {
+        return this.authService.login(body);
     }
-    async login(loginDto) {
-        return this.authService.login(loginDto);
+    async register(body) {
+        return this.authService.register(body);
     }
-    async guestLogin() {
+    async guest() {
         return this.authService.guestLogin();
     }
-    async refresh(refreshToken) {
-        return this.authService.refreshToken(refreshToken);
+    async refresh(body) {
+        return this.authService.refreshToken(body?.refreshToken);
     }
-    async logout(req, refreshToken) {
-        return this.authService.logout(req.user.id, refreshToken);
+    async logout() {
+        return { success: true };
+    }
+    async sync(req, body) {
+        return this.authService.syncUser(req.firebaseIdentity, body);
     }
     async getProfile(req) {
         return this.authService.getUserProfile(req.user.id);
@@ -46,105 +49,136 @@ let AuthController = class AuthController {
     async updateProfile(req, body) {
         return this.authService.updateUserProfile(req.user.id, body);
     }
-    async changePassword(req, body) {
-        return this.authService.changePassword(req.user.id, body);
+    async signoutEverywhere(req) {
+        return this.authService.signoutEverywhere(req.user.id, req.user.firebaseUid);
+    }
+    async deleteAccount(req) {
+        return this.authService.deleteAccount(req.user.id, req.user.firebaseUid);
+    }
+    async linkGuest(req, body) {
+        return this.authService.linkGuestAccount(req.user.id, body);
     }
 };
 exports.AuthController = AuthController;
 __decorate([
-    (0, common_1.Post)('register'),
-    (0, swagger_1.ApiOperation)({ summary: 'Register a new user' }),
-    (0, swagger_1.ApiResponse)({ status: 201, description: 'User successfully registered' }),
-    (0, swagger_1.ApiResponse)({ status: 409, description: 'User already exists' }),
-    (0, swagger_1.ApiResponse)({ status: 400, description: 'Validation error' }),
-    __param(0, (0, common_1.Body)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [register_dto_1.RegisterDto]),
-    __metadata("design:returntype", Promise)
-], AuthController.prototype, "register", null);
-__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, throttler_1.Throttle)({ default: { limit: 10, ttl: 60000 } }),
     (0, common_1.Post)('login'),
-    (0, swagger_1.ApiOperation)({ summary: 'Login user' }),
+    (0, swagger_1.ApiOperation)({ summary: 'User login' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Login successful' }),
     (0, swagger_1.ApiResponse)({ status: 401, description: 'Invalid credentials' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [login_dto_1.LoginDto]),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "login", null);
 __decorate([
-    (0, common_1.Post)('guest'),
+    (0, public_decorator_1.Public)(),
     (0, throttler_1.Throttle)({ default: { limit: 10, ttl: 60000 } }),
-    (0, swagger_1.ApiOperation)({ summary: 'Create a guest session' }),
-    (0, swagger_1.ApiResponse)({ status: 201, description: 'Guest session created' }),
+    (0, common_1.Post)('register'),
+    (0, swagger_1.ApiOperation)({ summary: 'User registration' }),
+    (0, swagger_1.ApiResponse)({ status: 201, description: 'User registered successfully' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Validation error' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "register", null);
+__decorate([
+    (0, public_decorator_1.Public)(),
+    (0, throttler_1.Throttle)({ default: { limit: 10, ttl: 60000 } }),
+    (0, common_1.Post)('guest'),
+    (0, swagger_1.ApiOperation)({ summary: 'Start a guest session' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Guest session created' }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
-], AuthController.prototype, "guestLogin", null);
+], AuthController.prototype, "guest", null);
 __decorate([
+    (0, public_decorator_1.Public)(),
     (0, common_1.Post)('refresh'),
-    (0, swagger_1.ApiOperation)({ summary: 'Refresh access token' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Refresh auth token' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Token refreshed' }),
-    (0, swagger_1.ApiResponse)({ status: 401, description: 'Invalid or expired refresh token' }),
-    __param(0, (0, common_1.Body)('refreshToken')),
+    __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "refresh", null);
 __decorate([
+    (0, public_decorator_1.Public)(),
     (0, common_1.Post)('logout'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
-    (0, swagger_1.ApiBearerAuth)(),
-    (0, swagger_1.ApiOperation)({ summary: 'Logout user' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Logout successful' }),
-    __param(0, (0, common_1.Request)()),
-    __param(1, (0, common_1.Body)('refreshToken')),
+    (0, swagger_1.ApiOperation)({ summary: 'User logout' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Logged out successfully' }),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "logout", null);
 __decorate([
+    (0, common_1.Post)('sync'),
+    (0, throttler_1.Throttle)({ default: { limit: 20, ttl: 60000 } }),
+    (0, allow_firebase_sync_decorator_1.AllowUnlinkedFirebaseUser)(),
+    (0, swagger_1.ApiOperation)({ summary: 'Synchronize a verified Firebase user with the local profile' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Local user profile synchronized' }),
+    (0, swagger_1.ApiResponse)({ status: 401, description: 'Unauthorized' }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, sync_user_dto_1.SyncUserDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "sync", null);
+__decorate([
     (0, common_1.Get)('profile'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
-    (0, swagger_1.ApiBearerAuth)(),
     (0, swagger_1.ApiOperation)({ summary: 'Get current user profile' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Profile retrieved successfully' }),
     (0, swagger_1.ApiResponse)({ status: 401, description: 'Unauthorized' }),
-    __param(0, (0, common_1.Request)()),
+    __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "getProfile", null);
 __decorate([
     (0, common_1.Put)('profile'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
-    (0, swagger_1.ApiBearerAuth)(),
     (0, swagger_1.ApiOperation)({ summary: 'Update current user profile' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Profile updated successfully' }),
     (0, swagger_1.ApiResponse)({ status: 400, description: 'Validation error' }),
     (0, swagger_1.ApiResponse)({ status: 401, description: 'Unauthorized' }),
-    __param(0, (0, common_1.Request)()),
+    __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "updateProfile", null);
 __decorate([
-    (0, common_1.Post)('change-password'),
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
-    (0, swagger_1.ApiBearerAuth)(),
-    (0, swagger_1.ApiOperation)({ summary: 'Change the current user password' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Password changed successfully' }),
-    (0, swagger_1.ApiResponse)({ status: 400, description: 'Validation error' }),
-    (0, swagger_1.ApiResponse)({ status: 401, description: 'Unauthorized' }),
-    __param(0, (0, common_1.Request)()),
+    (0, common_1.Post)('signout-everywhere'),
+    (0, swagger_1.ApiOperation)({ summary: 'Revoke all sessions and sign out everywhere' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Signed out everywhere' }),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "signoutEverywhere", null);
+__decorate([
+    (0, common_1.Delete)('account'),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete user account and anonymize PII' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Account deleted' }),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "deleteAccount", null);
+__decorate([
+    (0, common_1.Post)('link-guest'),
+    (0, swagger_1.ApiOperation)({ summary: 'Link anonymous guest account to an email and credentials' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Account linked successfully' }),
+    __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
-], AuthController.prototype, "changePassword", null);
+], AuthController.prototype, "linkGuest", null);
 exports.AuthController = AuthController = __decorate([
     (0, swagger_1.ApiTags)('Authentication'),
+    (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.Controller)('auth'),
     __metadata("design:paramtypes", [auth_service_1.AuthService])
 ], AuthController);

@@ -15,13 +15,13 @@ export declare class WishlistService {
                     sortOrder: number;
                 }[];
             } & {
+                tags: string | null;
                 description: string | null;
                 name: string;
                 id: string;
                 status: string;
                 createdAt: Date;
                 updatedAt: Date;
-                tags: string | null;
                 sku: string;
                 shortDescription: string | null;
                 slug: string;
@@ -49,13 +49,13 @@ export declare class WishlistService {
     }>;
     addItem(userId: string, productId: string): Promise<{
         product: {
+            tags: string | null;
             description: string | null;
             name: string;
             id: string;
             status: string;
             createdAt: Date;
             updatedAt: Date;
-            tags: string | null;
             sku: string;
             shortDescription: string | null;
             slug: string;
@@ -91,13 +91,13 @@ export declare class WishlistService {
                         sortOrder: number;
                     }[];
                 } & {
+                    tags: string | null;
                     description: string | null;
                     name: string;
                     id: string;
                     status: string;
                     createdAt: Date;
                     updatedAt: Date;
-                    tags: string | null;
                     sku: string;
                     shortDescription: string | null;
                     slug: string;

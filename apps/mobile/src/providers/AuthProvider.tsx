@@ -14,6 +14,7 @@ interface AuthContextType {
   refreshToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isGuest: boolean;
   login: (accessToken: string, refreshToken: string | undefined, user: User) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (user: User) => void;
@@ -137,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refreshToken: refreshTokenVal,
         isLoading,
         isAuthenticated: !!accessToken && !!user,
+        isGuest: !!user?.isGuest,
         login,
         logout,
         updateUser,
