@@ -56,3 +56,27 @@ CREATE SCHEMA public;
 pnpm --filter api exec prisma migrate deploy
 pnpm --filter api exec prisma db seed
 ```
+
+---
+
+## 4. Admin Bootstrap
+
+To grant an initial user administrative access:
+
+### Option A: Using the CLI Script
+```bash
+# In development:
+pnpm --filter api run admin:promote <email>
+
+# In production (requires explicit confirmation flag):
+pnpm --filter api run admin:promote <email> --i-know-this-is-prod
+```
+The script displays the target database host (without credentials) and requests interactive confirmation before modifying the user record.
+
+### Option B: Alternative One-Line SQL
+Directly in `psql` or your PostgreSQL console:
+```sql
+UPDATE "User" SET role = 'ADMIN' WHERE email = '<email>';
+```
+*(Ensure `<email>` matches the lowercased email associated with the user's account).*
+

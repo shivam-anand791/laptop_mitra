@@ -19,7 +19,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:push": "prisma db push",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "admin:promote": "ts-node scripts/promote-admin.ts"
   },
   "prisma": {
     "seed": "node -r ts-node/register/transpile-only prisma/seed-catalog.ts"
