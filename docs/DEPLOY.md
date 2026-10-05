@@ -51,7 +51,7 @@ The API service is configured via [`render.yaml`](../render.yaml) at the reposit
 - **Service Name**: `laptopmitra-api`
 - **Runtime**: `node` (Node.js 22)
 - **Health Check Path**: `/health`
-- **Build Command**: `corepack enable && pnpm install --frozen-lockfile && pnpm --filter api exec prisma generate && pnpm --filter api build`
+- **Build Command**: `corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter api exec prisma generate && pnpm --filter api build`
 - **Start Command**: `pnpm --filter api exec prisma migrate deploy && node apps/api/dist/main`
 
 Set the following secret environment variables in the Render dashboard (marked `sync: false` in `render.yaml`):

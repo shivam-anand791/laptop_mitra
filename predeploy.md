@@ -76,7 +76,7 @@ Your agent's Prompt 1 run (untracking `dist`/`.turbo`/`.pnpm-store`, deleting `p
 |---|---|
 | Node | `NODE_VERSION=22` (matches `.nvmrc`) |
 | Root directory | repo root |
-| Build command | `corepack enable && pnpm install --frozen-lockfile && pnpm --filter api exec prisma generate && pnpm --filter api build` |
+| Build command | `corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter api exec prisma generate && pnpm --filter api build` |
 | Start command | `pnpm --filter api exec prisma migrate deploy && node apps/api/dist/main` |
 | Health check path | `/health` |
 | Instance | Free web services spin down when idle and cold-start on the next request; use a paid instance for customer traffic |
