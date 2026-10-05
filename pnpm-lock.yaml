@@ -16,7 +16,7 @@ importers:
         specifier: 6.4.1
         version: 6.4.1(typescript@5.9.3)
       turbo:
-        specifier: latest
+        specifier: 2.10.12
         version: 2.10.12
 
   apps/api:
@@ -40,7 +40,7 @@ importers:
         specifier: ^6.5.0
         version: 6.5.0(@nestjs/common@11.2.3)(@nestjs/core@11.2.3)(reflect-metadata@0.2.2)
       '@prisma/client':
-        specifier: ^6.0.0
+        specifier: 6.4.1
         version: 6.4.1(prisma@6.4.1)(typescript@5.9.3)
       class-transformer:
         specifier: ^0.5.0
@@ -104,7 +104,7 @@ importers:
         specifier: ^3.0.0
         version: 3.9.6
       prisma:
-        specifier: ^6.0.0
+        specifier: 6.4.1
         version: 6.4.1(typescript@5.9.3)
       source-map-support:
         specifier: ^0.5.0

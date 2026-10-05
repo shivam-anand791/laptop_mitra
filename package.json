@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "prisma": "6.4.1",
-    "turbo": "latest"
+    "turbo": "2.10.12"
   },
   "packageManager": "pnpm@8.15.4",
   "engines": {

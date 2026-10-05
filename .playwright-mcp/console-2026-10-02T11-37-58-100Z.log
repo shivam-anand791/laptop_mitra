@@ -1,6 +1,0 @@
-[    3689ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/04rn_next_dist_07rmup6._.js:776
-[    3742ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/04rn_next_dist_07rmup6._.js:776
-[    4002ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/04rn_next_dist_07rmup6._.js:776
-[    4136ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/products/1:0
-[    4160ms] [LOG] [Fast Refresh] done in 276ms @ http://localhost:3000/_next/static/chunks/04rn_next_dist_07rmup6._.js:776
-[    4161ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:3001/products/1:0

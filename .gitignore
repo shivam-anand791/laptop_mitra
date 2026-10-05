@@ -1,5 +1,18 @@
-.env
 node_modules
+.pnpm-store
+.turbo
+.next
+dist
+*.tsbuildinfo
+coverage
+.env
+.env.*
+!.env.example
+.vercel
+*.log
+.playwright-mcp
+
+# Secrets and keys
 apps/api/secrets/
 *firebase*service-account*.json
 *firebase-adminsdk*.json
