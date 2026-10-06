@@ -20,9 +20,11 @@
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@laptopmitra/types": ["../../packages/types/src/index.ts", "../../packages/types/dist/index.d.ts"]
     }
   },
+
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
 }

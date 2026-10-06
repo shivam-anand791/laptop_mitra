@@ -1,2 +1,42 @@
-.env
 node_modules
+.pnpm-store
+.turbo
+.next
+dist
+*.tsbuildinfo
+coverage
+.env
+.env.*
+!.env.example
+.vercel
+*.log
+.playwright-mcp
+
+# Secrets, credentials, and certificates
+secrets/
+apps/api/secrets/
+*firebase*service-account*.json
+*firebase-adminsdk*.json
+credentials.json
+service-account*.json
+firebase-admin*.json
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# IDE, assistant, and local environment
+.claude/
+apps/mobile/.claude/
+
+# Prompts, internal planning, and agent memory
+*PROMPT*.md
+*prompt*.md
+*prompts*.md
+SECURITY_FIX_PLAN.md
+securityGaps.md
+VERIFICATION_REPORT.md
+LaptopMitra_Mobile_Implementation_Plan.md
+predeploy.md
+memory/

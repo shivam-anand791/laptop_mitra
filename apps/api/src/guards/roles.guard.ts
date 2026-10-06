@@ -9,7 +9,7 @@ export class RolesGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean | Promise<boolean> | Observable<boolean> {
     const requiredRoles = this.reflector.getAllAndMerge<string[]>('roles', [context.getHandler(), context.getClass()]);
 
-    // If no roles required, just pass through (JwtAuthGuard handles authentication)
+    // If no roles are required, the global Firebase guard handles authentication.
     if (!requiredRoles || requiredRoles.length === 0) {
       return true;
     }

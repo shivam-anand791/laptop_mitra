@@ -50,7 +50,7 @@ export function getPrimaryImage(product: Product): string {
 }
 
 /* ──────────────────────────────────────────────
-   DEFAULT PRODUCT CARD (LaptopMitra Light Theme)
+   DEFAULT PRODUCT CARD (LaptopMitra Light Theme matching Image 1)
    ────────────────────────────────────────────── */
 
 function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProps) {
@@ -86,13 +86,22 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
     setTimeout(() => setIsHeartPopping(false), 400);
   };
 
+  const handleWhatsApp = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const url = `https://wa.me/919999999999?text=${encodeURIComponent(
+      `Hi LaptopMitra, I am interested in ${product.name} (SKU: ${product.sku}) priced at ₹${numPrice.toLocaleString('en-IN')}. Please share bulk/best quotation.`
+    )}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div
       className={[
         'group relative flex flex-col rounded-2xl overflow-hidden',
-        'border border-[#E4E9F2] bg-white shadow-sm',
+        'border border-[#E4E9F2] bg-white shadow-xs',
         'transition-all duration-300 ease-out',
-        'hover:-translate-y-1 hover:border-[#1D6FF2]/40 hover:shadow-xl hover:shadow-blue-900/5',
+        'hover:-translate-y-1 hover:border-[#1D6FF2]/40 hover:shadow-lg hover:shadow-blue-900/5',
         !inStock && 'opacity-75',
       ].join(' ')}
       role="article"
@@ -100,71 +109,80 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
     >
       {/* ── Top Floating Badges ── */}
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 pointer-events-none">
-        {/* Always show REFURB badge */}
-        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-[#0B1F4B] text-white shadow-sm tracking-wider uppercase">
+        {/* REFURB badge */}
+        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black bg-[#0B1F4B] text-white shadow-xs tracking-wider uppercase">
           REFURB
         </span>
 
         {/* Best Seller badge if featured */}
         {product.isFeatured && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#F97316] text-white uppercase tracking-wider shadow-sm">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#F97316] text-white uppercase tracking-wider shadow-xs">
             ⭐ Best Seller
           </span>
         )}
 
-        {/* New Arrival badge (NOT Popular) */}
+        {/* New Arrival badge */}
         {!product.isFeatured && product.isNewArrival && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#1D6FF2] text-white uppercase tracking-wider shadow-sm">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#1D6FF2] text-white uppercase tracking-wider shadow-xs">
             ⚡ New Arrival
           </span>
         )}
 
-        {/* Real Discount % Badge if MRP exists */}
+        {/* Real Discount % Badge */}
         {discount && discount > 5 && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-600 text-white shadow-sm tracking-wide">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-600 text-white shadow-xs tracking-wide">
             {discount}% OFF
-          </span>
-        )}
-
-        {!inStock && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-600 text-white shadow-sm">
-            Out of Stock
           </span>
         )}
       </div>
 
-      {/* ── Top Right Wishlist Action ── */}
-      <button
-        onClick={handleWishlist}
-        aria-label={isWish ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
-        className={[
-          'absolute top-3 right-3 z-10 w-9 h-9 rounded-full flex items-center justify-center cursor-pointer',
-          'backdrop-blur-md shadow-sm transition-all duration-200',
-          isWish
-            ? 'bg-rose-50 text-rose-600 border border-rose-200'
-            : 'bg-white/80 text-slate-400 border border-slate-200 hover:text-rose-600 hover:bg-white',
-          isHeartPopping && 'scale-125',
-        ].join(' ')}
-      >
-        <svg
-          className="w-4 h-4 transition-transform duration-200 group-hover:scale-110"
-          fill={isWish ? 'currentColor' : 'none'}
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          strokeWidth={2}
+      {/* ── Top Right Quick Actions (WhatsApp + Wishlist) ── */}
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+        {/* Round WhatsApp Action Button */}
+        <button
+          onClick={handleWhatsApp}
+          aria-label={`Get WhatsApp quote for ${product.name}`}
+          title="Get WhatsApp Quote"
+          className="w-9 h-9 rounded-full bg-[#25D366] hover:bg-[#20BD5A] text-white flex items-center justify-center shadow-xs transition-all duration-200 hover:scale-110 active:scale-95 cursor-pointer"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-          />
-        </svg>
-      </button>
+          <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+          </svg>
+        </button>
+
+        {/* Wishlist Button */}
+        <button
+          onClick={handleWishlist}
+          aria-label={isWish ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
+          className={[
+            'w-9 h-9 rounded-full flex items-center justify-center cursor-pointer',
+            'backdrop-blur-md shadow-xs transition-all duration-200',
+            isWish
+              ? 'bg-rose-50 text-rose-600 border border-rose-200'
+              : 'bg-white/90 text-slate-400 border border-slate-200 hover:text-rose-600 hover:bg-white',
+            isHeartPopping && 'scale-125',
+          ].join(' ')}
+        >
+          <svg
+            className="w-4 h-4 transition-transform duration-200 group-hover:scale-110"
+            fill={isWish ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+            />
+          </svg>
+        </button>
+      </div>
 
       {/* ── Product Media Frame with Zoom on Hover ── */}
       <Link
         href={`/products/${product.id}`}
-        className="block relative aspect-[4/3] overflow-hidden bg-[#F8FAFC] border-b border-[#E4E9F2]/60 cursor-pointer"
+        className="block relative aspect-[4/3] overflow-hidden bg-[#F8FAFC] border-b border-[#E4E9F2]/70 cursor-pointer"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -177,14 +195,14 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
         {/* Grade & Warranty Pills overlay */}
         <div className="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
           <GradeBadge grade={grade} size="sm" />
-          <span className="px-2 py-0.5 rounded-md bg-white/90 text-slate-800 text-[10px] font-bold backdrop-blur-sm border border-slate-200/80 flex items-center gap-1 shadow-sm">
+          <span className="px-2 py-0.5 rounded-md bg-white/95 text-slate-800 text-[10px] font-bold backdrop-blur-sm border border-slate-200/80 flex items-center gap-1 shadow-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-[#1D6FF2]" />
             1-Yr Warranty
           </span>
         </div>
       </Link>
 
-      {/* ── Product Details ── */}
+      {/* ── Product Details matching Image 1 ── */}
       <div className="p-4 flex-1 flex flex-col justify-between gap-3">
         <div className="space-y-2">
           {/* Category + Stock / Ready for Dispatch bar */}
@@ -221,7 +239,7 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
             )}
           </div>
 
-          {/* Bulk Pricing Line (Required) */}
+          {/* Bulk Pricing Line */}
           <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200/80 px-2 py-1 rounded-md flex items-center justify-between font-medium">
             <span>Bulk (5+ units):</span>
             <strong className="text-[#0B1F4B] font-bold">₹{bulkPrice.toLocaleString('en-IN')}/pc</strong>
@@ -240,7 +258,7 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
             onClick={handleAdd}
             disabled={!inStock}
             className={[
-              'shrink-0 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer shadow-sm',
+              'shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer shadow-xs',
               'transition-all duration-200 active:scale-95 flex items-center justify-center gap-1.5',
               added
                 ? 'bg-emerald-600 text-white scale-105'
@@ -273,7 +291,7 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
 }
 
 /* ──────────────────────────────────────────────
-   COMPACT VARIANT (for cart items, recommendations)
+   COMPACT VARIANT
    ────────────────────────────────────────────── */
 
 function CompactCard({ product }: ProductCardProps) {
@@ -283,7 +301,7 @@ function CompactCard({ product }: ProductCardProps) {
   return (
     <Link
       href={`/products/${product.id}`}
-      className="flex gap-3 p-3 rounded-xl border border-[#E4E9F2] bg-white hover:border-[#1D6FF2]/40 hover:shadow-md transition-all group"
+      className="flex gap-3 p-3 rounded-xl border border-[#E4E9F2] bg-white hover:border-[#1D6FF2]/40 hover:shadow-sm transition-all group"
     >
       <div className="w-20 h-20 rounded-lg overflow-hidden shrink-0 bg-slate-50 border border-slate-100">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -311,14 +329,6 @@ function CompactCard({ product }: ProductCardProps) {
 }
 
 /* ──────────────────────────────────────────────
-   FEATURED VARIANT
-   ────────────────────────────────────────────── */
-
-function FeaturedCard({ product, onAddToCart, onToggleWishlist }: ProductCardProps) {
-  return <DefaultCard product={product} onAddToCart={onAddToCart} onToggleWishlist={onToggleWishlist} />;
-}
-
-/* ──────────────────────────────────────────────
    EXPORTED PRODUCT CARD COMPONENT
    ────────────────────────────────────────────── */
 
@@ -331,9 +341,5 @@ export default function ProductCard({
   if (variant === 'compact') {
     return <CompactCard product={product} onAddToCart={onAddToCart} onToggleWishlist={onToggleWishlist} />;
   }
-  if (variant === 'featured') {
-    return <FeaturedCard product={product} onAddToCart={onAddToCart} onToggleWishlist={onToggleWishlist} />;
-  }
   return <DefaultCard product={product} onAddToCart={onAddToCart} onToggleWishlist={onToggleWishlist} />;
 }
-

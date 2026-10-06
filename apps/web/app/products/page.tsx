@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
 import CustomerLayout from '../../components/CustomerLayout';
 import ProductCard from '../../components/ProductCard';
 import FilterSidebar, {
@@ -202,36 +203,71 @@ function ProductsContent() {
     filters.stockOnly,
   ].filter(Boolean).length;
 
+  const currentCategoryObj = categories.find((c) => c.id === filters.category || c.slug === filters.category);
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-10">
       {/* Breadcrumbs */}
-      <nav aria-label="Breadcrumb" className="mb-4">
-        <ol className="flex items-center gap-2 text-xs text-slate-500">
+      <nav aria-label="Breadcrumb" className="mb-4 sm:mb-6">
+        <ol className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
           <li>
             <a href="/" className="hover:text-[#1D6FF2] transition-colors">Home</a>
           </li>
           <li>/</li>
-          <li className="text-[#0B1F4B] font-bold">Certified Refurbished Laptops</li>
-          {filters.category !== 'all' && (
+          <li className={filters.category === 'all' ? 'text-[#0B1F4B] font-bold' : ''}>
+            <a href="/products" className="hover:text-[#1D6FF2] transition-colors">Certified Laptops</a>
+          </li>
+          {filters.category !== 'all' && currentCategoryObj && (
             <>
               <li>/</li>
-              <li className="text-[#1D6FF2] font-semibold">
-                {categories.find((c) => c.id === filters.category || c.slug === filters.category)?.name || filters.category}
+              <li className="text-[#1D6FF2] font-bold">
+                {currentCategoryObj.name}
               </li>
             </>
           )}
         </ol>
       </nav>
 
+      {/* B2B / Bulk Order Callout Banner */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#0B1F4B] via-[#0F296B] to-[#1D6FF2] text-white p-6 sm:p-8 mb-6 lg:mb-8 shadow-sm">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 backdrop-blur-sm text-blue-200 text-[11px] font-bold uppercase tracking-wider">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
+              Enterprise &amp; Institutional Procurement
+            </div>
+            <h2 className="text-lg sm:text-xl font-black text-white tracking-tight">
+              Buying 5+ Laptops for your Team or College?
+            </h2>
+            <p className="text-xs sm:text-sm text-blue-100/80 max-w-2xl leading-relaxed">
+              Get customized corporate bundles, GST tax invoices (18% input credit), customized OS imaging, and volume discounts up to 25% OFF.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0 pt-2 md:pt-0">
+            <a
+              href="https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20want%20to%20inquire%20about%20a%20bulk%20laptop%20order."
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-bold text-xs shadow-md shadow-emerald-900/20 active:scale-95 transition-all cursor-pointer"
+            >
+              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
+              </svg>
+              <span>Get Bulk Quote</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
       {/* Page Header */}
-      <div className="mb-8">
+      <div className="mb-6 lg:mb-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3.5xl font-black text-[#0B1F4B] tracking-tight">
-              Certified Pre-Owned &amp; Refurbished Laptops
+              {filters.category !== 'all' && currentCategoryObj ? `${currentCategoryObj.name} Laptops` : 'Certified Pre-Owned & Refurbished Laptops'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-600 mt-1">
-              Showing <strong className="text-[#0B1F4B] font-bold">{filteredProducts.length}</strong> certified laptops tested across our 32-point engineering inspection checklist.
+              Showing <strong className="text-[#0B1F4B] font-bold tabular-nums">{filteredProducts.length}</strong> certified laptops tested across our 32-point engineering inspection checklist.
             </p>
           </div>
 
@@ -242,64 +278,64 @@ function ProductsContent() {
 
               {filters.category !== 'all' && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-[#1D6FF2] border border-blue-200 text-xs font-semibold">
-                  {categories.find((c) => c.id === filters.category || c.slug === filters.category)?.name || filters.category}
-                  <button onClick={() => removeSingleFilter('category')} className="hover:text-blue-900 cursor-pointer">✕</button>
+                  {currentCategoryObj?.name || filters.category}
+                  <button onClick={() => removeSingleFilter('category')} className="hover:text-blue-900 cursor-pointer" aria-label="Remove category filter">✕</button>
                 </span>
               )}
 
               {filters.search && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-800 border border-slate-200 text-xs font-semibold">
                   &ldquo;{filters.search}&rdquo;
-                  <button onClick={() => removeSingleFilter('search')} className="hover:text-rose-600 cursor-pointer">✕</button>
+                  <button onClick={() => removeSingleFilter('search')} className="hover:text-rose-600 cursor-pointer" aria-label="Remove search filter">✕</button>
                 </span>
               )}
 
               {filters.brands.map((b) => (
                 <span key={b} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
                   {b}
-                  <button onClick={() => removeSingleFilter('brands', b)} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
+                  <button onClick={() => removeSingleFilter('brands', b)} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label={`Remove brand ${b}`}>✕</button>
                 </span>
               ))}
 
               {filters.processors.map((p) => (
                 <span key={p} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
                   {p}
-                  <button onClick={() => removeSingleFilter('processors', p)} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
+                  <button onClick={() => removeSingleFilter('processors', p)} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label={`Remove processor ${p}`}>✕</button>
                 </span>
               ))}
 
               {filters.rams.map((r) => (
                 <span key={r} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
                   {r} RAM
-                  <button onClick={() => removeSingleFilter('rams', r)} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
+                  <button onClick={() => removeSingleFilter('rams', r)} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label={`Remove ram ${r}`}>✕</button>
                 </span>
               ))}
 
               {filters.storages.map((st) => (
                 <span key={st} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
                   {st}
-                  <button onClick={() => removeSingleFilter('storages', st)} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
+                  <button onClick={() => removeSingleFilter('storages', st)} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label={`Remove storage ${st}`}>✕</button>
                 </span>
               ))}
 
               {filters.grades.map((g) => (
                 <span key={g} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold">
                   Grade {g}
-                  <button onClick={() => removeSingleFilter('grades', g)} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
+                  <button onClick={() => removeSingleFilter('grades', g)} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label={`Remove grade ${g}`}>✕</button>
                 </span>
               ))}
 
               {filters.priceRange !== 'all' && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold">
-                  {filters.priceRange}
-                  <button onClick={() => removeSingleFilter('priceRange')} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
+                  {filters.priceRange === 'under-25k' ? 'Under ₹25,000' : filters.priceRange === '25k-50k' ? '₹25,000 - ₹50,000' : filters.priceRange === '50k-75k' ? '₹50,000 - ₹75,000' : 'Above ₹75,000'}
+                  <button onClick={() => removeSingleFilter('priceRange')} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label="Remove price range filter">✕</button>
                 </span>
               )}
 
               {filters.stockOnly && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
                   Ready for Dispatch
-                  <button onClick={() => removeSingleFilter('stockOnly')} className="text-slate-400 hover:text-rose-600 cursor-pointer">✕</button>
+                  <button onClick={() => removeSingleFilter('stockOnly')} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label="Remove in stock filter">✕</button>
                 </span>
               )}
 
@@ -315,10 +351,10 @@ function ProductsContent() {
       </div>
 
       {/* Mobile filter toggle button */}
-      <div className="lg:hidden mb-4">
+      <div className="lg:hidden mb-4 sm:mb-6">
         <button
           onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
-          className="w-full py-3 px-4 rounded-xl bg-white border border-[#E4E9F2] text-[#0B1F4B] font-bold text-xs flex items-center justify-between shadow-sm cursor-pointer"
+          className="w-full h-11 px-4 rounded-xl bg-white border border-[#E4E9F2] text-[#0B1F4B] font-bold text-xs flex items-center justify-between shadow-sm cursor-pointer"
         >
           <span className="flex items-center gap-2">
             <svg className="w-4 h-4 text-[#1D6FF2]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -326,7 +362,7 @@ function ProductsContent() {
             </svg>
             Filter Laptops
             {activeFilterCount > 0 && (
-              <span className="px-2 py-0.5 rounded-full bg-[#1D6FF2] text-white text-[10px] font-bold font-mono">
+              <span className="px-2 py-0.5 rounded-full bg-[#1D6FF2] text-white text-[10px] font-bold tabular-nums">
                 {activeFilterCount}
               </span>
             )}
@@ -345,7 +381,7 @@ function ProductsContent() {
 
       {/* Mobile Filter Drawer */}
       {mobileFiltersOpen && (
-        <div className="lg:hidden mb-6 p-5 rounded-2xl bg-white border border-[#E4E9F2] shadow-xl">
+        <div className="lg:hidden mb-6 p-5 sm:p-6 rounded-2xl bg-white border border-[#E4E9F2] shadow-xl animate-fadeIn">
           <FilterSidebar
             products={products}
             categories={categories}
@@ -358,10 +394,10 @@ function ProductsContent() {
       )}
 
       {/* Main Grid: Sidebar + Product Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:gap-8">
         {/* Desktop Sticky Sidebar */}
         <aside className="hidden lg:block lg:col-span-1">
-          <div className="sticky top-28 p-5 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm">
+          <div className="sticky top-20 p-5 sm:p-6 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm">
             <FilterSidebar
               products={products}
               categories={categories}
@@ -374,17 +410,17 @@ function ProductsContent() {
 
         {/* Main Product Area */}
         <div className="lg:col-span-3 space-y-6">
-          {/* Top Sort & Filter Bar */}
+          {/* Top Sort & Summary Bar */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm">
             <div className="text-xs text-slate-500 font-medium">
-              Showing <strong className="text-[#0B1F4B] font-bold">{filteredProducts.length}</strong> available laptops
+              Showing <strong className="text-[#0B1F4B] font-bold tabular-nums">{filteredProducts.length}</strong> available laptops
             </div>
             <div className="flex items-center gap-2 text-xs">
               <span className="text-slate-500 font-medium">Sort by:</span>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0B1F4B] font-semibold text-xs focus:outline-none focus:border-[#1D6FF2] focus:bg-white cursor-pointer shadow-sm"
+                className="h-10 px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0B1F4B] font-semibold text-xs focus:outline-none focus:border-[#1D6FF2] focus:bg-white cursor-pointer shadow-sm"
               >
                 <option value="featured">Featured First</option>
                 <option value="price-low">Price: Low to High</option>
@@ -397,7 +433,7 @@ function ProductsContent() {
 
           {/* Product Grid */}
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {[1, 2, 3, 4, 5, 6].map((n) => (
                 <ProductCardSkeleton key={n} />
               ))}
@@ -409,7 +445,7 @@ function ProductsContent() {
               actionLabel="Reset All Filters"
             />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {filteredProducts.map((product) => (
                 <ProductCard key={product.id} product={product} />
               ))}
@@ -430,4 +466,3 @@ export default function ProductsPage() {
     </CustomerLayout>
   );
 }
-

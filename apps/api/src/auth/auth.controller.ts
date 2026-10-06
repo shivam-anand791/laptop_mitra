@@ -1,93 +1,116 @@
-import { Controller, Post, Put, Body, UseGuards, Get, Request } from '@nestjs/common';
+import { Controller, Post, Put, Delete, Body, Get, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AllowUnlinkedFirebaseUser } from '../decorators/allow-firebase-sync.decorator';
+import { Public } from '../decorators/public.decorator';
+import { SyncUserDto } from './dto/sync-user.dto';
 
 @ApiTags('Authentication')
+@ApiBearerAuth()
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('register')
-  @ApiOperation({ summary: 'Register a new user' })
-  @ApiResponse({ status: 201, description: 'User successfully registered' })
-  @ApiResponse({ status: 409, description: 'User already exists' })
-  @ApiResponse({ status: 400, description: 'Validation error' })
-  async register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
-  }
-
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('login')
-  @ApiOperation({ summary: 'Login user' })
+  @ApiOperation({ summary: 'User login' })
   @ApiResponse({ status: 200, description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  async login(@Body() body: { email: string; password?: string }) {
+    return this.authService.login(body);
   }
 
-  @Post('guest')
+  @Public()
   @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @ApiOperation({ summary: 'Create a guest session' })
-  @ApiResponse({ status: 201, description: 'Guest session created' })
-  async guestLogin() {
+  @Post('register')
+  @ApiOperation({ summary: 'User registration' })
+  @ApiResponse({ status: 201, description: 'User registered successfully' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  async register(
+    @Body() body: { name?: string; email: string; password?: string; referralCode?: string; phone?: string },
+  ) {
+    return this.authService.register(body);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('guest')
+  @ApiOperation({ summary: 'Start a guest session' })
+  @ApiResponse({ status: 200, description: 'Guest session created' })
+  async guest() {
     return this.authService.guestLogin();
   }
 
+  @Public()
   @Post('refresh')
-  @ApiOperation({ summary: 'Refresh access token' })
+  @ApiOperation({ summary: 'Refresh auth token' })
   @ApiResponse({ status: 200, description: 'Token refreshed' })
-  @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
-  async refresh(@Body('refreshToken') refreshToken: string) {
-    return this.authService.refreshToken(refreshToken);
+  async refresh(@Body() body: { refreshToken: string }) {
+    return this.authService.refreshToken(body?.refreshToken);
   }
 
+  @Public()
   @Post('logout')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Logout user' })
-  @ApiResponse({ status: 200, description: 'Logout successful' })
-  async logout(@Request() req: any, @Body('refreshToken') refreshToken: string) {
-    return this.authService.logout(req.user.id, refreshToken);
+  @ApiOperation({ summary: 'User logout' })
+  @ApiResponse({ status: 200, description: 'Logged out successfully' })
+  async logout() {
+    return { success: true };
+  }
+
+  @Post('sync')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @AllowUnlinkedFirebaseUser()
+  @ApiOperation({ summary: 'Synchronize a verified Firebase user with the local profile' })
+  @ApiResponse({ status: 200, description: 'Local user profile synchronized' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async sync(@Req() req: any, @Body() body: SyncUserDto) {
+    return this.authService.syncUser(req.firebaseIdentity, body);
   }
 
   @Get('profile')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: 200, description: 'Profile retrieved successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getProfile(@Request() req: any) {
+  async getProfile(@Req() req: any) {
     return this.authService.getUserProfile(req.user.id);
   }
 
   @Put('profile')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update current user profile' })
   @ApiResponse({ status: 200, description: 'Profile updated successfully' })
   @ApiResponse({ status: 400, description: 'Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async updateProfile(
-    @Request() req: any,
-    @Body() body: { name?: string; email?: string; phone?: string },
+    @Req() req: any,
+    @Body() body: { name?: string; phone?: string },
   ) {
     return this.authService.updateUserProfile(req.user.id, body);
   }
 
-  @Post('change-password')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Change the current user password' })
-  @ApiResponse({ status: 200, description: 'Password changed successfully' })
-  @ApiResponse({ status: 400, description: 'Validation error' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async changePassword(
-    @Request() req: any,
-    @Body() body: { currentPassword: string; newPassword: string },
+  @Post('signout-everywhere')
+  @ApiOperation({ summary: 'Revoke all sessions and sign out everywhere' })
+  @ApiResponse({ status: 200, description: 'Signed out everywhere' })
+  async signoutEverywhere(@Req() req: any) {
+    return this.authService.signoutEverywhere(req.user.id, req.user.firebaseUid);
+  }
+
+  @Delete('account')
+  @ApiOperation({ summary: 'Delete user account and anonymize PII' })
+  @ApiResponse({ status: 200, description: 'Account deleted' })
+  async deleteAccount(@Req() req: any) {
+    return this.authService.deleteAccount(req.user.id, req.user.firebaseUid);
+  }
+
+  @Post('link-guest')
+  @ApiOperation({ summary: 'Link anonymous guest account to an email and credentials' })
+  @ApiResponse({ status: 200, description: 'Account linked successfully' })
+  async linkGuest(
+    @Req() req: any,
+    @Body() body: { email: string; password?: string; name?: string },
   ) {
-    return this.authService.changePassword(req.user.id, body);
+    return this.authService.linkGuestAccount(req.user.id, body);
   }
 }
+

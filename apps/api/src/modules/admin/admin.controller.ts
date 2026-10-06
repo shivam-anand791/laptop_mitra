@@ -2,11 +2,9 @@ import { Controller, Get, Put, Body, UseGuards, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { RolesGuard } from '../../guards/roles.guard';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { GetUser } from '../../decorators/get-user.decorator';
 import { Roles } from '../../decorators/roles.decorator';
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Roles('ADMIN')
 @ApiTags('admin')
 @Controller('admin')
@@ -16,7 +14,7 @@ export class AdminController {
   @Get('users')
   @ApiOperation({ summary: 'Get all users (admin only)' })
   @ApiResponse({ status: 200, description: 'List of all users' })
-  async getAllUsers(@GetUser() user: any) {
+  async getAllUsers() {
     return this.adminService.getAllUsers();
   }
 
@@ -25,7 +23,6 @@ export class AdminController {
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'User status updated' })
   async updateUserStatus(
-    @GetUser() user: any,
     @Param('id') id: string,
     @Body('status') status: string,
   ) {
@@ -35,14 +32,14 @@ export class AdminController {
   @Get('products')
   @ApiOperation({ summary: 'Get all products (admin only)' })
   @ApiResponse({ status: 200, description: 'List of all products' })
-  async getAllProducts(@GetUser() user: any) {
+  async getAllProducts() {
     return this.adminService.getAllProducts();
   }
 
   @Get('orders')
   @ApiOperation({ summary: 'Get all orders (admin only)' })
   @ApiResponse({ status: 200, description: 'List of all orders' })
-  async getAllOrders(@GetUser() user: any) {
+  async getAllOrders() {
     return this.adminService.getAllOrders();
   }
 
@@ -51,7 +48,6 @@ export class AdminController {
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'Order status updated' })
   async updateOrderStatus(
-    @GetUser() user: any,
     @Param('id') id: string,
     @Body('status') status: string,
   ) {
@@ -61,7 +57,7 @@ export class AdminController {
   @Get('dashboard/stats')
   @ApiOperation({ summary: 'Get admin dashboard stats' })
   @ApiResponse({ status: 200, description: 'Dashboard statistics' })
-  async getDashboardStats(@GetUser() user: any) {
+  async getDashboardStats() {
     return this.adminService.getDashboardStats();
   }
 }

@@ -400,3 +400,144 @@ export function useChangePassword() {
       getClient().changePassword(data),
   });
 }
+
+// Order return and reorder hooks
+export function useReturnOrder() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
+      getClient().requestOrderReturn(orderId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+export function useReorder() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (orderId: string) => getClient().reorder(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cart'] });
+    },
+  });
+}
+
+export function useOrderInvoice(orderId: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['order-invoice', orderId],
+    queryFn: () => getClient().getOrderInvoice(orderId),
+    enabled: isAuthenticated && !!orderId,
+  });
+}
+
+export function useOrderTracking(orderId: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['order-tracking', orderId],
+    queryFn: () => getClient().trackOrder(orderId),
+    enabled: isAuthenticated && !!orderId,
+  });
+}
+
+// Payments hook
+export function usePaymentHistory() {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['payment-history'],
+    queryFn: () => getClient().getPaymentHistory(),
+    enabled: isAuthenticated,
+  });
+}
+
+// Support & Warranty hooks
+export function useTickets() {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['support-tickets'],
+    queryFn: () => getClient().getTickets(),
+    enabled: isAuthenticated,
+  });
+}
+
+export function useCreateTicket() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (data: { subject: string; message: string; category?: string; orderId?: string }) =>
+      getClient().createTicket(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['support-tickets'] });
+    },
+  });
+}
+
+export function useAddTicketMessage() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: ({ ticketId, message }: { ticketId: string; message: string }) =>
+      getClient().addTicketMessage(ticketId, message),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['support-tickets'] });
+    },
+  });
+}
+
+// Referral / Affiliate hook
+export function useReferralStats() {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['referral-stats'],
+    queryFn: () => getClient().getReferralStats(),
+    enabled: isAuthenticated,
+  });
+}
+
+// Notifications hooks
+export function useNotificationPreferences() {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['notification-preferences'],
+    queryFn: () => getClient().getNotificationPreferences(),
+    enabled: isAuthenticated,
+  });
+}
+
+export function useUpdateNotificationPreferences() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (prefs: Record<string, any>) => getClient().updateNotificationPreferences(prefs),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notification-preferences'] });
+    },
+  });
+}
+
+// Security & Account actions
+export function useSignoutEverywhere() {
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: () => getClient().signoutEverywhere(),
+  });
+}
+
+export function useDeleteAccount() {
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: () => getClient().deleteAccount(),
+  });
+}
+
+export function useLinkGuestAccount() {
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (data: { email: string; password?: string; name?: string }) =>
+      getClient().linkGuestAccount(data),
+  });
+}
+

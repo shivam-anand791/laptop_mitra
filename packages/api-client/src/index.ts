@@ -1,4 +1,18 @@
-import type { Product, Cart, CartItem, WishlistItem, User, Order, Address, Category } from '../../types/dist/index';
+import type {
+  Product,
+  Cart,
+  CartItem,
+  WishlistItem,
+  User,
+  Order,
+  OrderListResponse,
+  Address,
+  Category,
+  PaymentRecord,
+  SupportTicket,
+  SupportTicketMessage,
+  NotificationPreferences,
+} from '../../types/dist/index';
 
 export * from '../../types/dist/index';
 
@@ -6,6 +20,8 @@ export interface ApiClientConfig {
   baseUrl: string;
   getToken?: (() => string | null | Promise<string | null>) | undefined;
 }
+
+declare const process: any;
 
 export class LaptopMitraApiClient {
   private baseUrl: string;
@@ -24,10 +40,20 @@ export class LaptopMitraApiClient {
       ...((options.headers as Record<string, string>) || {}),
     };
 
+    const isDev = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
+
+    if (isDev) {
+      console.log(`[API Request] ${options.method || 'GET'} ${endpoint}`);
+    }
+
     const res = await fetch(`${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`, {
       ...options,
       headers,
     });
+
+    if (isDev) {
+      console.log(`[API Response] ${res.status} ${endpoint}`);
+    }
 
     if (!res.ok) {
       const errorData = (await res.json().catch(() => ({ message: res.statusText }))) as { message?: string };
@@ -35,6 +61,11 @@ export class LaptopMitraApiClient {
     }
 
     return (await res.json()) as T;
+  }
+
+  // Health
+  async getHealth(): Promise<{ status: string; timestamp: string; version: string }> {
+    return this.request<{ status: string; timestamp: string; version: string }>('/health');
   }
 
   // Products
@@ -75,6 +106,13 @@ export class LaptopMitraApiClient {
     });
   }
 
+  async syncUser(data?: { name?: string; phone?: string; referralCode?: string }): Promise<{ user: User }> {
+    return this.request<{ user: User }>('/auth/sync', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
   async getProfile(): Promise<User> {
     return this.request<User>('/auth/profile');
   }
@@ -90,6 +128,25 @@ export class LaptopMitraApiClient {
     return this.request<{ message: string }>('/auth/logout', {
       method: 'POST',
       body: JSON.stringify({ refreshToken }),
+    });
+  }
+
+  async signoutEverywhere(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/signout-everywhere', {
+      method: 'POST',
+    });
+  }
+
+  async deleteAccount(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/account', {
+      method: 'DELETE',
+    });
+  }
+
+  async linkGuestAccount(data: { email: string; password?: string; name?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
+    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/link-guest', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 
@@ -154,27 +211,9 @@ export class LaptopMitraApiClient {
     });
   }
 
-  async getOrders(): Promise<Order[]> {
-    return this.request<Order[]>('/orders');
-  }
-
-  async validateDiscount(code: string, cartTotal: number): Promise<{
-    valid: boolean;
-    discountType: 'percentage' | 'fixed' | 'free_shipping' | null;
-    discountValue: number;
-    discountAmount: number;
-    message: string;
-  }> {
-    return this.request<{
-      valid: boolean;
-      discountType: 'percentage' | 'fixed' | 'free_shipping' | null;
-      discountValue: number;
-      discountAmount: number;
-      message: string;
-    }>('/discount/validate', {
-      method: 'POST',
-      body: JSON.stringify({ code, cartTotal }),
-    });
+  async getOrders(params?: { status?: string; page?: number; limit?: number }): Promise<Order[] | OrderListResponse> {
+    const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
+    return this.request<Order[] | OrderListResponse>(`/orders${query}`);
   }
 
   async getOrder(id: string): Promise<Order> {
@@ -183,6 +222,93 @@ export class LaptopMitraApiClient {
 
   async cancelOrder(id: string): Promise<{ message: string }> {
     return this.request<{ message: string }>(`/orders/${id}/cancel`, { method: 'PATCH' });
+  }
+
+  async requestOrderReturn(id: string, reason: string): Promise<{ message: string; returnStatus: string }> {
+    return this.request<{ message: string; returnStatus: string }>(`/orders/${id}/return`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async reorder(id: string): Promise<{ message: string; itemsAdded: number }> {
+    return this.request<{ message: string; itemsAdded: number }>(`/orders/${id}/reorder`, {
+      method: 'POST',
+    });
+  }
+
+  async getOrderInvoice(id: string): Promise<{ order: Order; invoiceNumber: string; issuedAt: string }> {
+    return this.request<{ order: Order; invoiceNumber: string; issuedAt: string }>(`/orders/${id}/invoice`);
+  }
+
+  async trackOrder(id: string): Promise<{ status: string; carrier?: string; trackingNumber?: string; timeline: Array<{ status: string; time: string; note: string }> }> {
+    return this.request<{ status: string; carrier?: string; trackingNumber?: string; timeline: Array<{ status: string; time: string; note: string }> }>(`/orders/${id}/track`);
+  }
+
+  // Payments
+  async getPaymentHistory(): Promise<PaymentRecord[]> {
+    return this.request<PaymentRecord[]>('/payments/history');
+  }
+
+  async createRazorpayOrder(amount: number, orderId: string): Promise<any> {
+    return this.request<any>('/payments/razorpay/order', {
+      method: 'POST',
+      body: JSON.stringify({ amount, orderId }),
+    });
+  }
+
+  // Support & Warranty
+  async getTickets(): Promise<SupportTicket[]> {
+    return this.request<SupportTicket[]>('/support/tickets');
+  }
+
+  async createTicket(data: { subject: string; orderId?: string; message: string; category?: string }): Promise<SupportTicket> {
+    return this.request<SupportTicket>('/support/tickets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async addTicketMessage(ticketId: string, message: string): Promise<SupportTicketMessage> {
+    return this.request<SupportTicketMessage>(`/support/tickets/${ticketId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  }
+
+  async getWarrantyStatus(orderItemId: string): Promise<{ warrantyStatus: string; validUntil: string; terms: string }> {
+    return this.request<{ warrantyStatus: string; validUntil: string; terms: string }>(`/support/warranty/${orderItemId}`);
+  }
+
+  // Referral / Affiliate
+  async getReferralStats(): Promise<{
+    referralCode: string;
+    referralTier: string;
+    referralEarnings: number;
+    referredUsersCount: number;
+    referralLinkClickedCount: number;
+    payoutHistory: Array<{ id: string; amount: number; date: string; status: string }>;
+  }> {
+    return this.request<{
+      referralCode: string;
+      referralTier: string;
+      referralEarnings: number;
+      referredUsersCount: number;
+      referralLinkClickedCount: number;
+      payoutHistory: Array<{ id: string; amount: number; date: string; status: string }>;
+    }>('/discount/referral/stats');
+  }
+
+  // Notifications
+  async getNotificationPreferences(): Promise<NotificationPreferences> {
+    return this.request<NotificationPreferences>('/notifications/preferences');
+  }
+
+  async updateNotificationPreferences(preferences: Partial<NotificationPreferences>): Promise<NotificationPreferences> {
+    return this.request<NotificationPreferences>('/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(preferences),
+    });
   }
 
   // Addresses
@@ -224,7 +350,26 @@ export class LaptopMitraApiClient {
     return this.request<Category>(`/categories/slug/${slug}`);
   }
 
-  // Auth — Password Reset (not yet implemented on backend — stub)
+  async validateDiscount(code: string, cartTotal: number): Promise<{
+    valid: boolean;
+    discountType: 'percentage' | 'fixed' | 'free_shipping' | null;
+    discountValue: number;
+    discountAmount: number;
+    message: string;
+  }> {
+    return this.request<{
+      valid: boolean;
+      discountType: 'percentage' | 'fixed' | 'free_shipping' | null;
+      discountValue: number;
+      discountAmount: number;
+      message: string;
+    }>('/discount/validate', {
+      method: 'POST',
+      body: JSON.stringify({ code, cartTotal }),
+    });
+  }
+
+  // Auth — Password Reset
   async forgotPassword(email: string): Promise<{ message: string }> {
     return this.request<{ message: string }>('/auth/forgot-password', {
       method: 'POST',
@@ -239,7 +384,6 @@ export class LaptopMitraApiClient {
     });
   }
 
-  // Password Change (authenticated)
   async changePassword(data: { currentPassword: string; newPassword: string }): Promise<{ message: string }> {
     return this.request<{ message: string }>('/auth/change-password', {
       method: 'POST',
@@ -247,3 +391,4 @@ export class LaptopMitraApiClient {
     });
   }
 }
+

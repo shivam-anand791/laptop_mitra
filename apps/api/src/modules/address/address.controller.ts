@@ -1,12 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Request, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AddressService } from './address.service';
+import { RolesGuard } from '../../guards/roles.guard';
+import { Roles } from '../../decorators/roles.decorator';
 
 @ApiTags('addresses')
 @Controller('addresses')
-@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
+@UseGuards(RolesGuard)
+@Roles('CUSTOMER', 'ADMIN')
 export class AddressController {
   constructor(private readonly addressService: AddressService) {}
 

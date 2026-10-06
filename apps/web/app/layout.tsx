@@ -1,11 +1,18 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Caveat } from 'next/font/google';
 
 const inter = Inter({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
+  weight: ['400', '500', '600', '700', '800', '900'],
   variable: '--font-inter',
+  display: 'swap',
+});
+
+const caveat = Caveat({
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+  variable: '--font-caveat',
   display: 'swap',
 });
 
@@ -24,7 +31,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} h-full antialiased font-sans`}
+      className={`${inter.variable} ${caveat.variable} h-full antialiased font-sans`}
     >
       <body className="min-h-full flex flex-col font-sans bg-[#F5F7FA] text-[#0F172A]">
         <Providers>{children}</Providers>

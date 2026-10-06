@@ -15,6 +15,8 @@ export default function Navbar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [laptopsDropdownOpen, setLaptopsDropdownOpen] = useState(false);
+  const [solutionsDropdownOpen, setSolutionsDropdownOpen] = useState(false);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,155 +27,79 @@ export default function Navbar() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white shadow-[0_2px_12px_rgba(11,31,75,0.06)] border-b border-[#E4E9F2]">
-      {/* Top Banner - Deep Navy */}
-      <div className="bg-[#0B1F4B] text-white text-xs py-2 px-4 font-medium tracking-wide">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#1D6FF2] text-white uppercase tracking-wider">
-              Mitra Trust
-            </span>
-            <span className="hidden sm:inline text-slate-200">
-              India&apos;s #1 Certified Pre-Owned &amp; Refurbished Laptop Marketplace
-            </span>
-          </div>
-          <div className="flex items-center space-x-4 sm:space-x-6 text-slate-300 text-xs">
-            <span className="hidden md:inline-flex items-center gap-1">
-              <span>🛡️</span> 1-Year Comprehensive Warranty
-            </span>
-            <span className="hidden lg:inline-flex items-center gap-1">
-              <span>🔄</span> 7-Day Replacement
-            </span>
-            <span className="text-amber-300 font-semibold flex items-center gap-1">
-              <span>🎁</span> Use code <span className="bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded font-mono font-bold tracking-wider">MITRA500</span> for ₹500 OFF
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Nav Tier 1 */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-18 gap-4 sm:gap-6 py-2">
-          {/* Brand Logo */}
-          <Link href="/" className="flex items-center gap-3 shrink-0 group">
-            <div className="w-10 h-10 rounded-xl bg-[#1D6FF2] flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    <header className="sticky top-0 z-50 bg-white border-b border-[#E4E9F2]">
+      {/* ── Top Header Row: Logo, Search Box, Icon Actions, Quote Button ── */}
+      <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 gap-1 sm:gap-8">
+          {/* Logo (Item 2: Small blue circle icon + wordmark, no tagline) */}
+          <Link href="/" className="flex items-center gap-1.5 sm:gap-2 shrink-0 group">
+            <div className="w-7 h-7 rounded-full bg-[#1D6FF2] flex items-center justify-center text-white shadow-xs">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             </div>
-            <div>
-              <div className="text-2xl font-black tracking-tight text-[#0B1F4B] flex items-center leading-none">
-                Laptop<span className="text-[#1D6FF2]">Mitra</span>
-              </div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 flex items-center gap-1 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
-                Certified Refurbished
-              </div>
-            </div>
+            <span className="text-base sm:text-xl font-black tracking-tight text-[#0B1F4B]">
+              Laptop<span className="text-[#1D6FF2]">Mitra</span>
+            </span>
           </Link>
 
-          {/* Search Bar - Center Pill */}
-          <form onSubmit={handleSearchSubmit} className="hidden md:flex flex-1 max-w-xl relative">
+          {/* Search Box (Item 3: Light blue-grey box with 8px radius, right search icon) */}
+          <form onSubmit={handleSearchSubmit} className="hidden md:flex flex-1 max-w-xl mx-2 lg:mx-6">
             <div className="relative w-full">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search MacBook, ThinkPad, i7 16GB, RTX Gaming..."
-                className="w-full pl-11 pr-24 py-2.5 text-sm bg-[#F1F5F9] hover:bg-[#EBF2FF]/60 focus:bg-white border border-[#E4E9F2] focus:border-[#1D6FF2] rounded-full focus:outline-none focus:ring-4 focus:ring-blue-500/15 text-[#0F172A] placeholder-slate-400 transition-all shadow-inner"
+                placeholder="Search for laptops, brands, accessories..."
+                className="w-full pl-4 pr-10 py-2 text-xs bg-[#F0F4F9] hover:bg-[#EBF1F8] focus:bg-white border border-[#E2E8F0] focus:border-[#1D6FF2] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/15 text-[#0F172A] placeholder-slate-400 transition-colors"
               />
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+              <button
+                type="submit"
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-[#1D6FF2] transition-colors cursor-pointer"
+                aria-label="Submit search"
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-              </div>
-              <button
-                type="submit"
-                className="absolute inset-y-1 right-1.5 px-4 bg-[#1D6FF2] hover:bg-[#1558C0] text-white rounded-full text-xs font-semibold tracking-wide transition-colors shadow-sm cursor-pointer"
-              >
-                Search
               </button>
             </div>
           </form>
 
-          {/* Action Links & CTAs */}
-          <div className="flex items-center space-x-2 sm:space-x-4">
-            {/* Wishlist */}
-            <Link
-              href="/wishlist"
-              className="relative p-2.5 text-slate-600 hover:text-[#1D6FF2] hover:bg-slate-100 rounded-full transition-colors"
-              title="Wishlist"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-              </svg>
-              {wishlistCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-rose-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
-                  {wishlistCount}
-                </span>
-              )}
-            </Link>
-
-            {/* Cart */}
-            <Link
-              href="/cart"
-              className="relative flex items-center gap-2 px-3.5 py-2 bg-[#EBF2FF] hover:bg-blue-100 text-[#1D6FF2] rounded-full text-sm font-semibold transition-colors border border-blue-200"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              <span className="hidden sm:inline font-bold">Cart</span>
-              <span className="bg-[#1D6FF2] text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center shadow-sm">
-                {itemCount}
-              </span>
-            </Link>
-
-            {/* User Account or Auth CTA */}
+          {/* Header Right Side (Item 4: User, Heart, Cart icons + Get a Quote) */}
+          <div className="flex items-center space-x-1 sm:space-x-3">
+            {/* User Icon */}
             {user ? (
               <div className="relative">
                 <button
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="flex items-center gap-2 text-sm font-semibold text-slate-800 hover:text-[#1D6FF2] focus:outline-none p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                  className="p-2 text-slate-700 hover:text-[#1D6FF2] hover:bg-slate-50 rounded-full transition-colors cursor-pointer min-w-[40px] min-h-[40px] flex items-center justify-center"
+                  title="My Account"
+                  aria-label="My Account"
                 >
-                  <div className="w-8 h-8 rounded-full bg-[#0B1F4B] text-white flex items-center justify-center font-bold text-xs uppercase shadow-sm">
-                    {user.name ? user.name[0] : user.email[0]}
-                  </div>
-                  <span className="hidden md:inline max-w-[100px] truncate text-slate-900">{user.name || user.email.split('@')[0]}</span>
-                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
                 </button>
-
                 {userDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border border-[#E4E9F2] py-2 z-50 divide-y divide-slate-100">
-                    <div className="px-4 py-2.5">
-                      <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Signed in as</p>
-                      <p className="text-sm font-bold text-[#0B1F4B] truncate">{user.email}</p>
-                      <div className="mt-1 flex items-center gap-1.5 text-xs text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-md w-fit">
-                        <span>⭐ Tier: {user.referralTier || 'BASIC'}</span>
-                      </div>
+                  <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-xl border border-[#E4E9F2] py-2 z-50 divide-y divide-slate-100">
+                    <div className="px-4 py-2">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Account</p>
+                      <p className="text-xs font-bold text-[#0B1F4B] truncate">{user.name || user.email}</p>
                     </div>
-                    <div className="py-1">
+                    <div className="py-1 text-xs font-semibold">
                       <Link
                         href="/profile"
                         onClick={() => setUserDropdownOpen(false)}
-                        className="block px-4 py-2 text-sm text-slate-700 hover:bg-[#F5F7FA] hover:text-[#1D6FF2] font-medium"
+                        className="block px-4 py-1.5 text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]"
                       >
-                        📦 My Orders &amp; Profile
+                        Orders &amp; Profile
                       </Link>
                       <Link
                         href="/profile#referral"
                         onClick={() => setUserDropdownOpen(false)}
-                        className="block px-4 py-2 text-sm text-slate-700 hover:bg-[#F5F7FA] hover:text-[#1D6FF2] font-medium"
+                        className="block px-4 py-1.5 text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]"
                       >
-                        🤝 Mitra Partner (Earn 10%)
-                      </Link>
-                      <Link
-                        href="/admin"
-                        onClick={() => setUserDropdownOpen(false)}
-                        className="block px-4 py-2 text-sm text-[#1D6FF2] hover:bg-blue-50 font-semibold"
-                      >
-                        ⚡ Store Admin Portal
+                        Mitra Referral
                       </Link>
                     </div>
                     <div className="pt-1">
@@ -182,7 +108,7 @@ export default function Navbar() {
                           setUserDropdownOpen(false);
                           logout();
                         }}
-                        className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 font-semibold"
+                        className="w-full text-left px-4 py-1.5 text-xs text-rose-600 hover:bg-rose-50 font-bold cursor-pointer"
                       >
                         Sign Out
                       </button>
@@ -191,32 +117,69 @@ export default function Navbar() {
                 )}
               </div>
             ) : (
-              <div className="flex items-center space-x-2">
-                <Link
-                  href="/login"
-                  className="hidden sm:inline-block px-3.5 py-2 text-sm font-semibold text-slate-700 hover:text-[#1D6FF2] transition-colors"
-                >
-                  Sign In
-                </Link>
-                <Link
-                  href="/products"
-                  className="px-4 py-2 text-sm font-bold text-white bg-[#1D6FF2] hover:bg-[#1558C0] rounded-full shadow-md shadow-blue-500/25 transition-all hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-1.5"
-                >
-                  <span>Get a Quote</span>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-              </div>
+              <Link
+                href="/login"
+                className="p-2 text-slate-700 hover:text-[#1D6FF2] hover:bg-slate-50 rounded-full transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
+                title="Sign In"
+                aria-label="Sign In"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </Link>
             )}
 
-            {/* Mobile Hamburger Button */}
+            {/* Wishlist Icon */}
+            <Link
+              href="/wishlist"
+              className="relative p-2 text-slate-700 hover:text-[#1D6FF2] hover:bg-slate-50 rounded-full transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
+              title="Saved Wishlist"
+              aria-label={`Wishlist with ${wishlistCount} items`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              </svg>
+              {wishlistCount > 0 && (
+                <span className="absolute 0 top-1 right-1 bg-rose-500 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center font-mono">
+                  {wishlistCount}
+                </span>
+              )}
+            </Link>
+
+            {/* Cart Icon (Count badge shown only when itemCount > 0) */}
+            <Link
+              href="/cart"
+              className="relative p-2 text-slate-700 hover:text-[#1D6FF2] hover:bg-slate-50 rounded-full transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
+              title="Shopping Cart"
+              aria-label={`Shopping Cart with ${itemCount} items`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              {itemCount > 0 && (
+                <span className="absolute top-1 right-1 bg-[#1D6FF2] text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center font-mono">
+                  {itemCount}
+                </span>
+              )}
+            </Link>
+
+            {/* Get a Quote Button (small radius ~6px, solid blue, no chevron) */}
+            <a
+              href="https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20would%20like%20to%20request%20a%20quote%20for%20enterprise%20laptops."
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden sm:inline-flex px-4 py-2 bg-[#1D6FF2] hover:bg-[#1558C0] text-white text-xs font-bold rounded-md shadow-xs transition-all active:scale-95 shrink-0"
+            >
+              Get a Quote
+            </a>
+
+            {/* Mobile Hamburger Trigger */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 text-slate-600 rounded-lg hover:bg-slate-100"
+              className="md:hidden p-2 text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
               aria-label="Toggle Navigation Menu"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 {mobileMenuOpen ? (
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 ) : (
@@ -228,137 +191,156 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Main Nav Tier 2 - Category Bar (Desktop) */}
-      <div className="hidden md:block bg-[#F8FAFC] border-t border-[#E4E9F2]">
+      {/* ── Nav Row (Item 5: Plain text items with chevrons on dropdowns, no emojis, no phone) ── */}
+      <div className="hidden md:block border-t border-[#E4E9F2] bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-700 py-2.5">
-            <nav className="flex items-center space-x-6 lg:space-x-8">
-              <Link
-                href="/products"
-                className="flex items-center gap-1 text-[#1D6FF2] hover:text-[#1558C0] font-bold"
+          <nav className="flex items-center space-x-7 py-2.5 text-xs font-semibold text-slate-700">
+            {/* Laptops Dropdown */}
+            <div
+              className="relative"
+              onMouseEnter={() => setLaptopsDropdownOpen(true)}
+              onMouseLeave={() => setLaptopsDropdownOpen(false)}
+            >
+              <button
+                type="button"
+                className="flex items-center gap-1 hover:text-[#1D6FF2] transition-colors cursor-pointer py-1"
+                aria-expanded={laptopsDropdownOpen}
               >
-                <span>💻 All Laptops</span>
-              </Link>
-              <Link
-                href="/products?category=cat-business"
-                className="hover:text-[#1D6FF2] transition-colors"
-              >
-                Business Series
-              </Link>
-              <Link
-                href="/products?category=cat-apple"
-                className="hover:text-[#1D6FF2] transition-colors"
-              >
-                Apple MacBooks
-              </Link>
-              <Link
-                href="/products?category=cat-gaming"
-                className="hover:text-[#1D6FF2] transition-colors"
-              >
-                Gaming Rigs
-              </Link>
-              <Link
-                href="/products?category=cat-ultrabook"
-                className="hover:text-[#1D6FF2] transition-colors"
-              >
-                Slim Ultrabooks
-              </Link>
-              <Link
-                href="/products?maxPrice=25000"
-                className="hover:text-[#1D6FF2] transition-colors"
-              >
-                Deals Under ₹25k
-              </Link>
-              <Link
-                href="/products"
-                className="hover:text-[#1D6FF2] transition-colors"
-              >
-                Flexible Leasing
-              </Link>
-              <Link
-                href="/products"
-                className="hover:text-[#1D6FF2] transition-colors"
-              >
-                Sell / Buyback
-              </Link>
-            </nav>
+                <span>Laptops</span>
+                <svg className={`w-3 h-3 text-slate-400 transition-transform ${laptopsDropdownOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
 
-            <div className="hidden lg:flex items-center gap-4 text-slate-500 font-medium text-[11px]">
-              <span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                Pan-India Express Delivery
-              </span>
-              <span className="text-slate-600">
-                Helpline: <strong className="text-[#0B1F4B]">+91 800 527 8676</strong>
-              </span>
+              {laptopsDropdownOpen && (
+                <div className="absolute left-0 top-full w-48 bg-white rounded-xl shadow-lg border border-[#E4E9F2] py-2 z-50">
+                  <Link href="/products" className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]">
+                    All Certified Laptops
+                  </Link>
+                  <Link href="/products?category=cat-business" className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]">
+                    Business Series
+                  </Link>
+                  <Link href="/products?category=cat-apple" className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]">
+                    Apple MacBooks
+                  </Link>
+                  <Link href="/products?category=cat-gaming" className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]">
+                    Gaming Rigs
+                  </Link>
+                  <Link href="/products?category=cat-student" className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]">
+                    Student &amp; Budget
+                  </Link>
+                  <Link href="/products?category=cat-ultrabook" className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]">
+                    Premium Ultrabooks
+                  </Link>
+                </div>
+              )}
             </div>
-          </div>
+
+            {/* Solutions Dropdown */}
+            <div
+              className="relative"
+              onMouseEnter={() => setSolutionsDropdownOpen(true)}
+              onMouseLeave={() => setSolutionsDropdownOpen(false)}
+            >
+              <button
+                type="button"
+                className="flex items-center gap-1 hover:text-[#1D6FF2] transition-colors cursor-pointer py-1"
+                aria-expanded={solutionsDropdownOpen}
+              >
+                <span>Solutions</span>
+                <svg className={`w-3 h-3 text-slate-400 transition-transform ${solutionsDropdownOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+
+              {solutionsDropdownOpen && (
+                <div className="absolute left-0 top-full w-48 bg-white rounded-xl shadow-lg border border-[#E4E9F2] py-2 z-50">
+                  <Link href="/products?type=buy" className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]">
+                    Outright Purchase
+                  </Link>
+                  <Link href="/products?type=lease" className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]">
+                    Corporate Leasing
+                  </Link>
+                  <a
+                    href="https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20want%20to%20inquire%20about%20bulk%20procurement."
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#1D6FF2]"
+                  >
+                    Bulk Procurement
+                  </a>
+                </div>
+              )}
+            </div>
+
+            <Link href="/profile#referral" className="hover:text-[#1D6FF2] transition-colors">
+              Partner Program
+            </Link>
+
+            <a
+              href="https://wa.me/919999999999?text=Hi%20LaptopMitra%20Support,%20I%20need%20assistance."
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[#1D6FF2] transition-colors"
+            >
+              Support
+            </a>
+          </nav>
         </div>
       </div>
 
-      {/* Mobile Drawer Menu */}
+      {/* ── Mobile Drawer ── */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-[#E4E9F2] bg-white px-4 pt-3 pb-6 space-y-4 shadow-xl">
-          <form onSubmit={handleSearchSubmit}>
+        <div className="md:hidden bg-white border-t border-[#E4E9F2] px-4 pt-3 pb-6 space-y-3 shadow-lg">
+          <form onSubmit={handleSearchSubmit} className="relative w-full">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search MacBook, ThinkPad..."
-              className="w-full px-4 py-2.5 text-sm bg-[#F1F5F9] border border-[#E4E9F2] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1D6FF2]"
+              placeholder="Search laptops..."
+              className="w-full pl-3.5 pr-10 py-2 text-xs bg-[#F0F4F9] border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#1D6FF2]"
             />
+            <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
           </form>
 
-          <div className="grid grid-cols-2 gap-2 text-sm font-semibold">
-            <Link
-              href="/products"
-              onClick={() => setMobileMenuOpen(false)}
-              className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0B1F4B] hover:bg-blue-50 hover:border-blue-200"
-            >
-              💻 All Laptops
+          <div className="flex flex-col space-y-1 pt-1 text-xs font-semibold text-slate-700">
+            <Link href="/products" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#1D6FF2]">
+              All Laptops
             </Link>
-            <Link
-              href="/products?category=cat-apple"
-              onClick={() => setMobileMenuOpen(false)}
-              className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0B1F4B] hover:bg-blue-50 hover:border-blue-200"
-            >
-              🍏 MacBooks
+            <Link href="/products?category=cat-business" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#1D6FF2]">
+              Business Series
             </Link>
-            <Link
-              href="/products?category=cat-gaming"
-              onClick={() => setMobileMenuOpen(false)}
-              className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0B1F4B] hover:bg-blue-50 hover:border-blue-200"
-            >
-              🎮 Gaming Rigs
+            <Link href="/products?category=cat-apple" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#1D6FF2]">
+              Apple MacBooks
             </Link>
-            <Link
-              href="/products?category=cat-business"
-              onClick={() => setMobileMenuOpen(false)}
-              className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0B1F4B] hover:bg-blue-50 hover:border-blue-200"
-            >
-              💼 Business Series
+            <Link href="/products?type=lease" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#1D6FF2]">
+              Corporate Leasing
             </Link>
-            <Link
-              href="/products?maxPrice=25000"
-              onClick={() => setMobileMenuOpen(false)}
-              className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0B1F4B] hover:bg-blue-50 hover:border-blue-200"
-            >
-              🔥 Deals &lt; ₹25k
+            <Link href="/profile#referral" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#1D6FF2]">
+              Partner Program
             </Link>
-            <Link
-              href="/profile"
-              onClick={() => setMobileMenuOpen(false)}
-              className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0B1F4B] hover:bg-blue-50 hover:border-blue-200"
+            <a
+              href="https://wa.me/919999999999?text=Hi%20LaptopMitra%20Support"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#1D6FF2]"
             >
-              📦 My Orders
-            </Link>
-            <Link
-              href="/admin"
-              onClick={() => setMobileMenuOpen(false)}
-              className="col-span-2 p-3 rounded-xl bg-blue-50 border border-blue-200 text-[#1D6FF2] font-bold text-center"
-            >
-              ⚡ Store Admin Portal
-            </Link>
+              Support
+            </a>
+            <div className="pt-2">
+              <a
+                href="https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20would%20like%20to%20request%20a%20quote%20for%20enterprise%20laptops."
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2.5 px-4 bg-[#1D6FF2] hover:bg-[#1558C0] text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5"
+              >
+                Request Enterprise Quote
+              </a>
+            </div>
           </div>
         </div>
       )}

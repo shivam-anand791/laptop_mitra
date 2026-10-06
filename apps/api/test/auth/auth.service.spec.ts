@@ -1,337 +1,285 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { AuthService } from '../../src/auth/auth.service';
-import { PrismaService } from '../../src/prisma/prisma.service';
-import { JwtService } from '@nestjs/jwt';
-import { UnauthorizedException, ConflictException } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
-import { RandomService } from '../../src/shared/random.service';
+jest.mock('@nestjs/config', () => ({
+  ConfigService: class ConfigService {},
+}));
 
-jest.mock('bcrypt');
+jest.mock('firebase-admin/app', () => ({
+  cert: jest.fn(),
+  getApps: jest.fn(() => []),
+  initializeApp: jest.fn(),
+}));
+
+jest.mock('firebase-admin/auth', () => ({
+  getAuth: jest.fn(() => ({
+    verifyIdToken: jest.fn(),
+    createCustomToken: jest.fn(),
+  })),
+}));
+
+import { AuthService } from '../../src/auth/auth.service';
+import { RandomService } from '../../src/shared/random.service';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 
 describe('AuthService', () => {
-  let authService: AuthService;
-  let prismaService: PrismaService;
-  let jwtService: JwtService;
+  const userFindUnique = jest.fn();
+  const userFindFirst = jest.fn();
+  const userCreate = jest.fn();
+  const userUpdate = jest.fn();
+  const prisma = {
+    user: {
+      findUnique: userFindUnique,
+      findFirst: userFindFirst,
+      create: userCreate,
+      update: userUpdate,
+    },
+  };
+  const randomService = {
+    generateReferralCode: jest.fn().mockReturnValue('REF12345'),
+  };
+  const firebaseService = {
+    createCustomToken: jest.fn().mockResolvedValue('mock-token-123'),
+  };
+  const authService = new AuthService(
+    prisma as any,
+    randomService as unknown as RandomService,
+    firebaseService as any,
+  );
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AuthService,
-        {
-          provide: PrismaService,
-          useValue: {
-            user: {
-              findUnique: jest.fn(),
-              create: jest.fn(),
-              update: jest.fn(),
-            },
-            refreshToken: {
-              create: jest.fn(),
-              deleteMany: jest.fn(),
-              findUnique: jest.fn(),
-              delete: jest.fn(),
-            },
-          },
-        },
-        {
-          provide: JwtService,
-          useValue: {
-            sign: jest.fn().mockReturnValue('jwt-token'),
-          },
-        },
-        {
-          provide: RandomService,
-          useValue: {
-            generateReferralCode: jest.fn().mockReturnValue('REF1234'),
-            generateOtp: jest.fn().mockReturnValue('123456'),
-          },
-        },
-      ],
-    }).compile();
-
-    authService = module.get<AuthService>(AuthService);
-    prismaService = module.get<PrismaService>(PrismaService);
-    jwtService = module.get<JwtService>(JwtService);
+  beforeEach(() => {
+    jest.resetAllMocks();
+    randomService.generateReferralCode.mockReturnValue('REF12345');
+    firebaseService.createCustomToken.mockResolvedValue('mock-token-123');
+    userFindUnique.mockResolvedValue(null);
+    userFindFirst.mockResolvedValue(null);
+    userCreate.mockImplementation(async ({ data, select }) => ({
+      id: 'local-user-1',
+      status: 'ACTIVE',
+      ...data,
+    }));
+    userUpdate.mockImplementation(async ({ where, data, select }) => ({
+      id: where.id || 'local-user-1',
+      status: 'ACTIVE',
+      ...data,
+    }));
   });
 
-  describe('register', () => {
-    const registerDto = {
-      name: 'John Doe',
-      email: 'john@example.com',
-      password: 'Password123!',
-      phone: '+919876543210',
+  it('maps a verified Firebase token to an existing local user', async () => {
+    const verifiedAt = new Date('2026-01-01T00:00:00.000Z');
+    const existingUser = {
+      id: 'local-user-1',
+      firebaseUid: 'firebase-123',
+      role: 'ADMIN',
+      isGuest: false,
+      status: 'ACTIVE',
+      emailVerified: verifiedAt,
     };
+    userFindUnique.mockResolvedValue(existingUser);
 
-    it('should successfully register a new user', async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
-      (prismaService.user.create as jest.Mock).mockResolvedValue({
-        id: 'user-1',
-        email: registerDto.email,
-        name: registerDto.name,
-        role: 'USER',
-      });
-      (bcrypt.hash as jest.Mock).mockResolvedValue('hashedPassword');
-      (jwtService.sign as jest.Mock).mockReturnValue('jwt-token');
-      (prismaService.refreshToken.create as jest.Mock).mockResolvedValue({});
+    const user = await authService.syncUser(
+      {
+        uid: 'firebase-123',
+        email: 'Admin@Example.com',
+        email_verified: true,
+        firebase: { sign_in_provider: 'google.com' },
+      },
+      { name: 'Updated Admin', phone: '+1 555 123 4567' },
+    );
 
-      const result = await authService.register(registerDto);
-
-      expect(result.user.email).toBe(registerDto.email);
-      expect(result.user.name).toBe(registerDto.name);
-      expect(result.accessToken).toBe('jwt-token');
-      expect(result.refreshToken).toBe('jwt-token');
-      expect(prismaService.user.findUnique).toHaveBeenCalledWith({
-        where: { email: registerDto.email },
-      });
-      expect(prismaService.user.create).toHaveBeenCalled();
+    expect(userFindUnique).toHaveBeenCalledWith({
+      where: { firebaseUid: 'firebase-123' },
     });
-
-    it('should throw ConflictException if user already exists', async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue({
-        id: 'user-1',
-        email: registerDto.email,
-      });
-
-      await expect(authService.register(registerDto)).rejects.toThrow(
-        ConflictException,
-      );
-    });
-
-    it('should return both accessToken and refreshToken', async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
-      (prismaService.user.create as jest.Mock).mockResolvedValue({
-        id: 'user-1',
-        email: registerDto.email,
-        name: registerDto.name,
-        role: 'USER',
-      });
-      (bcrypt.hash as jest.Mock).mockResolvedValue('hashedPassword');
-      (prismaService.refreshToken.create as jest.Mock).mockResolvedValue({});
-
-      const result = await authService.register(registerDto);
-
-      expect(result).toHaveProperty('accessToken');
-      expect(result).toHaveProperty('refreshToken');
-      expect(result).toHaveProperty('user');
-      expect(typeof result.accessToken).toBe('string');
-      expect(typeof result.refreshToken).toBe('string');
-    });
+    expect(userUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'local-user-1' },
+      data: expect.objectContaining({
+        email: 'admin@example.com',
+        authProvider: 'google.com',
+        name: 'Updated Admin',
+        phone: '+1 555 123 4567',
+      }),
+    }));
+    expect(user).toMatchObject({ id: 'local-user-1' });
   });
 
-  describe('login', () => {
-    const loginDto = {
-      email: 'john@example.com',
-      password: 'Password123!',
-    };
+  it('creates a first-time local user from verified identity claims with default role CUSTOMER', async () => {
+    const user = await authService.syncUser(
+      {
+        uid: 'firebase-new',
+        email: 'new@example.com',
+        email_verified: true,
+        firebase: { sign_in_provider: 'password' },
+      },
+      { name: 'New User' },
+    );
 
-    const mockUser = {
-      id: 'user-1',
-      email: loginDto.email,
-      password: 'hashedPassword',
-      name: 'John Doe',
-      role: 'USER',
+    expect(userCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        firebaseUid: 'firebase-new',
+        name: 'New User',
+        email: 'new@example.com',
+        emailVerified: expect.any(Date),
+        authProvider: 'password',
+        isGuest: false,
+        role: 'CUSTOMER',
+        referralCode: 'REF12345',
+        status: 'ACTIVE',
+      }),
+    }));
+    expect(user).toMatchObject({ id: 'local-user-1', firebaseUid: 'firebase-new' });
+  });
+
+  it('creates anonymous Firebase identities as guests with role GUEST', async () => {
+    await authService.syncUser(
+      {
+        uid: 'firebase-anon',
+        firebase: { sign_in_provider: 'anonymous' },
+      },
+      {},
+    );
+
+    expect(userCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        firebaseUid: 'firebase-anon',
+        email: null,
+        authProvider: 'anonymous',
+        isGuest: true,
+        role: 'GUEST',
+      }),
+    }));
+  });
+
+  it('links seeded user by email ONLY if email_verified is true and row has no firebaseUid', async () => {
+    const seededAdmin = {
+      id: 'seeded-admin-1',
+      email: 'admin@laptopmitra.com',
+      firebaseUid: null,
+      role: 'ADMIN',
+      status: 'ACTIVE',
+      emailVerified: null,
+    };
+    userFindUnique.mockResolvedValueOnce(null); // No user by firebaseUid
+    userFindFirst.mockResolvedValueOnce(seededAdmin); // Found unlinked seeded user
+    userUpdate.mockResolvedValueOnce({ ...seededAdmin, firebaseUid: 'firebase-admin-uid' });
+
+    await authService.syncUser(
+      {
+        uid: 'firebase-admin-uid',
+        email: 'admin@laptopmitra.com',
+        email_verified: true,
+        firebase: { sign_in_provider: 'password' },
+      },
+      {},
+    );
+
+    expect(userUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'seeded-admin-1' },
+      data: expect.objectContaining({
+        firebaseUid: 'firebase-admin-uid',
+      }),
+    }));
+  });
+
+  it('refuses email-based linking if email_verified is false', async () => {
+    const seededAdmin = {
+      id: 'seeded-admin-1',
+      email: 'admin@laptopmitra.com',
+      firebaseUid: null,
+      role: 'ADMIN',
       status: 'ACTIVE',
     };
+    userFindUnique.mockResolvedValueOnce(null);
+    userFindFirst.mockResolvedValueOnce(seededAdmin);
 
-    it('should successfully login user', async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      (jwtService.sign as jest.Mock).mockReturnValue('jwt-token');
-      (prismaService.refreshToken.create as jest.Mock).mockResolvedValue({});
-
-      const result = await authService.login(loginDto);
-
-      expect(result.user.email).toBe(loginDto.email);
-      expect(result.accessToken).toBe('jwt-token');
-      expect(prismaService.user.findUnique).toHaveBeenCalledWith({
-        where: { email: loginDto.email },
-        select: expect.any(Object),
-      });
-      expect(bcrypt.compare).toHaveBeenCalledWith(
-        loginDto.password,
-        mockUser.password,
-      );
-    });
-
-    it('should throw UnauthorizedException if user not found', async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
-
-      await expect(authService.login(loginDto)).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should throw UnauthorizedException if password is invalid', async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-
-      await expect(authService.login(loginDto)).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should throw UnauthorizedException if account is suspended', async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue({
-        ...mockUser,
-        status: 'SUSPENDED',
-      });
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-
-      await expect(authService.login(loginDto)).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should return both accessToken and refreshToken', async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      (prismaService.refreshToken.create as jest.Mock).mockResolvedValue({});
-
-      const result = await authService.login(loginDto);
-
-      expect(result).toHaveProperty('accessToken');
-      expect(result).toHaveProperty('refreshToken');
-      expect(result).toHaveProperty('user');
-      expect(typeof result.accessToken).toBe('string');
-      expect(typeof result.refreshToken).toBe('string');
-    });
-
-    it('should save refresh token to database', async () => {
-      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-      (prismaService.refreshToken.create as jest.Mock).mockResolvedValue({});
-
-      await authService.login(loginDto);
-
-      expect(prismaService.refreshToken.create).toHaveBeenCalledWith({
-        data: {
-          userId: mockUser.id,
-          token: 'jwt-token',
-          expiresAt: expect.any(Date),
-        },
-      });
-    });
-  });
-
-  describe('guestLogin', () => {
-    it('creates a non-privileged guest user and persists its refresh token', async () => {
-      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-random-password');
-      (prismaService.user.create as jest.Mock).mockResolvedValue({
-        id: 'guest-1',
-        name: 'Guest',
-        email: 'guest@example.invalid',
-        role: 'USER',
-      });
-      (prismaService.refreshToken.create as jest.Mock).mockResolvedValue({});
-
-      const result = await authService.guestLogin();
-
-      expect(prismaService.user.create).toHaveBeenCalledWith({
-        data: {
-          name: 'Guest',
-          email: expect.stringMatching(/^guest-[0-9a-f-]+@guest\.laptopmitra\.invalid$/),
-          password: 'hashed-random-password',
-          role: 'USER',
-          referralCode: 'REF1234',
-        },
-      });
-      expect(result).toMatchObject({
-        accessToken: 'jwt-token',
-        refreshToken: 'jwt-token',
-        user: { id: 'guest-1', name: 'Guest', role: 'USER' },
-      });
-      expect(prismaService.refreshToken.create).toHaveBeenCalledWith({
-        data: {
-          userId: 'guest-1',
-          token: 'jwt-token',
-          expiresAt: expect.any(Date),
-        },
-      });
-    });
-  });
-
-  describe('refreshToken', () => {
-    const mockRefreshToken = {
-      id: 'token-1',
-      token: 'refresh-token',
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      user: {
-        id: 'user-1',
-        email: 'john@example.com',
-        role: 'USER',
-        status: 'ACTIVE',
+    await authService.syncUser(
+      {
+        uid: 'firebase-unverified-attacker',
+        email: 'admin@laptopmitra.com',
+        email_verified: false,
+        firebase: { sign_in_provider: 'password' },
       },
-    };
+      {},
+    );
 
-    it('should return new tokens when refresh token is valid', async () => {
-      (prismaService.refreshToken.findUnique as jest.Mock).mockResolvedValue(mockRefreshToken);
-      (prismaService.refreshToken.delete as jest.Mock).mockResolvedValue({});
-      (prismaService.refreshToken.create as jest.Mock).mockResolvedValue({});
-      (jwtService.sign as jest.Mock).mockReturnValue('new-jwt-token');
-
-      const result = await authService.refreshToken('refresh-token');
-
-      expect(result.accessToken).toBe('new-jwt-token');
-      expect(result.refreshToken).toBe('new-jwt-token');
-    });
-
-    it('should throw UnauthorizedException if refresh token not found', async () => {
-      (prismaService.refreshToken.findUnique as jest.Mock).mockResolvedValue(null);
-
-      await expect(authService.refreshToken('invalid-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should throw UnauthorizedException if refresh token is expired', async () => {
-      const expiredToken = {
-        ...mockRefreshToken,
-        expiresAt: new Date(Date.now() - 1000), // expired
-      };
-      (prismaService.refreshToken.findUnique as jest.Mock).mockResolvedValue(expiredToken);
-
-      await expect(authService.refreshToken('refresh-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should throw UnauthorizedException if user account is suspended', async () => {
-      const suspendedToken = {
-        ...mockRefreshToken,
-        user: { ...mockRefreshToken.user, status: 'SUSPENDED' },
-      };
-      (prismaService.refreshToken.findUnique as jest.Mock).mockResolvedValue(suspendedToken);
-
-      await expect(authService.refreshToken('refresh-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should invalidate old token and issue new one', async () => {
-      (prismaService.refreshToken.findUnique as jest.Mock).mockResolvedValue(mockRefreshToken);
-      (prismaService.refreshToken.delete as jest.Mock).mockResolvedValue({});
-      (prismaService.refreshToken.create as jest.Mock).mockResolvedValue({});
-      (jwtService.sign as jest.Mock).mockReturnValue('new-jwt-token');
-
-      await authService.refreshToken('refresh-token');
-
-      expect(prismaService.refreshToken.delete).toHaveBeenCalledWith({
-        where: { id: mockRefreshToken.id },
-      });
-      expect(prismaService.refreshToken.create).toHaveBeenCalled();
-    });
+    // Must NOT link to seeded-admin-1; must create a separate user
+    expect(userUpdate).not.toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'seeded-admin-1' },
+    }));
+    expect(userCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        firebaseUid: 'firebase-unverified-attacker',
+      }),
+    }));
   });
 
-  describe('logout', () => {
-    it('should delete refresh token', async () => {
-      (prismaService.refreshToken.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
-
-      const result = await authService.logout('user-1', 'refresh-token');
-
-      expect(result.message).toBe('Logged out successfully');
-      expect(prismaService.refreshToken.deleteMany).toHaveBeenCalledWith({
-        where: { token: 'refresh-token', userId: 'user-1' },
-      });
+  it('never accepts a client-sent role, email or firebaseUid from the profile body', async () => {
+    userFindUnique.mockResolvedValue({
+      id: 'local-user-1',
+      firebaseUid: 'firebase-customer',
+      role: 'CUSTOMER',
+      isGuest: false,
+      status: 'ACTIVE',
+      emailVerified: null,
     });
+
+    await authService.syncUser(
+      {
+        uid: 'firebase-customer',
+        email: 'user@example.com',
+        email_verified: true,
+        firebase: { sign_in_provider: 'password' },
+      },
+      { name: 'Customer', role: 'ADMIN', email: 'hacked@admin.com', firebaseUid: 'spoofed' } as any,
+    );
+
+    const updateArgs = userUpdate.mock.calls[0][0];
+    expect(updateArgs.data.email).toBe('user@example.com'); // from token
+    expect(updateArgs.data).not.toHaveProperty('role');
+    expect(updateArgs.data).not.toHaveProperty('firebaseUid');
+  });
+
+  it('handles database errors by throwing ServiceUnavailableException with no synthetic users', async () => {
+    userFindUnique.mockRejectedValue(new Error('Connection pool exhausted'));
+
+    await expect(
+      authService.syncUser({
+        uid: 'firebase-fail',
+        email: 'fail@example.com',
+      }),
+    ).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it('rejects direct passwordless login calls', async () => {
+    await expect(authService.login({ email: 'admin@example.com' })).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects direct unverified registration calls', async () => {
+    await expect(authService.register({ email: 'new@example.com' })).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('handles race conditions during concurrent first-time logins', async () => {
+    const createdUser = {
+      id: 'user-concurrent-1',
+      firebaseUid: 'firebase-concurrent',
+      email: 'race@example.com',
+      role: 'CUSTOMER',
+      status: 'ACTIVE',
+      emailVerified: new Date(),
+    };
+    userFindUnique
+      .mockResolvedValueOnce(null) // first check by UID returns null
+      .mockResolvedValueOnce(createdUser); // recheck after unique conflict returns the created user
+
+    userFindFirst.mockResolvedValue(null);
+    userCreate.mockRejectedValueOnce(new Error('Unique constraint failed on the fields: (`firebaseUid`)'));
+
+    const user = await authService.syncUser({
+      uid: 'firebase-concurrent',
+      email: 'race@example.com',
+      email_verified: true,
+    });
+
+    expect(user).toMatchObject({ id: 'user-concurrent-1', firebaseUid: 'firebase-concurrent' });
   });
 });
