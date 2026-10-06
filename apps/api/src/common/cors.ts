@@ -24,9 +24,19 @@ export function isAllowedOrigin(
 
   const normalizedOrigin = origin.trim().replace(/\/+$/, '');
 
-  // 2. Allow explicitly configured origins
-  if (config.configuredOrigins.includes(normalizedOrigin) || config.configuredOrigins.includes(origin)) {
-    return true;
+  // 2. Allow explicitly configured origins (including wildcard subdomains like https://*.vercel.app)
+  for (const configured of config.configuredOrigins) {
+    if (configured === normalizedOrigin || configured === origin) {
+      return true;
+    }
+    if (configured.includes('*')) {
+      const pattern = configured
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*/g, '[a-zA-Z0-9-]+');
+      if (new RegExp(`^${pattern}$`).test(normalizedOrigin)) {
+        return true;
+      }
+    }
   }
 
   // 3. In non-production only, allow local and emulator development origins

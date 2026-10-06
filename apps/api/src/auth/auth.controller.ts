@@ -66,7 +66,8 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Local user profile synchronized' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async sync(@Req() req: any, @Body() body: SyncUserDto) {
-    return this.authService.syncUser(req.firebaseIdentity, body);
+    const user = await this.authService.syncUser(req.firebaseIdentity, body);
+    return { user };
   }
 
   @Get('profile')

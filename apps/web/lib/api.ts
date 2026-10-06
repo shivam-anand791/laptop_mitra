@@ -13,6 +13,7 @@ import {
   NotificationPreferences,
 } from './types';
 import { NEXT_PUBLIC_API_URL } from './config';
+import { auth } from './firebase';
 
 const API_BASE_URL = NEXT_PUBLIC_API_URL;
 
@@ -24,7 +25,21 @@ export class ApiError extends Error {
 }
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('lm_token') : null;
+  let token = typeof window !== 'undefined' ? localStorage.getItem('lm_token') : null;
+
+  // Seamlessly resolve fresh ID token if Firebase user is actively signed in
+  if (typeof window !== 'undefined' && auth?.currentUser) {
+    try {
+      const freshToken = await auth.currentUser.getIdToken();
+      if (freshToken) {
+        token = freshToken;
+        localStorage.setItem('lm_token', freshToken);
+      }
+    } catch {
+      // Retain stored token fallback
+    }
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -41,13 +56,28 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({ message: res.statusText }));
-      throw new ApiError(res.status, errData.message || `Request failed with status ${res.status}`, errData);
+      const message =
+        errData?.message ||
+        (res.status === 401
+          ? 'Session expired or unauthenticated. Please sign in again.'
+          : res.status === 403
+            ? 'Access forbidden.'
+            : res.status === 500
+              ? 'Backend service error. Please try again later.'
+              : `Request failed with status ${res.status}`);
+      throw new ApiError(res.status, message, errData);
     }
 
     return await res.json();
   } catch (err: any) {
     if (err instanceof ApiError) throw err;
-    throw new ApiError(0, err?.message || 'Network connection failed');
+    const isNetwork = typeof window !== 'undefined' && !navigator.onLine;
+    throw new ApiError(
+      0,
+      isNetwork
+        ? 'Cannot reach backend server. Please check your internet connection.'
+        : err?.message || 'Network connection failed'
+    );
   }
 }
 
@@ -165,14 +195,15 @@ export const api = {
   },
 
   async syncUser(data?: { name?: string; phone?: string; referralCode?: string }): Promise<{ user: User }> {
-    const res = await request<{ user: User }>('/auth/sync', {
+    const res = await request<any>('/auth/sync', {
       method: 'POST',
       body: JSON.stringify(data || {}),
     });
-    if (res?.user && typeof window !== 'undefined') {
-      localStorage.setItem('lm_user', JSON.stringify(res.user));
+    const user: User = (res?.user || res) as User;
+    if (user && typeof window !== 'undefined') {
+      localStorage.setItem('lm_user', JSON.stringify(user));
     }
-    return res;
+    return { user };
   },
 
   async getProfile(): Promise<User> {
