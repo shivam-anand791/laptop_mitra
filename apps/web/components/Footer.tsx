@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function Footer() {
   return (
@@ -43,13 +44,14 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
           {/* Brand Col */}
           <div className="lg:col-span-2 space-y-4">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#1D6FF2] flex items-center justify-center text-white font-black text-lg shadow-sm shadow-blue-500/20">
-                LM
-              </div>
-              <span className="text-2xl font-black text-white tracking-tight">
-                Laptop<span className="text-[#1D6FF2]">Mitra</span>
-              </span>
+            <Link href="/" className="inline-flex items-center bg-white px-3 py-1.5 rounded-xl shadow-xs transition-opacity hover:opacity-90" aria-label="LaptopMitra Home">
+              <Image
+                src="/logo.png"
+                alt="LaptopMitra"
+                width={150}
+                height={50}
+                className="h-8 sm:h-9 w-auto object-contain"
+              />
             </Link>
             <p className="text-xs leading-relaxed text-slate-400 max-w-sm">
               LaptopMitra is India&apos;s leading platform for certified pre-owned and enterprise refurbished laptops. Every device passes a rigorous 32-point engineering inspection with genuine OS licenses.

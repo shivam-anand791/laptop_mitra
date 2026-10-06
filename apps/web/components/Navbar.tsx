@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../lib/auth-context';
 import { useCart } from '../lib/cart-context';
@@ -31,16 +32,16 @@ export default function Navbar() {
       {/* ── Top Header Row: Logo, Search Box, Icon Actions, Quote Button ── */}
       <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-1 sm:gap-8">
-          {/* Logo (Item 2: Small blue circle icon + wordmark, no tagline) */}
-          <Link href="/" className="flex items-center gap-1.5 sm:gap-2 shrink-0 group">
-            <div className="w-7 h-7 rounded-full bg-[#1D6FF2] flex items-center justify-center text-white shadow-xs">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <span className="text-base sm:text-xl font-black tracking-tight text-[#0B1F4B]">
-              Laptop<span className="text-[#1D6FF2]">Mitra</span>
-            </span>
+          {/* Logo */}
+          <Link href="/" className="flex items-center shrink-0 py-1 transition-opacity hover:opacity-95" aria-label="LaptopMitra Home">
+            <Image
+              src="/logo.png"
+              alt="LaptopMitra"
+              width={160}
+              height={55}
+              priority
+              className="h-8 sm:h-9 w-auto object-contain"
+            />
           </Link>
 
           {/* Search Box (Item 3: Light blue-grey box with 8px radius, right search icon) */}

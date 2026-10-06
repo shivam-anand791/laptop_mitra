@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
 const navigation = [
@@ -38,13 +39,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200 dark:border-gray-700">
-            <Link href="/admin" className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              {!collapsed && <span className="text-xl font-bold text-gray-900 dark:text-white">LaptopMitra</span>}
+            <Link href="/admin" className="flex items-center py-1">
+              {collapsed ? (
+                <div className="w-8 h-8 bg-[#1D6FF2] rounded-lg flex items-center justify-center text-white font-black text-sm">
+                  LM
+                </div>
+              ) : (
+                <Image
+                  src="/logo.png"
+                  alt="LaptopMitra Admin"
+                  width={140}
+                  height={45}
+                  priority
+                  className="h-8 w-auto object-contain"
+                />
+              )}
             </Link>
             <button
               onClick={() => setCollapsed(!collapsed)}
