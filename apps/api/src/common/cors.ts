@@ -9,7 +9,7 @@ export function parseCorsOrigins(raw?: string): string[] {
   }
   return raw
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter((origin) => origin.length > 0);
 }
 
@@ -22,8 +22,10 @@ export function isAllowedOrigin(
     return true;
   }
 
+  const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+
   // 2. Allow explicitly configured origins
-  if (config.configuredOrigins.includes(origin)) {
+  if (config.configuredOrigins.includes(normalizedOrigin) || config.configuredOrigins.includes(origin)) {
     return true;
   }
 

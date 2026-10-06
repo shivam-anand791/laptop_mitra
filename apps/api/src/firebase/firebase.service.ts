@@ -96,67 +96,76 @@ export class FirebaseService {
       }
 
       const resolvedPath = candidatePaths.find((p) => existsSync(p));
-      if (!resolvedPath) {
-        throw new Error(
-          `Firebase service account file not found. Checked locations: ${candidatePaths.map((p) => `"${p}"`).join(', ')}`,
-        );
-      }
+      if (resolvedPath) {
+        let fileContent: string;
+        try {
+          fileContent = readFileSync(resolvedPath, 'utf8');
+        } catch (err: any) {
+          throw new Error(`Failed to read Firebase service account file at "${resolvedPath}": ${err.message}`);
+        }
 
-      let fileContent: string;
-      try {
-        fileContent = readFileSync(resolvedPath, 'utf8');
-      } catch (err: any) {
-        throw new Error(`Failed to read Firebase service account file at "${resolvedPath}": ${err.message}`);
-      }
+        let parsed: any;
+        try {
+          parsed = JSON.parse(fileContent);
+        } catch {
+          throw new Error(`Malformed JSON in Firebase service account file at "${resolvedPath}"`);
+        }
 
-      let parsed: any;
-      try {
-        parsed = JSON.parse(fileContent);
-      } catch {
-        throw new Error(`Malformed JSON in Firebase service account file at "${resolvedPath}"`);
-      }
+        if (!parsed || typeof parsed !== 'object') {
+          throw new Error(`Firebase service account file at "${resolvedPath}" is not a valid JSON object`);
+        }
 
-      if (!parsed || typeof parsed !== 'object') {
-        throw new Error(`Firebase service account file at "${resolvedPath}" is not a valid JSON object`);
-      }
+        if (parsed.type !== 'service_account') {
+          throw new Error(
+            `Firebase service account at "${resolvedPath}" has invalid type "${parsed.type}" (expected "service_account")`,
+          );
+        }
 
-      if (parsed.type !== 'service_account') {
-        throw new Error(
-          `Firebase service account at "${resolvedPath}" has invalid type "${parsed.type}" (expected "service_account")`,
-        );
-      }
+        if (!parsed.project_id || typeof parsed.project_id !== 'string') {
+          throw new Error(`Firebase service account at "${resolvedPath}" is missing "project_id" field`);
+        }
 
-      if (!parsed.project_id || typeof parsed.project_id !== 'string') {
-        throw new Error(`Firebase service account at "${resolvedPath}" is missing "project_id" field`);
-      }
+        if (!parsed.client_email || typeof parsed.client_email !== 'string') {
+          throw new Error(`Firebase service account at "${resolvedPath}" is missing "client_email" field`);
+        }
 
-      if (!parsed.client_email || typeof parsed.client_email !== 'string') {
-        throw new Error(`Firebase service account at "${resolvedPath}" is missing "client_email" field`);
-      }
+        if (!parsed.private_key || typeof parsed.private_key !== 'string') {
+          throw new Error(`Firebase service account at "${resolvedPath}" is missing "private_key" field`);
+        }
 
-      if (!parsed.private_key || typeof parsed.private_key !== 'string') {
-        throw new Error(`Firebase service account at "${resolvedPath}" is missing "private_key" field`);
-      }
+        const envProjectId =
+          this.configService.get<string>('FIREBASE_PROJECT_ID') || process.env.FIREBASE_PROJECT_ID;
+        if (envProjectId && envProjectId.trim() !== parsed.project_id.trim()) {
+          throw new Error(
+            `Firebase project mismatch: service account has project_id "${parsed.project_id}", but FIREBASE_PROJECT_ID is "${envProjectId}"`,
+          );
+        }
 
-      const envProjectId =
-        this.configService.get<string>('FIREBASE_PROJECT_ID') || process.env.FIREBASE_PROJECT_ID;
-      if (envProjectId && envProjectId.trim() !== parsed.project_id.trim()) {
-        throw new Error(
-          `Firebase project mismatch: service account has project_id "${parsed.project_id}", but FIREBASE_PROJECT_ID is "${envProjectId}"`,
-        );
-      }
+        const formattedKey = parsed.private_key.trim().replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');
 
-      const formattedKey = parsed.private_key.trim().replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');
-
-      return {
-        credential: cert({
+        return {
+          credential: cert({
+            projectId: parsed.project_id,
+            clientEmail: parsed.client_email,
+            privateKey: formattedKey,
+          }),
           projectId: parsed.project_id,
           clientEmail: parsed.client_email,
-          privateKey: formattedKey,
-        }),
-        projectId: parsed.project_id,
-        clientEmail: parsed.client_email,
-      };
+        };
+      } else {
+        const hasEnvCreds =
+          !!(this.configService.get<string>('FIREBASE_PRIVATE_KEY') || process.env.FIREBASE_PRIVATE_KEY) &&
+          !!(this.configService.get<string>('FIREBASE_PROJECT_ID') || process.env.FIREBASE_PROJECT_ID);
+
+        if (!hasEnvCreds) {
+          throw new Error(
+            `Firebase service account file not found. Checked locations: ${candidatePaths.map((p) => `"${p}"`).join(', ')}`,
+          );
+        }
+        this.logger.warn(
+          `Firebase service account file not found at configured path "${trimmedPath}". Gracefully falling back to environment variables.`,
+        );
+      }
     }
 
     const projectId =
