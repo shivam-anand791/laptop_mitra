@@ -53,12 +53,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (fbUser) {
           try {
             const token = await fbUser.getIdToken();
-            localStorage.setItem('lm_token', token);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('lm_token', token);
+            }
             const res = await api.syncUser();
             setUser(res.user);
           } catch (err) {
             console.warn('Failed to sync Firebase token with backend profile:', err);
           }
+        } else {
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('lm_token');
+            localStorage.removeItem('lm_user');
+          }
+          setUser(null);
         }
         setIsLoading(false);
       });
