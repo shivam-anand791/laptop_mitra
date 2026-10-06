@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import CustomerLayout from '../../components/CustomerLayout';
 import { useAuth } from '../../lib/auth-context';
@@ -51,10 +52,17 @@ export default function RegisterPage() {
     <CustomerLayout>
       <div className="bg-[#F8FAFC] min-h-[80vh] flex items-center justify-center py-12 sm:py-16 px-4">
         <div className="max-w-md w-full bg-white p-8 sm:p-10 rounded-3xl border border-[#E4E9F2] shadow-sm space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 bg-[#0B1F4B] border border-blue-500/20 rounded-2xl flex items-center justify-center text-white font-black text-lg mx-auto shadow-sm">
-              <span className="text-[#1D6FF2]">LM</span>
-            </div>
+          <div className="text-center space-y-3">
+            <Link href="/" className="inline-block transition-opacity hover:opacity-90">
+              <Image
+                src="/logo.png"
+                alt="LaptopMitra"
+                width={180}
+                height={60}
+                className="h-10 sm:h-11 w-auto mx-auto object-contain"
+                priority
+              />
+            </Link>
             <h1 className="text-2xl font-black text-[#0B1F4B] tracking-tight">
               Create Account
             </h1>
