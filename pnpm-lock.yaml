@@ -51,6 +51,9 @@ importers:
       class-validator:
         specifier: ^0.14.0
         version: 0.14.4
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
       firebase-admin:
         specifier: ^13.10.0
         version: 13.10.0
