@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type DiscountValidationResponse = {
@@ -8,6 +8,13 @@ export type DiscountValidationResponse = {
   discountAmount: number;
   message: string;
 };
+
+export interface OrderDiscountResult {
+  id: string;
+  code: string;
+  type: 'percentage' | 'fixed' | 'free_shipping';
+  discountAmountPaise: number;
+}
 
 @Injectable()
 export class DiscountService {
@@ -26,7 +33,7 @@ export class DiscountService {
       return this.invalidResult('Cart total must be a valid positive number');
     }
 
-    const discountCode = await this.prisma.discountCode.findFirst({
+    const discountCode: any = await this.prisma.discountCode.findFirst({
       where: {
         code: {
           equals: normalizedCode,
@@ -63,7 +70,10 @@ export class DiscountService {
     const discountValue = Number(discountCode.value);
 
     if (discountType === 'percentage') {
-      const discountAmount = Number((total * (discountValue / 100)).toFixed(2));
+      const uncapped = Number((total * (discountValue / 100)).toFixed(2));
+      const discountAmount = discountCode.maxDiscountValue == null
+        ? uncapped
+        : Math.min(uncapped, Number(discountCode.maxDiscountValue));
 
       return {
         valid: true,
@@ -99,39 +109,131 @@ export class DiscountService {
     return this.invalidResult('Invalid discount code type');
   }
 
-  async getReferralStats(userId: string) {
-    try {
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
+  async validateOrderDiscount(
+    transaction: any,
+    code: string | undefined,
+    userId: string,
+    items: Array<{ productId: string; categoryId: string | null; quantity: number; unitPricePaise: number }>,
+    subtotalPaise: number,
+  ): Promise<OrderDiscountResult | null> {
+    const normalizedCode = code?.trim();
+    if (!normalizedCode) return null;
+
+    const discount = await transaction.discountCode.findFirst({
+      where: { code: { equals: normalizedCode, mode: 'insensitive' } },
+    });
+    if (!discount || !discount.isActive) {
+      throw new BadRequestException('Invalid or inactive discount code');
+    }
+
+    const now = new Date();
+    if (discount.validFrom && now < new Date(discount.validFrom)) {
+      throw new BadRequestException('Discount code not yet valid');
+    }
+    if (discount.validUntil && now > new Date(discount.validUntil)) {
+      throw new BadRequestException('Discount code expired');
+    }
+    if (discount.maxUses != null && discount.uses >= discount.maxUses) {
+      throw new BadRequestException('Discount code has reached maximum usage');
+    }
+    if (discount.maxUsesPerUser != null) {
+      const userUses = await transaction.discountRedemption.count({
+        where: { discountCodeId: discount.id, userId },
       });
-      if (user) {
-        return {
-          referralCode: user.referralCode || `MITRA-${user.id.slice(0, 6).toUpperCase()}`,
-          referralTier: user.referralTier || 'GOLD',
-          referralEarnings: typeof user.referralEarnings === 'number' ? user.referralEarnings : parseFloat(user.referralEarnings?.toString() || '0') || 2500,
-          referredUsersCount: 5,
-          referralLinkClickedCount: user.referralLinkClickedCount || 42,
-          payoutHistory: [
-            { id: 'pay-001', amount: 1500, date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], status: 'PAID' },
-            { id: 'pay-002', amount: 1000, date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], status: 'PROCESSING' },
-          ],
-        };
+      if (userUses >= discount.maxUsesPerUser) {
+        throw new BadRequestException('Discount code usage limit reached for this account');
       }
-    } catch {
-      // fallback
+    }
+
+    const minimumPaise = discount.minOrderValue == null
+      ? 0
+      : Math.round(Number(discount.minOrderValue) * 100);
+    if (subtotalPaise < minimumPaise) {
+      throw new BadRequestException('Order does not meet the minimum value for this discount');
+    }
+
+    const applicableTo = discount.appliesTo?.toLowerCase() || 'all';
+    const applicableIds = new Set(
+      String(discount.appliesToIds || '').split(',').map((id) => id.trim()).filter(Boolean),
+    );
+    let eligibleSubtotalPaise = 0;
+    for (const item of items) {
+      const applies = applicableTo === 'all'
+        || (applicableTo === 'product' && applicableIds.has(item.productId))
+        || (applicableTo === 'category' && item.categoryId !== null && applicableIds.has(item.categoryId));
+      if (applies) eligibleSubtotalPaise += item.unitPricePaise * item.quantity;
+    }
+    if (eligibleSubtotalPaise === 0) {
+      throw new BadRequestException('Discount code does not apply to the items in this order');
+    }
+
+    const type = discount.type as OrderDiscountResult['type'];
+    const value = Number(discount.value);
+    if (!Number.isFinite(value) || value < 0 || !['percentage', 'fixed', 'free_shipping'].includes(type)) {
+      throw new BadRequestException('Discount code has invalid configuration');
+    }
+
+    let discountAmountPaise = 0;
+    if (type === 'percentage') {
+      discountAmountPaise = Math.round(eligibleSubtotalPaise * value / 100);
+      if (discount.maxDiscountValue != null) {
+        discountAmountPaise = Math.min(
+          discountAmountPaise,
+          Math.round(Number(discount.maxDiscountValue) * 100),
+        );
+      }
+    } else if (type === 'fixed') {
+      discountAmountPaise = Math.min(Math.round(value * 100), eligibleSubtotalPaise);
     }
 
     return {
-      referralCode: `MITRA-${userId.slice(0, 6).toUpperCase()}`,
-      referralTier: 'GOLD',
-      referralEarnings: 2500,
-      referredUsersCount: 5,
-      referralLinkClickedCount: 42,
-      payoutHistory: [
-        { id: 'pay-001', amount: 1500, date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], status: 'PAID' },
-        { id: 'pay-002', amount: 1000, date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], status: 'PROCESSING' },
-      ],
+      id: discount.id,
+      code: discount.code,
+      type,
+      discountAmountPaise,
     };
+  }
+
+  async consumeOrderDiscount(transaction: any, discountId: string, userId: string, orderId: string) {
+    const discount = await transaction.discountCode.findUnique({ where: { id: discountId } });
+    if (!discount || !discount.isActive) {
+      throw new BadRequestException('Discount code is no longer available');
+    }
+
+    const updateWhere: any = { id: discountId, isActive: true };
+    if (discount.maxUses != null) updateWhere.uses = { lt: discount.maxUses };
+    const consumed = await transaction.discountCode.updateMany({
+      where: updateWhere,
+      data: { uses: { increment: 1 } },
+    });
+    if (consumed.count !== 1) {
+      throw new BadRequestException('Discount code has reached maximum usage');
+    }
+
+    await transaction.discountRedemption.create({
+      data: { discountCodeId: discountId, userId, orderId },
+    });
+  }
+
+  async getReferralStats(userId: string) {
+    try {
+      const [user, referredUsersCount] = await Promise.all([
+        this.prisma.user.findUnique({ where: { id: userId } }),
+        (this.prisma as any).referralRedemption.count({ where: { referrerUserId: userId } }),
+      ]);
+      if (!user) throw new NotFoundException('User not found');
+      return {
+        referralCode: user.referralCode,
+        referralTier: user.referralTier,
+        referralEarnings: Number(user.referralEarnings),
+        referredUsersCount,
+        referralLinkClickedCount: user.referralLinkClickedCount,
+        payoutHistory: [],
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new ServiceUnavailableException('Referral statistics are temporarily unavailable');
+    }
   }
 
   private invalidResult(message: string): DiscountValidationResponse {

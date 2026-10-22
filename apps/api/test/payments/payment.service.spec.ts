@@ -20,6 +20,16 @@ jest.mock('razorpay', () => {
         receipt: opts.receipt,
       })),
     },
+    payments: {
+      fetch: jest.fn().mockImplementation(async (id) => ({
+        id,
+        order_id: 'order_rzp_100',
+        amount: 125000,
+        currency: 'INR',
+        status: 'captured',
+      })),
+      refund: jest.fn().mockResolvedValue({ id: 'rfnd_test_1', status: 'processed' }),
+    },
   }));
 });
 
@@ -41,14 +51,20 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       payment: {
         create: jest.fn(),
         findFirst: jest.fn(),
         findMany: jest.fn(),
-        updateMany: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
-      $transaction: jest.fn().mockImplementation(async (promises) => Promise.all(promises)),
+      $transaction: jest.fn().mockImplementation(async (callbackOrPromises, options) => {
+        if (typeof callbackOrPromises === 'function') {
+          return callbackOrPromises(prisma);
+        }
+        return Promise.all(callbackOrPromises);
+      }),
     };
     notificationService = {
       dispatchPaymentUpdate: jest.fn().mockResolvedValue(undefined),
@@ -69,6 +85,9 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         finalAmount: 79999.50,
         status: 'PENDING',
         paymentStatus: 'PENDING',
+        paymentMethod: 'razorpay',
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 60_000),
         razorpayOrderId: null,
       };
       prisma.order.findUnique.mockResolvedValue(dbOrder);
@@ -98,6 +117,9 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         finalAmount: 50000,
         status: 'PENDING',
         paymentStatus: 'PENDING',
+        paymentMethod: 'razorpay',
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 60_000),
       };
       prisma.order.findUnique.mockResolvedValue(victimOrder);
 
@@ -152,6 +174,9 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         finalAmount: 45000,
         status: 'PENDING',
         paymentStatus: 'PENDING',
+        paymentMethod: 'razorpay',
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 60_000),
         razorpayOrderId: 'order_rzp_existing_123',
       };
       prisma.order.findUnique.mockResolvedValue(dbOrder);
@@ -159,12 +184,182 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         id: 'pay-existing',
         razorpayOrderId: 'order_rzp_existing_123',
         status: 'PENDING',
+        orderId: 'order-existing',
+        amount: 4500000,
+        currency: 'INR',
       });
 
       const res = await paymentService.createOrderForUser('order-existing', 'user-1', 'CUSTOMER');
       expect(res.id).toBe('order_rzp_existing_123');
       expect(res.amount).toBe(4500000);
       expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Browser payment verification is bound to its persisted order', () => {
+    const paymentId = 'pay_test_100';
+    const orderId = 'order-100';
+    const razorpayOrderId = 'order_rzp_100';
+    const secret = 'secret1234567890';
+    const signatureFor = (order: string, payment: string) =>
+      crypto.createHmac('sha256', secret).update(`${order}|${payment}`).digest('hex');
+    const makePendingOrder = (overrides: Record<string, any> = {}) => ({
+      id: orderId,
+      userId: 'user-1',
+      finalAmount: 1250,
+      status: 'PENDING',
+      paymentStatus: 'PENDING',
+      razorpayOrderId,
+      paymentMethod: 'razorpay',
+      inventoryStatus: 'RESERVED',
+      reservationExpiresAt: new Date(Date.now() + 60_000),
+      payments: [{
+        id: 'payment-record-1',
+        orderId,
+        razorpayOrderId,
+        razorpayPaymentId: null,
+        amount: 125000,
+        currency: 'INR',
+        status: 'PENDING',
+      }],
+      ...overrides,
+    });
+
+    it('completes a captured payment only for the matching persisted order and payment record', async () => {
+      prisma.order.findUnique.mockResolvedValue(makePendingOrder());
+
+      const result = await paymentService.verifyPayment(
+        orderId,
+        razorpayOrderId,
+        paymentId,
+        signatureFor(razorpayOrderId, paymentId),
+        'user-1',
+        'CUSTOMER',
+      );
+
+      expect(result.success).toBe(true);
+      expect((paymentService as any).razorpay.payments.fetch).toHaveBeenCalledWith(paymentId);
+      expect(prisma.payment.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'payment-record-1',
+          orderId,
+          razorpayOrderId,
+          status: 'PENDING',
+          razorpayPaymentId: null,
+        }),
+      }));
+      expect(prisma.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ id: orderId, razorpayOrderId, status: 'PENDING' }),
+        data: expect.objectContaining({ paymentStatus: 'COMPLETED', status: 'CONFIRMED', paymentId }),
+      }));
+    });
+
+    it('rejects a Razorpay order ID from another LaptopMitra order before checking the provider', async () => {
+      prisma.order.findUnique.mockResolvedValue(makePendingOrder());
+
+      await expect(paymentService.verifyPayment(
+        orderId,
+        'order_rzp_other',
+        paymentId,
+        signatureFor('order_rzp_other', paymentId),
+        'user-1',
+        'CUSTOMER',
+      )).rejects.toThrow(BadRequestException);
+      expect((paymentService as any).razorpay.payments.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects a payment ID whose provider order association differs', async () => {
+      prisma.order.findUnique.mockResolvedValue(makePendingOrder());
+      (paymentService as any).razorpay.payments.fetch.mockResolvedValue({
+        id: paymentId,
+        order_id: 'order_rzp_other',
+        amount: 125000,
+        currency: 'INR',
+        status: 'captured',
+      });
+
+      await expect(paymentService.verifyPayment(
+        orderId,
+        razorpayOrderId,
+        paymentId,
+        signatureFor(razorpayOrderId, paymentId),
+        'user-1',
+        'CUSTOMER',
+      )).rejects.toThrow(BadRequestException);
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects missing payment records and invalid signatures', async () => {
+      prisma.order.findUnique.mockResolvedValueOnce(makePendingOrder({ payments: [] }));
+      await expect(paymentService.verifyPayment(
+        orderId, razorpayOrderId, paymentId, signatureFor(razorpayOrderId, paymentId), 'user-1', 'CUSTOMER',
+      )).rejects.toThrow(BadRequestException);
+
+      prisma.order.findUnique.mockResolvedValueOnce(makePendingOrder());
+      await expect(paymentService.verifyPayment(
+        orderId, razorpayOrderId, paymentId, 'invalid-signature', 'user-1', 'CUSTOMER',
+      )).rejects.toThrow(BadRequestException);
+      expect((paymentService as any).razorpay.payments.fetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects another user, non-captured payments, amount mismatches, and cancelled orders', async () => {
+      prisma.order.findUnique.mockResolvedValueOnce(makePendingOrder({ userId: 'user-2' }));
+      await expect(paymentService.verifyPayment(
+        orderId, razorpayOrderId, paymentId, signatureFor(razorpayOrderId, paymentId), 'user-1', 'CUSTOMER',
+      )).rejects.toThrow(ForbiddenException);
+
+      prisma.order.findUnique.mockResolvedValueOnce(makePendingOrder({ status: 'CANCELLED' }));
+      await expect(paymentService.verifyPayment(
+        orderId, razorpayOrderId, paymentId, signatureFor(razorpayOrderId, paymentId), 'user-1', 'CUSTOMER',
+      )).rejects.toThrow();
+
+      prisma.order.findUnique.mockResolvedValue(makePendingOrder());
+      (paymentService as any).razorpay.payments.fetch.mockResolvedValueOnce({
+        order_id: razorpayOrderId, amount: 125000, currency: 'INR', status: 'authorized',
+      });
+      await expect(paymentService.verifyPayment(
+        orderId, razorpayOrderId, paymentId, signatureFor(razorpayOrderId, paymentId), 'user-1', 'CUSTOMER',
+      )).rejects.toThrow(BadRequestException);
+
+      (paymentService as any).razorpay.payments.fetch.mockResolvedValueOnce({
+        order_id: razorpayOrderId, amount: 100, currency: 'INR', status: 'captured',
+      });
+      await expect(paymentService.verifyPayment(
+        orderId, razorpayOrderId, paymentId, signatureFor(razorpayOrderId, paymentId), 'user-1', 'CUSTOMER',
+      )).rejects.toThrow(BadRequestException);
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent for the same completed payment and rejects a conflicting payment', async () => {
+      prisma.order.findUnique.mockResolvedValueOnce(makePendingOrder({
+        status: 'CONFIRMED', paymentStatus: 'COMPLETED', paymentId: paymentId,
+      }));
+      const duplicate = await paymentService.verifyPayment(
+        orderId, razorpayOrderId, paymentId, 'already-stored', 'user-1', 'CUSTOMER',
+      );
+      expect(duplicate.success).toBe(true);
+
+      prisma.order.findUnique.mockResolvedValueOnce(makePendingOrder({
+        status: 'CONFIRMED', paymentStatus: 'COMPLETED', paymentId: 'pay_other',
+      }));
+      await expect(paymentService.verifyPayment(
+        orderId, razorpayOrderId, paymentId, signatureFor(razorpayOrderId, paymentId), 'user-1', 'CUSTOMER',
+      )).rejects.toThrow();
+      expect((paymentService as any).razorpay.payments.fetch).not.toHaveBeenCalled();
+    });
+
+    it('does not report success when a conditional database update loses a race or fails', async () => {
+      prisma.order.findUnique.mockResolvedValue(makePendingOrder());
+      prisma.payment.updateMany.mockResolvedValueOnce({ count: 0 });
+      await expect(paymentService.verifyPayment(
+        orderId, razorpayOrderId, paymentId, signatureFor(razorpayOrderId, paymentId), 'user-1', 'CUSTOMER',
+      )).rejects.toThrow();
+
+      prisma.payment.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.order.updateMany.mockResolvedValueOnce({ count: 0 });
+      await expect(paymentService.verifyPayment(
+        orderId, razorpayOrderId, paymentId, signatureFor(razorpayOrderId, paymentId), 'user-1', 'CUSTOMER',
+      )).rejects.toThrow();
     });
   });
 

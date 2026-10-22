@@ -26,6 +26,7 @@ export class OrderController {
       phone?: string;
       notes?: string;
       email?: string;
+      paymentMethod?: string;
     },
   ) {
     return this.orderService.createOrder(
@@ -37,6 +38,7 @@ export class OrderController {
       body.notes,
       body.email,
       user,
+      body.paymentMethod,
     );
   }
 

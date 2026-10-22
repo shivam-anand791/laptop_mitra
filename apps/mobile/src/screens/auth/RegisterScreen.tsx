@@ -3,7 +3,6 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityInd
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useRegister } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { useNavigation } from '@react-navigation/native';
 import { AuthNavigationProp } from '../../navigation/types';
@@ -37,8 +36,9 @@ type RegisterFormData = z.infer<typeof registerSchema>;
 
 export default function RegisterScreen() {
   const navigation = useNavigation<AuthNavigationProp>();
-  const { login: authLogin } = useAuth();
-  const { mutate: apiRegister, isPending, isError, error } = useRegister();
+  const { register: authRegister } = useAuth();
+  const [isPending, setIsPending] = useState(false);
+  const [authError, setAuthError] = useState('');
   const [selectedCountry, setSelectedCountry] = useState<Country>(COUNTRIES[0]!); // Default: India
 
   const {
@@ -69,26 +69,17 @@ export default function RegisterScreen() {
       ...(fullPhone ? { phone: fullPhone } : {}),
     };
 
-    apiRegister(registerPayload, {
-      onSuccess: async (response: any) => {
-        const { accessToken, refreshToken, user } = response;
-        await authLogin(accessToken, refreshToken, user);
-      },
-      onError: (err: Error) => {
-        // Parse NestJS validation error arrays into readable messages
-        let message = err.message || 'Registration failed. Please try again.';
-        try {
-          // NestJS ValidationPipe returns { statusCode, message: string[], error }
-          const parsed = JSON.parse(message);
-          if (Array.isArray(parsed.message)) {
-            message = parsed.message.join('\n');
-          }
-        } catch {
-          // Not JSON — use as-is
-        }
-        Alert.alert('Registration Failed', message);
-      },
-    });
+    setAuthError('');
+    setIsPending(true);
+    try {
+      await authRegister(registerPayload);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Registration failed. Please try again.';
+      setAuthError(message);
+      Alert.alert('Registration Failed', message);
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const goToLogin = () => navigation.navigate('Login');
@@ -227,11 +218,9 @@ export default function RegisterScreen() {
             <Text style={styles.hintText}>• One special character (@$!%*?&)</Text>
           </View>
 
-          {isError && error && (
+          {authError && (
             <View style={styles.apiError}>
-              <Text style={styles.apiErrorText}>
-                {error.message || 'Registration failed. Please try again.'}
-              </Text>
+              <Text style={styles.apiErrorText}>{authError}</Text>
             </View>
           )}
 

@@ -2,18 +2,19 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useChangePassword } from '../../hooks/useApi';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import { getFirebaseAuth } from '../../firebase/firebase';
 import { MainStackNavigationProp } from '../../navigation/types';
 
 export default function ChangePasswordScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
-  const changePassword = useChangePassword();
+  const [isPending, setIsPending] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!currentPassword) {
       Alert.alert('Error', 'Current password is required');
       return;
@@ -27,16 +28,23 @@ export default function ChangePasswordScreen() {
       return;
     }
 
-    changePassword.mutate(
-      { currentPassword, newPassword },
-      {
-        onSuccess: () => {
-          Alert.alert('Success', 'Password changed successfully');
-          navigation.goBack();
-        },
-        onError: (err) => Alert.alert('Error', err.message),
-      },
-    );
+    const currentUser = getFirebaseAuth().currentUser;
+    if (!currentUser?.email) {
+      Alert.alert('Error', 'Password changes are available after linking an email account.');
+      return;
+    }
+    setIsPending(true);
+    try {
+      const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+      await updatePassword(currentUser, newPassword);
+      Alert.alert('Success', 'Password changed successfully');
+      navigation.goBack();
+    } catch {
+      Alert.alert('Error', 'Could not change the password. Check your current password and try again.');
+    } finally {
+      setIsPending(false);
+    }
   };
 
   return (
@@ -81,12 +89,12 @@ export default function ChangePasswordScreen() {
         />
 
         <TouchableOpacity
-          style={[styles.submitButton, changePassword.isPending && styles.submitButtonDisabled]}
+          style={[styles.submitButton, isPending && styles.submitButtonDisabled]}
           onPress={handleSubmit}
-          disabled={changePassword.isPending}
+          disabled={isPending}
           activeOpacity={0.8}
         >
-          {changePassword.isPending ? (
+          {isPending ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
             <Text style={styles.submitButtonText}>Update Password</Text>

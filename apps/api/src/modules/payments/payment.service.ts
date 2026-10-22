@@ -4,6 +4,8 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
+  ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -47,7 +49,7 @@ export class PaymentService {
       throw new BadRequestException('orderId is required');
     }
 
-    const order = await this.prisma.order.findUnique({
+    const order: any = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { payments: true },
     });
@@ -69,6 +71,21 @@ export class PaymentService {
     if (order.paymentStatus === 'COMPLETED') {
       throw new BadRequestException('Order has already been paid');
     }
+    if (order.paymentStatus === 'FAILED') {
+      // A failed attempt may be retried while the same inventory reservation remains active.
+    } else if (order.paymentStatus !== 'PENDING') {
+      throw new BadRequestException('Order payment is not eligible for retry');
+    }
+    if (order.paymentMethod !== 'razorpay') {
+      throw new BadRequestException('This order does not use Razorpay');
+    }
+    if (
+      order.inventoryStatus !== 'RESERVED'
+      || !order.reservationExpiresAt
+      || new Date(order.reservationExpiresAt).getTime() <= Date.now()
+    ) {
+      throw new BadRequestException('Order inventory reservation has expired');
+    }
 
     // Calculate exact paise from server finalAmount (no float inaccuracies)
     const amountNum = typeof order.finalAmount === 'number'
@@ -84,8 +101,11 @@ export class PaymentService {
     if (order.razorpayOrderId) {
       const existingPayment = await this.prisma.payment.findFirst({
         where: {
+          orderId: order.id,
           razorpayOrderId: order.razorpayOrderId,
           status: 'PENDING',
+          amount: amountInPaise,
+          currency: 'INR',
         },
       });
 
@@ -110,7 +130,7 @@ export class PaymentService {
     await this.prisma.$transaction([
       this.prisma.order.update({
         where: { id: order.id },
-        data: { razorpayOrderId: rzpOrder.id },
+        data: { razorpayOrderId: rzpOrder.id, paymentStatus: 'PENDING', paymentId: null },
       }),
       this.prisma.payment.create({
         data: {
@@ -132,6 +152,65 @@ export class PaymentService {
     };
   }
 
+  async refundPayment(orderId: string, razorpayPaymentId: string): Promise<{ status: string }> {
+    const payment: any = await this.prisma.payment.findFirst({
+      where: { orderId, razorpayPaymentId },
+    });
+    if (!payment) throw new NotFoundException('Captured payment record not found');
+    if (payment.status === 'REFUNDED') return { status: 'REFUNDED' };
+    if (payment.status === 'REFUND_PENDING') return { status: 'REFUND_PENDING' };
+    if (payment.status !== 'COMPLETED') {
+      throw new BadRequestException('Payment is not eligible for refund');
+    }
+
+    const claimed = await (this.prisma as any).payment.updateMany({
+      where: { id: payment.id, orderId, razorpayPaymentId, status: 'COMPLETED' },
+      data: { status: 'REFUND_PENDING', refundStatus: 'pending' },
+    });
+    if (claimed.count !== 1) {
+      const latest: any = await this.prisma.payment.findFirst({ where: { id: payment.id } });
+      return { status: latest?.status === 'REFUNDED' ? 'REFUNDED' : 'REFUND_PENDING' };
+    }
+
+    let providerRefund: any;
+    try {
+      providerRefund = await this.razorpay.payments.refund(razorpayPaymentId, {
+        amount: Math.round(Number(payment.amount)),
+        notes: { orderId },
+      });
+    } catch {
+      await this.prisma.$transaction([
+        (this.prisma as any).payment.updateMany({
+          where: { id: payment.id, status: 'REFUND_PENDING' },
+          data: { status: 'REFUND_FAILED', refundStatus: 'failed' },
+        }),
+        (this.prisma as any).order.updateMany({
+          where: { id: orderId, paymentStatus: 'REFUND_PENDING' },
+          data: { paymentStatus: 'REFUND_FAILED' },
+        }),
+      ]);
+      return { status: 'REFUND_FAILED' };
+    }
+
+    const completed = providerRefund?.status === 'processed';
+    const nextStatus = completed ? 'REFUNDED' : 'REFUND_PENDING';
+    await this.prisma.$transaction([
+      (this.prisma as any).payment.updateMany({
+        where: { id: payment.id, status: 'REFUND_PENDING' },
+        data: {
+          status: nextStatus,
+          refundStatus: providerRefund?.status || 'pending',
+          refundId: providerRefund?.id || undefined,
+        },
+      }),
+      (this.prisma as any).order.updateMany({
+        where: { id: orderId, paymentStatus: 'REFUND_PENDING' },
+        data: { paymentStatus: nextStatus },
+      }),
+    ]);
+    return { status: nextStatus };
+  }
+
   async verifyPayment(
     orderId: string,
     razorpayOrderId: string,
@@ -140,8 +219,9 @@ export class PaymentService {
     userId: string,
     userRole: string,
   ) {
-    const order = await this.prisma.order.findUnique({
+    const order: any = await this.prisma.order.findUnique({
       where: { id: orderId },
+      include: { payments: true },
     });
 
     if (!order) {
@@ -152,6 +232,43 @@ export class PaymentService {
       throw new ForbiddenException('Forbidden: Access denied');
     }
 
+    if (order.status !== 'PENDING' || order.paymentStatus !== 'PENDING') {
+      if (order.paymentStatus === 'COMPLETED' && order.paymentId === razorpayPaymentId) {
+        return { success: true, message: 'Payment already verified' };
+      }
+      throw new ConflictException('Order is not eligible for payment verification');
+    }
+    if (
+      order.inventoryStatus !== 'RESERVED'
+      || !order.reservationExpiresAt
+      || new Date(order.reservationExpiresAt).getTime() <= Date.now()
+    ) {
+      throw new ConflictException('Order inventory reservation has expired');
+    }
+
+    // The order ID used to verify the HMAC must come from this persisted order,
+    // never from a browser-supplied value alone.
+    if (!order.razorpayOrderId || order.razorpayOrderId !== razorpayOrderId) {
+      throw new BadRequestException('Payment does not belong to this order');
+    }
+
+    const paymentRecord = order.payments?.find(
+      (payment: any) => payment.razorpayOrderId === order.razorpayOrderId
+        && payment.status === 'PENDING'
+        && !payment.razorpayPaymentId,
+    );
+    if (!paymentRecord) {
+      throw new BadRequestException('No pending payment exists for this order');
+    }
+
+    const expectedPaise = Math.round(Number(order.finalAmount) * 100);
+    if (
+      Math.round(Number(paymentRecord.amount)) !== expectedPaise
+      || String(paymentRecord.currency || '').toUpperCase() !== 'INR'
+    ) {
+      throw new BadRequestException('Stored payment amount does not match this order');
+    }
+
     const keySecret = this.configService.get<string>('RAZORPAY_KEY_SECRET');
     if (!keySecret) {
       throw new UnauthorizedException('Razorpay secret not configured');
@@ -160,7 +277,7 @@ export class PaymentService {
     // Timing-safe HMAC signature verification
     const expectedSignature = crypto
       .createHmac('sha256', keySecret)
-      .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+      .update(`${order.razorpayOrderId}|${razorpayPaymentId}`)
       .digest('hex');
 
     const sigBuffer = Buffer.from(razorpaySignature, 'utf8');
@@ -170,25 +287,64 @@ export class PaymentService {
       throw new BadRequestException('Invalid payment signature');
     }
 
-    await this.prisma.$transaction([
-      this.prisma.order.update({
-        where: { id: order.id },
-        data: {
-          paymentStatus: 'COMPLETED',
-          status: order.status === 'PENDING' ? 'CONFIRMED' : order.status,
-          paymentId: razorpayPaymentId,
-          razorpaySignature,
+    let providerPayment: any;
+    try {
+      providerPayment = await this.razorpay.payments.fetch(razorpayPaymentId);
+    } catch {
+      throw new ServiceUnavailableException('Payment status could not be confirmed');
+    }
+
+    if (
+      providerPayment?.order_id !== order.razorpayOrderId
+      || Number(providerPayment?.amount) !== expectedPaise
+      || String(providerPayment?.currency || '').toUpperCase() !== 'INR'
+      || providerPayment?.status !== 'captured'
+    ) {
+      throw new BadRequestException('Payment details do not match this order');
+    }
+
+    await this.prisma.$transaction(async (tx: any) => {
+      const paymentUpdate = await tx.payment.updateMany({
+        where: {
+          id: paymentRecord.id,
+          orderId: order.id,
+          razorpayOrderId: order.razorpayOrderId,
+          status: 'PENDING',
+          razorpayPaymentId: null,
         },
-      }),
-      this.prisma.payment.updateMany({
-        where: { orderId: order.id, razorpayOrderId },
         data: {
           status: 'COMPLETED',
           razorpayPaymentId,
           razorpaySignature,
         },
-      }),
-    ]);
+      });
+      if (paymentUpdate.count !== 1) {
+        throw new ConflictException('Payment was already processed');
+      }
+
+      const orderUpdate = await tx.order.updateMany({
+        where: {
+          id: order.id,
+          userId: order.userId,
+          razorpayOrderId: order.razorpayOrderId,
+          status: 'PENDING',
+          paymentStatus: 'PENDING',
+          inventoryStatus: 'RESERVED',
+          reservationExpiresAt: { gt: new Date() },
+        },
+        data: {
+          paymentStatus: 'COMPLETED',
+          status: 'CONFIRMED',
+          inventoryStatus: 'CONSUMED',
+          reservationExpiresAt: null,
+          paymentId: razorpayPaymentId,
+          razorpaySignature,
+        },
+      });
+      if (orderUpdate.count !== 1) {
+        throw new ConflictException('Order was already processed');
+      }
+    }, { isolationLevel: 'Serializable' });
 
     await this.notificationService.dispatchPaymentUpdate(
       order.userId,
@@ -250,126 +406,147 @@ export class PaymentService {
     }
 
     const event = payload?.event;
-    const paymentEntity = payload?.payload?.payment?.entity;
-
-    if (!paymentEntity) {
-      return { valid: true, event: 'ignored_no_entity' };
+    const refundEntity = payload?.payload?.refund?.entity;
+    if (event === 'refund.processed' || event === 'refund.failed') {
+      if (!refundEntity?.payment_id) return { valid: true, event: 'ignored_no_payment_id' };
+      const payment = await this.prisma.payment.findFirst({
+        where: { razorpayPaymentId: refundEntity.payment_id },
+      });
+      if (!payment) return { valid: true, event: 'refund_payment_not_found' };
+      const nextStatus = event === 'refund.processed' ? 'REFUNDED' : 'REFUND_FAILED';
+      await this.prisma.$transaction([
+        this.prisma.payment.updateMany({
+          where: { id: payment.id, status: 'REFUND_PENDING' },
+          data: {
+            status: nextStatus,
+            refundStatus: event === 'refund.processed' ? 'processed' : 'failed',
+            refundId: refundEntity.id || undefined,
+          },
+        }),
+        this.prisma.order.updateMany({
+          where: {
+            id: payment.orderId,
+            paymentId: refundEntity.payment_id,
+            paymentStatus: 'REFUND_PENDING',
+          },
+          data: { paymentStatus: nextStatus },
+        }),
+      ]);
+      return { valid: true, event: 'refund_status_updated' };
     }
 
+    const paymentEntity = payload?.payload?.payment?.entity;
+    if (!paymentEntity) return { valid: true, event: 'ignored_no_entity' };
     const razorpayPaymentId = paymentEntity.id;
     const razorpayOrderId = paymentEntity.order_id;
 
-    // Idempotency: if payment with this razorpayPaymentId is already COMPLETED, avoid re-processing
-    if (razorpayPaymentId) {
-      const existingPayment = await this.prisma.payment.findFirst({
-        where: { razorpayPaymentId, status: 'COMPLETED' },
+    if (event === 'payment.authorized') {
+      // Authorization alone is not a captured payment and cannot confirm an order.
+      return { valid: true, event: 'payment_authorized' };
+    }
+
+    const payment: any = razorpayOrderId
+      ? await this.prisma.payment.findFirst({
+        where: { razorpayOrderId },
+        include: { order: true },
+      })
+      : null;
+    if (!payment?.order) return { valid: true, event: 'payment_record_not_found' };
+    const order: any = payment.order;
+
+    if (payment.razorpayPaymentId === razorpayPaymentId
+      && ['COMPLETED', 'REFUND_PENDING', 'REFUNDED'].includes(payment.status)) {
+      return { valid: true, event: 'already_processed' };
+    }
+
+    if (event === 'payment.failed') {
+      await this.prisma.$transaction([
+        this.prisma.payment.updateMany({
+          where: { id: payment.id, status: { in: ['PENDING', 'FAILED'] } },
+          data: { status: 'FAILED', razorpayPaymentId },
+        }),
+        this.prisma.order.updateMany({
+          where: {
+            id: order.id,
+            razorpayOrderId,
+            status: 'PENDING',
+            paymentStatus: { in: ['PENDING', 'FAILED'] },
+          },
+          data: { paymentStatus: 'FAILED', paymentId: razorpayPaymentId },
+        }),
+      ]);
+      await this.notificationService.dispatchPaymentUpdate(order.userId, order.id, 'FAILED');
+      return { valid: true, event: 'payment_failed' };
+    }
+    if (event !== 'payment.captured') return { valid: true, event };
+
+    const expectedPaise = Math.round(Number(order.finalAmount) * 100);
+    const actualPaise = Number(paymentEntity.amount);
+    const paidCurrency = String(paymentEntity.currency || '').toUpperCase();
+    if (
+      actualPaise !== expectedPaise
+      || Math.round(Number(payment.amount)) !== expectedPaise
+      || String(payment.currency || '').toUpperCase() !== 'INR'
+      || paidCurrency !== 'INR'
+    ) {
+      this.logger.error(`Payment amount mismatch for order ${order.id}`);
+      await this.prisma.payment.updateMany({
+        where: { id: payment.id, status: { in: ['PENDING', 'FAILED'] } },
+        data: { status: 'FAILED', razorpayPaymentId },
       });
-      if (existingPayment) {
-        return { valid: true, event: 'already_processed', data: paymentEntity };
-      }
+      return { valid: false, event: 'amount_mismatch' };
     }
 
-    switch (event) {
-      case 'payment.authorized':
-      case 'payment.captured': {
-        if (!razorpayOrderId) {
-          return { valid: true, event: 'ignored_no_order_id' };
-        }
+    const providerOrderStillCurrent = order.razorpayOrderId === razorpayOrderId;
+    const orderCanBeConfirmed = providerOrderStillCurrent
+      && order.status === 'PENDING'
+      && ['PENDING', 'FAILED'].includes(order.paymentStatus)
+      && order.inventoryStatus === 'RESERVED';
 
-        const order = await this.prisma.order.findFirst({
-          where: { razorpayOrderId },
-        });
-
-        if (!order) {
-          this.logger.warn(`Webhook received for unknown Razorpay order: ${razorpayOrderId}`);
-          return { valid: true, event: 'order_not_found', data: paymentEntity };
-        }
-
-        // Idempotency: if order is already marked COMPLETED or matches this paymentId, avoid duplicate mutation
-        if (order.paymentStatus === 'COMPLETED' || (razorpayPaymentId && order.paymentId === razorpayPaymentId)) {
-          return { valid: true, event: 'already_processed', data: paymentEntity };
-        }
-
-        // Integrity: verify paid amount and currency against database order
-        const expectedPaise = Math.round(Number(order.finalAmount) * 100);
-        const actualPaise = Number(paymentEntity.amount);
-        const paidCurrency = String(paymentEntity.currency || '').toUpperCase();
-
-        if (actualPaise !== expectedPaise || paidCurrency !== 'INR') {
-          this.logger.error(
-            `Payment amount mismatch for order ${order.id}: expected ${expectedPaise} INR, received ${actualPaise} ${paidCurrency}`,
-          );
-          await this.prisma.payment.updateMany({
-            where: { razorpayOrderId },
-            data: { status: 'FAILED', razorpayPaymentId: paymentEntity.id },
-          });
-          return { valid: false, event: 'amount_mismatch' };
-        }
-
-        await this.prisma.$transaction([
-          this.prisma.order.update({
-            where: { id: order.id },
-            data: {
-              paymentStatus: 'COMPLETED',
-              status: order.status === 'PENDING' ? 'CONFIRMED' : order.status,
-              paymentId: paymentEntity.id,
-            },
-          }),
-          this.prisma.payment.updateMany({
-            where: { razorpayOrderId },
-            data: {
-              status: 'COMPLETED',
-              razorpayPaymentId: paymentEntity.id,
-            },
-          }),
-        ]);
-
-        await this.notificationService.dispatchPaymentUpdate(
-          order.userId,
-          order.id,
-          'COMPLETED',
-        );
-
-        return { valid: true, event: 'payment_completed', data: paymentEntity };
-      }
-
-      case 'payment.failed': {
-        const razorpayOrderId = paymentEntity.order_id;
-        if (razorpayOrderId) {
-          const order = await this.prisma.order.findFirst({
-            where: { razorpayOrderId },
-          });
-
-          await this.prisma.payment.updateMany({
-            where: { razorpayOrderId },
-            data: {
-              status: 'FAILED',
-              razorpayPaymentId: paymentEntity.id,
-            },
-          });
-
-          if (order && order.paymentStatus !== 'COMPLETED') {
-            await this.prisma.order.update({
-              where: { id: order.id },
-              data: {
-                paymentStatus: 'FAILED',
-                paymentId: paymentEntity.id,
-              },
-            });
-
-            await this.notificationService.dispatchPaymentUpdate(
-              order.userId,
-              order.id,
-              'FAILED',
-            );
-          }
-        }
-        return { valid: true, event: 'payment_failed', data: paymentEntity };
-      }
-
-      default:
-        return { valid: true, event, data: paymentEntity };
+    if (!orderCanBeConfirmed) {
+      await this.prisma.$transaction([
+        this.prisma.payment.updateMany({
+          where: { id: payment.id, status: { in: ['PENDING', 'FAILED'] } },
+          data: { status: 'COMPLETED', razorpayPaymentId },
+        }),
+        this.prisma.order.updateMany({
+          where: {
+            id: order.id,
+            paymentStatus: { in: ['PENDING', 'FAILED'] },
+            status: 'CANCELLED',
+          },
+          data: { paymentStatus: 'REFUND_PENDING', paymentId: razorpayPaymentId },
+        }),
+      ]);
+      const refund = await this.refundPayment(order.id, razorpayPaymentId);
+      return { valid: true, event: 'late_payment_refund', data: { refundStatus: refund.status } };
     }
+
+    await this.prisma.$transaction([
+      this.prisma.payment.updateMany({
+        where: { id: payment.id, status: { in: ['PENDING', 'FAILED'] } },
+        data: { status: 'COMPLETED', razorpayPaymentId },
+      }),
+      this.prisma.order.updateMany({
+        where: {
+          id: order.id,
+          razorpayOrderId,
+          status: 'PENDING',
+          paymentStatus: { in: ['PENDING', 'FAILED'] },
+          inventoryStatus: 'RESERVED',
+        },
+        data: {
+          paymentStatus: 'COMPLETED',
+          status: 'CONFIRMED',
+          inventoryStatus: 'CONSUMED',
+          reservationExpiresAt: null,
+          paymentId: razorpayPaymentId,
+        },
+      }),
+    ]);
+
+    await this.notificationService.dispatchPaymentUpdate(order.userId, order.id, 'COMPLETED');
+    return { valid: true, event: 'payment_completed' };
   }
 
   async getOrderForUser(orderId: string, userId: string) {

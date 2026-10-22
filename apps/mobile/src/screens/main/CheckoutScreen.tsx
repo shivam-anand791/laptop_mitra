@@ -115,7 +115,9 @@ export default function CheckoutScreen() {
         shippingAddress?: any;
         phone?: string;
         notes?: string;
+        paymentMethod?: 'razorpay' | 'cod';
       } = {
+        paymentMethod: 'cod',
         shippingAddress: {
           fullName: selectedAddress.fullName ?? '',
           phone: selectedAddress.phone ?? '',

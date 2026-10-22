@@ -2,7 +2,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityInd
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useGuestLogin, useLogin } from '../../hooks/useApi';
+import { useState } from 'react';
 import { useAuth } from '../../providers/AuthProvider';
 import { useNavigation } from '@react-navigation/native';
 import { AuthNavigationProp } from '../../navigation/types';
@@ -16,9 +16,10 @@ type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginScreen() {
   const navigation = useNavigation<AuthNavigationProp>();
-  const { login: authLogin } = useAuth();
-  const { mutate: apiLogin, isPending, isError, error } = useLogin();
-  const { mutateAsync: apiGuestLogin, isPending: isGuestPending } = useGuestLogin();
+  const { login: authLogin, guestLogin: authGuestLogin } = useAuth();
+  const [isPending, setIsPending] = useState(false);
+  const [isGuestPending, setIsGuestPending] = useState(false);
+  const [authError, setAuthError] = useState('');
   const isBusy = isPending || isGuestPending;
 
   const {
@@ -34,26 +35,31 @@ export default function LoginScreen() {
   });
 
   const onSubmit = async (data: LoginFormData) => {
-    apiLogin(data, {
-      onSuccess: async (response: any) => {
-        const { accessToken, refreshToken, user } = response;
-        await authLogin(accessToken, refreshToken, user);
-      },
-      onError: (err: Error) => {
-        Alert.alert('Login Failed', err.message || 'Invalid credentials. Please try again.');
-      },
-    });
+    setAuthError('');
+    setIsPending(true);
+    try {
+      await authLogin(data.email, data.password);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Invalid credentials. Please try again.';
+      setAuthError(message);
+      Alert.alert('Login Failed', message);
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const goToRegister = () => navigation.navigate('Register');
   const goToForgotPassword = () => navigation.navigate('ForgotPassword');
 
   const continueAsGuest = async () => {
+    setAuthError('');
+    setIsGuestPending(true);
     try {
-      const response = await apiGuestLogin();
-      await authLogin(response.accessToken, response.refreshToken, response.user);
+      await authGuestLogin();
     } catch (err) {
       Alert.alert('Guest Login Failed', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setIsGuestPending(false);
     }
   };
 
@@ -118,9 +124,9 @@ export default function LoginScreen() {
             {errors.password && <Text style={styles.errorText}>{errors.password.message}</Text>}
           </View>
 
-          {isError && error && (
+          {authError && (
             <View style={styles.apiError}>
-              <Text style={styles.apiErrorText}>Invalid credentials. Please try again.</Text>
+              <Text style={styles.apiErrorText}>{authError}</Text>
             </View>
           )}
 

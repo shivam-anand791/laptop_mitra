@@ -88,27 +88,30 @@ export class AuthService {
         }
       }
 
-      const name = profile.name === undefined ? undefined : profile.name.trim() || null;
-      const phone = profile.phone === undefined ? undefined : profile.phone.trim() || null;
+      const name = profile.name === undefined ? undefined : profile.name.trim();
+      const phone = profile.phone === undefined ? undefined : profile.phone.trim();
+      if (profile.name !== undefined && !name) {
+        throw new BadRequestException('Name cannot be empty');
+      }
 
       if (existingUser) {
         if (existingUser.status !== 'ACTIVE') {
           throw new UnauthorizedException('Account is inactive or suspended');
         }
 
-        const verifiedAt = identity.email_verified
-          ? existingUser.emailVerified ?? new Date()
-          : null;
-
         return await this.prisma.user.update({
           where: { id: existingUser.id },
           data: {
-            email: cleanEmail,
-            emailVerified: verifiedAt,
+            ...(cleanEmail && (identity.email_verified === true || !existingUser.email)
+              ? { email: cleanEmail }
+              : {}),
+            ...(identity.email_verified === true
+              ? { emailVerified: existingUser.emailVerified ?? new Date() }
+              : {}),
             authProvider: signInProvider,
             isGuest: existingUser.isGuest && !isGuest ? false : existingUser.isGuest,
             ...(name !== undefined ? { name } : {}),
-            ...(phone !== undefined ? { phone } : {}),
+            ...(phone !== undefined && phone.length > 0 ? { phone } : {}),
             ...(existingUser.isGuest && !isGuest ? { role: 'CUSTOMER' } : {}),
           },
           select: {

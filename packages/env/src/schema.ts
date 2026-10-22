@@ -54,18 +54,13 @@ export const envObjectSchema = z
       .refine(notPlaceholder, 'DATABASE_URL still contains a placeholder value'),
 
     // ---------------------------------------------------------------------
-    // Auth / JWT
+    // Firebase Authentication
     // ---------------------------------------------------------------------
-    JWT_ACCESS_SECRET: z
-      .string()
-      .min(32, 'JWT_ACCESS_SECRET must be at least 32 characters')
-      .refine(notPlaceholder, 'JWT_ACCESS_SECRET still contains a placeholder value'),
-    JWT_REFRESH_SECRET: z
-      .string()
-      .min(32, 'JWT_REFRESH_SECRET must be at least 32 characters')
-      .refine(notPlaceholder, 'JWT_REFRESH_SECRET still contains a placeholder value'),
-    JWT_ACCESS_TTL: z.string().default('15m'),
-    JWT_REFRESH_TTL: z.string().default('30d'),
+    FIREBASE_SERVICE_ACCOUNT_PATH: z.string().refine(notPlaceholder, 'FIREBASE_SERVICE_ACCOUNT_PATH still contains a placeholder value').optional(),
+    FIREBASE_PROJECT_ID: z.string().optional(),
+    FIREBASE_CLIENT_EMAIL: z.string().email().optional(),
+    FIREBASE_PRIVATE_KEY: z.string().refine(notPlaceholder, 'FIREBASE_PRIVATE_KEY still contains a placeholder value').optional(),
+    FIREBASE_CHECK_REVOKED: BooleanFromString.default('false'),
 
     /** bcrypt cost factor. 12 is a sane 2026 default; below 10 is rejected. */
     BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
@@ -160,6 +155,21 @@ export const envObjectSchema = z
   .superRefine((env, ctx) => {
     const isProd = env.NODE_ENV === 'production';
 
+    const hasServiceAccountPath = !!env.FIREBASE_SERVICE_ACCOUNT_PATH?.trim();
+    const hasAnyServiceAccountEnv = !!(
+      env.FIREBASE_PROJECT_ID || env.FIREBASE_CLIENT_EMAIL || env.FIREBASE_PRIVATE_KEY
+    );
+    const hasCompleteServiceAccountEnv = !!(
+      env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY
+    );
+    if (hasAnyServiceAccountEnv && !hasCompleteServiceAccountEnv && !hasServiceAccountPath) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['FIREBASE_PRIVATE_KEY'],
+        message: 'Configure all Firebase Admin environment credentials together or use FIREBASE_SERVICE_ACCOUNT_PATH.',
+      });
+    }
+
     // --- Hard stop: live Razorpay keys outside production -----------------
     const looksLive =
       env.RAZORPAY_KEY_ID.startsWith('rzp_live_') || !env.RAZORPAY_KEY_ID.startsWith('rzp_test_');
@@ -253,16 +263,6 @@ export const envObjectSchema = z
       });
     }
 
-    // --- Distinct JWT secrets --------------------------------------------
-    if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['JWT_REFRESH_SECRET'],
-        message:
-          'JWT_REFRESH_SECRET must differ from JWT_ACCESS_SECRET. Reusing one secret lets an ' +
-          'access token be replayed as a refresh token.',
-      });
-    }
   });
 
 /**

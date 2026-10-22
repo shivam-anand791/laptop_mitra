@@ -8,9 +8,6 @@ import { envSchema } from './schema.ts';
  * rules/07-ask-before-doing-this.md that we enforce in code.
  */
 
-const SECRET_A = 'a'.repeat(48);
-const SECRET_B = 'b'.repeat(48);
-
 /** A configuration that is expected to be valid. */
 const baseEnv = {
   NODE_ENV: 'development',
@@ -18,8 +15,6 @@ const baseEnv = {
   API_PUBLIC_URL: 'http://localhost:3001',
   CORS_ORIGINS: 'http://localhost:3000',
   DATABASE_URL: 'mysql://user:pass@localhost:3306/laptopmitra_dev',
-  JWT_ACCESS_SECRET: SECRET_A,
-  JWT_REFRESH_SECRET: SECRET_B,
   RAZORPAY_KEY_ID: 'rzp_test_abc123',
   RAZORPAY_KEY_SECRET: 'sandbox_secret_value',
   RAZORPAY_WEBHOOK_SECRET: 'webhook_secret_value',
@@ -142,10 +137,7 @@ describe('hard stop: sending real email (rules/07 #8)', () => {
 
 describe('secrets hygiene', () => {
   it('rejects placeholder values copied from .env.example', () => {
-    expectIssue(
-      { ...baseEnv, JWT_ACCESS_SECRET: 'changeme_generate_a_48_byte_random_secret_here' },
-      'JWT_ACCESS_SECRET',
-    );
+    expectIssue({ ...baseEnv, FIREBASE_PRIVATE_KEY: 'replace-me' }, 'FIREBASE_PRIVATE_KEY');
   });
 
   it('rejects a placeholder that appears after a valid-looking prefix', () => {
@@ -157,31 +149,29 @@ describe('secrets hygiene', () => {
   it('does not flag a legitimate high-entropy secret as a placeholder', () => {
     const result = envSchema.safeParse({
       ...baseEnv,
-      JWT_ACCESS_SECRET: 'Xk9-vQ2mZp7Lw4Rt8Ns1Bd6Hy3Jc0Ff5Gg_AaEeIiOoUu2Zz',
-      JWT_REFRESH_SECRET: 'Qw3-nMb8Kx2Vc5Zl9Pd4Rt7Hy1Jf6Gs0Aa_BbCcDdEeFf3Yy',
+      FIREBASE_PRIVATE_KEY: 'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKcwggSj',
     });
     assert.equal(result.success, true, JSON.stringify(result.error?.issues));
   });
 
-  it('rejects a JWT secret shorter than 32 characters', () => {
-    expectIssue({ ...baseEnv, JWT_ACCESS_SECRET: 'tooshort' }, 'JWT_ACCESS_SECRET');
+  it('rejects partial Firebase Admin environment credentials', () => {
+    expectIssue({ ...baseEnv, FIREBASE_PROJECT_ID: 'project-id' }, 'FIREBASE_PRIVATE_KEY');
   });
 
-  it('rejects reusing one secret for both access and refresh tokens', () => {
-    const msg = expectIssue(
-      { ...baseEnv, JWT_REFRESH_SECRET: SECRET_A },
-      'JWT_REFRESH_SECRET',
-    );
-    assert.match(msg, /must differ/i);
+  it('accepts a complete Firebase Admin environment credential set', () => {
+    const result = envSchema.safeParse({
+      ...baseEnv,
+      FIREBASE_PROJECT_ID: 'project-id',
+      FIREBASE_CLIENT_EMAIL: 'admin@project-id.iam.gserviceaccount.com',
+      FIREBASE_PRIVATE_KEY: 'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKcwggSj',
+    });
+    assert.equal(result.success, true, JSON.stringify(result.error?.issues));
   });
 
   it('rejects a non-mysql DATABASE_URL', () => {
     expectIssue({ ...baseEnv, DATABASE_URL: 'postgres://u:p@localhost/db' }, 'DATABASE_URL');
   });
 
-  it('rejects a bcrypt cost factor below 10', () => {
-    expectIssue({ ...baseEnv, BCRYPT_ROUNDS: '4' }, 'BCRYPT_ROUNDS');
-  });
 });
 
 describe('production configuration guards', () => {
@@ -245,7 +235,7 @@ describe('blank .env entries', () => {
   });
 
   it('still rejects a blank value for a genuinely required secret', () => {
-    expectIssue({ ...baseEnv, JWT_ACCESS_SECRET: '' }, 'JWT_ACCESS_SECRET');
+    expectIssue({ ...baseEnv, RAZORPAY_WEBHOOK_SECRET: '' }, 'RAZORPAY_WEBHOOK_SECRET');
   });
 
   it('still rejects a non-empty but malformed optional URL', () => {

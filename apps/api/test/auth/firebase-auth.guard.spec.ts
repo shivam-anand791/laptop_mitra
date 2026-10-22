@@ -1,7 +1,8 @@
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { ExecutionContext, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FirebaseAuthGuard } from '../../src/auth/guards/firebase-auth.guard';
 import { ALLOW_UNLINKED_FIREBASE_USER_KEY } from '../../src/decorators/allow-firebase-sync.decorator';
+import { CHECK_FIREBASE_REVOCATION_KEY } from '../../src/decorators/check-firebase-revocation.decorator';
 import { PUBLIC_ROUTE_KEY } from '../../src/decorators/public.decorator';
 
 jest.mock('../../src/firebase/firebase.service', () => ({
@@ -65,11 +66,22 @@ describe('FirebaseAuthGuard', () => {
     expect(verifyIdToken).not.toHaveBeenCalled();
   });
 
-  it.each(['invalid', 'expired', 'revoked'])('returns a generic 401 for a %s token', async (failure) => {
-    verifyIdToken.mockRejectedValue(new Error(`internal ${failure} detail`));
+  it.each([
+    'auth/invalid-id-token',
+    'auth/id-token-expired',
+    'auth/id-token-revoked',
+  ])('returns a generic 401 for %s', async (code) => {
+    verifyIdToken.mockRejectedValue(Object.assign(new Error('private verification detail'), { code }));
     const { context } = createContext('Bearer firebase-token');
 
     await expect(guard.canActivate(context)).rejects.toThrow('Unauthorized');
+  });
+
+  it('fails closed with a generic 503 when Firebase verification is unavailable', async () => {
+    verifyIdToken.mockRejectedValue(new Error('internal provider detail'));
+    const { context } = createContext('Bearer firebase-token');
+
+    await expect(guard.canActivate(context)).rejects.toThrow(ServiceUnavailableException);
   });
 
   it('maps a valid Firebase identity to the local req.user', async () => {
@@ -83,6 +95,14 @@ describe('FirebaseAuthGuard', () => {
     });
     expect(request.user).toEqual(localUser);
     expect(request.firebaseIdentity).toEqual(identity);
+  });
+
+  it('requests revocation checking when route metadata marks an operation sensitive', async () => {
+    metadata[CHECK_FIREBASE_REVOCATION_KEY] = true;
+    const { context } = createContext('Bearer firebase-token');
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(verifyIdToken).toHaveBeenCalledWith('firebase-token', true);
   });
 
   it('allows a verified identity without a local user only on the sync route', async () => {
@@ -101,6 +121,14 @@ describe('FirebaseAuthGuard', () => {
     const { context } = createContext('Bearer firebase-token');
 
     await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('does not map a Firebase UID to an unrelated local ID', async () => {
+    findUnique.mockResolvedValue(null);
+    const { context } = createContext('Bearer firebase-token');
+
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+    expect(findUnique).toHaveBeenCalledTimes(1);
   });
 
   it('skips token verification for a public route', async () => {

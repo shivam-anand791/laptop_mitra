@@ -19,7 +19,7 @@ jest.mock('firebase-admin/auth', () => ({
 }));
 
 describe('FirebaseService', () => {
-  const existingApp = { name: '[DEFAULT]' };
+  const existingApp = { name: '[DEFAULT]', options: { projectId: 'laptop-mitra' } };
   const verifyIdToken = jest.fn();
   const configValues: Record<string, string | undefined> = {};
 
@@ -117,13 +117,33 @@ describe('FirebaseService', () => {
     expect(getAuth).toHaveBeenCalledWith(existingApp);
   });
 
-  it('checks token revocation in production', async () => {
+  it('rejects reusing the default Firebase app for a different project', () => {
+    configValues.FIREBASE_SERVICE_ACCOUNT_PATH = './secrets/firebase-service-account.json';
+    (getApps as jest.Mock).mockReturnValue([existingApp]);
+    const mismatchApp = { name: '[DEFAULT]', options: { projectId: 'another-project' } };
+    (getApps as jest.Mock).mockReturnValue([mismatchApp]);
+
+    expect(() => new FirebaseService(createConfig())).toThrow(/Firebase project mismatch/);
+    expect(getAuth).not.toHaveBeenCalled();
+  });
+
+  it('does not add revocation lookup to every production request by default', async () => {
     configValues.FIREBASE_SERVICE_ACCOUNT_PATH = './secrets/firebase-service-account.json';
     configValues.NODE_ENV = 'production';
 
     const service = new FirebaseService(createConfig());
     await service.verifyIdToken('test-id-token');
 
-    expect(verifyIdToken).toHaveBeenCalledWith('test-id-token', true);
+    expect(verifyIdToken).toHaveBeenCalledWith('test-id-token', false);
+  });
+
+  it('checks token revocation when a sensitive operation requests it', async () => {
+    configValues.FIREBASE_SERVICE_ACCOUNT_PATH = './secrets/firebase-service-account.json';
+    configValues.NODE_ENV = 'production';
+
+    const service = new FirebaseService(createConfig());
+    await service.verifyIdToken('sensitive-operation-token', true);
+
+    expect(verifyIdToken).toHaveBeenCalledWith('sensitive-operation-token', true);
   });
 });

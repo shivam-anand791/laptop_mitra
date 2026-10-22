@@ -5,9 +5,11 @@ import { CartModule } from '../cart/cart.module';
 import { ProductModule } from '../product/product.module';
 import { NotificationModule } from '../notifications/notification.module';
 import { RolesGuard } from '../../guards/roles.guard';
+import { DiscountModule } from '../discount/discount.module';
+import { PaymentsModule } from '../payments/payment.module';
 
 @Module({
-  imports: [CartModule, ProductModule, NotificationModule],
+  imports: [CartModule, ProductModule, NotificationModule, DiscountModule, PaymentsModule],
   controllers: [OrderController],
   providers: [OrderService, RolesGuard],
   exports: [OrderService],

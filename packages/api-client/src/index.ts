@@ -19,6 +19,7 @@ export * from '../../types/dist/index';
 export interface ApiClientConfig {
   baseUrl: string;
   getToken?: (() => string | null | Promise<string | null>) | undefined;
+  onUnauthorized?: (() => void | Promise<void>) | undefined;
 }
 
 declare const process: any;
@@ -26,10 +27,12 @@ declare const process: any;
 export class LaptopMitraApiClient {
   private baseUrl: string;
   private getToken?: (() => string | null | Promise<string | null>) | undefined;
+  private onUnauthorized?: (() => void | Promise<void>) | undefined;
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
     this.getToken = config.getToken;
+    this.onUnauthorized = config.onUnauthorized;
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -57,6 +60,9 @@ export class LaptopMitraApiClient {
 
     if (!res.ok) {
       const errorData = (await res.json().catch(() => ({ message: res.statusText }))) as { message?: string };
+      if (res.status === 401) {
+        await this.onUnauthorized?.();
+      }
       throw new Error(errorData.message || `API error ${res.status}`);
     }
 
@@ -79,33 +85,6 @@ export class LaptopMitraApiClient {
   }
 
   // Auth
-  async login(email: string, pass: string): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password: pass }),
-    });
-  }
-
-  async guestLogin(): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/guest', {
-      method: 'POST',
-    });
-  }
-
-  async register(data: { name: string; email: string; password: string; phone?: string; referralCode?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
-    return this.request<{ accessToken: string; refreshToken: string }>('/auth/refresh', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken }),
-    });
-  }
-
   async syncUser(data?: { name?: string; phone?: string; referralCode?: string }): Promise<{ user: User }> {
     return this.request<{ user: User }>('/auth/sync', {
       method: 'POST',
@@ -124,13 +103,6 @@ export class LaptopMitraApiClient {
     });
   }
 
-  async logout(refreshToken: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/auth/logout', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken }),
-    });
-  }
-
   async signoutEverywhere(): Promise<{ message: string }> {
     return this.request<{ message: string }>('/auth/signout-everywhere', {
       method: 'POST',
@@ -140,13 +112,6 @@ export class LaptopMitraApiClient {
   async deleteAccount(): Promise<{ message: string }> {
     return this.request<{ message: string }>('/auth/account', {
       method: 'DELETE',
-    });
-  }
-
-  async linkGuestAccount(data: { email: string; password?: string; name?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/link-guest', {
-      method: 'POST',
-      body: JSON.stringify(data),
     });
   }
 
@@ -204,6 +169,8 @@ export class LaptopMitraApiClient {
     shippingAddress?: any;
     phone?: string;
     notes?: string;
+    email?: string;
+    paymentMethod?: 'razorpay' | 'cod';
   }): Promise<Order> {
     return this.request<Order>('/orders', {
       method: 'POST',
@@ -250,10 +217,22 @@ export class LaptopMitraApiClient {
     return this.request<PaymentRecord[]>('/payments/history');
   }
 
-  async createRazorpayOrder(amount: number, orderId: string): Promise<any> {
+  async createRazorpayOrder(orderId: string): Promise<any> {
     return this.request<any>('/payments/razorpay/order', {
       method: 'POST',
-      body: JSON.stringify({ amount, orderId }),
+      body: JSON.stringify({ orderId }),
+    });
+  }
+
+  async verifyRazorpayPayment(payload: {
+    orderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/payments/razorpay/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 
@@ -369,26 +348,5 @@ export class LaptopMitraApiClient {
     });
   }
 
-  // Auth — Password Reset
-  async forgotPassword(email: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/auth/forgot-password', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
-  }
-
-  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ token, newPassword }),
-    });
-  }
-
-  async changePassword(data: { currentPassword: string; newPassword: string }): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/auth/change-password', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
 }
 

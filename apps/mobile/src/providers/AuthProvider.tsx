@@ -1,21 +1,21 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import { onIdTokenChanged, signOut as firebaseSignOut, User as FirebaseUser } from 'firebase/auth';
+import { useQueryClient } from '@tanstack/react-query';
 import { LaptopMitraApiClient } from '@laptopmitra/api-client';
 import { User } from '@laptopmitra/types';
 import { API_BASE_URL } from '../config';
-
-const TOKEN_KEY = 'lm_access_token';
-const REFRESH_TOKEN_KEY = 'lm_refresh_token';
-const USER_KEY = 'lm_user';
+import { getFirebaseAuth } from '../firebase/firebase';
+import { clearAuth } from '../utils/storage';
 
 interface AuthContextType {
   user: User | null;
-  accessToken: string | null;
-  refreshToken: string | null;
+  firebaseUser: FirebaseUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   isGuest: boolean;
-  login: (accessToken: string, refreshToken: string | undefined, user: User) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (data: { name: string; email: string; password: string; phone?: string; referralCode?: string }) => Promise<void>;
+  guestLogin: () => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (user: User) => void;
   getClient: () => LaptopMitraApiClient;
@@ -25,121 +25,131 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [refreshTokenVal, setRefreshTokenVal] = useState<string | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  // Restore session on mount
+  const getClient = useCallback(() => new LaptopMitraApiClient({
+    baseUrl: API_BASE_URL,
+    getToken: async () => {
+      const currentUser = getFirebaseAuth().currentUser;
+      return currentUser ? currentUser.getIdToken() : null;
+    },
+    onUnauthorized: async () => {
+      await firebaseSignOut(getFirebaseAuth()).catch(() => undefined);
+      setUser(null);
+      setFirebaseUser(null);
+      queryClient.clear();
+      await clearAuth().catch(() => undefined);
+    },
+  }), [queryClient]);
+
+  const syncUser = useCallback(async (
+    currentUser: FirebaseUser,
+    profile?: { name?: string; phone?: string; referralCode?: string },
+  ) => {
+    const token = await currentUser.getIdToken();
+    const client = new LaptopMitraApiClient({ baseUrl: API_BASE_URL, getToken: () => token });
+    const result = await client.syncUser(profile);
+    setUser(result.user);
+    return result.user;
+  }, []);
+
   useEffect(() => {
-    (async () => {
-      try {
-        const [storedToken, storedRefreshToken, storedUser] = await Promise.all([
-          SecureStore.getItemAsync(TOKEN_KEY),
-          SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
-          SecureStore.getItemAsync(USER_KEY),
-        ]);
+    let active = true;
+    let lastUid: string | null = null;
+    let unsubscribe: (() => void) | undefined;
 
-        if (storedToken && storedUser) {
-          // Token exists — try to refresh it to validate
-          if (storedRefreshToken) {
-            try {
-              const client = new LaptopMitraApiClient({
-                baseUrl: API_BASE_URL,
-              });
-              const refreshed = await client.refreshAccessToken(storedRefreshToken);
-              // Persist refreshed tokens
-              await Promise.all([
-                SecureStore.setItemAsync(TOKEN_KEY, refreshed.accessToken),
-                SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshed.refreshToken),
-              ]);
-              setAccessToken(refreshed.accessToken);
-              setRefreshTokenVal(refreshed.refreshToken);
-              setUser(JSON.parse(storedUser));
-            } catch {
-              // Refresh failed — clear stored auth
-              await Promise.all([
-                SecureStore.deleteItemAsync(TOKEN_KEY),
-                SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
-                SecureStore.deleteItemAsync(USER_KEY),
-              ]);
-              setAccessToken(null);
-              setRefreshTokenVal(null);
-              setUser(null);
-            }
-          } else {
-            // No refresh token — treat as logged out
-            await Promise.all([
-              SecureStore.deleteItemAsync(TOKEN_KEY),
-              SecureStore.deleteItemAsync(USER_KEY),
-            ]);
-            setAccessToken(null);
-            setUser(null);
-          }
+    void clearAuth();
+
+    try {
+      unsubscribe = onIdTokenChanged(getFirebaseAuth(), async (currentUser) => {
+        if (!active) return;
+        const nextUid = currentUser?.uid ?? null;
+        if (lastUid !== nextUid) {
+          queryClient.clear();
+          setUser(null);
+          lastUid = nextUid;
         }
-      } catch (error) {
-        console.error('Failed to restore auth state:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
+        setFirebaseUser(currentUser);
+        if (!currentUser) {
+          setIsLoading(false);
+          return;
+        }
 
-  const login = useCallback(async (newAccessToken: string, newRefreshToken: string | undefined, newUser: User) => {
-    await SecureStore.setItemAsync(TOKEN_KEY, newAccessToken);
-    if (newRefreshToken) {
-      await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, newRefreshToken);
+        setIsLoading(true);
+        try {
+          await syncUser(currentUser);
+        } catch (error: any) {
+          if (!active) return;
+          setUser(null);
+          if (error?.status === 401) {
+            await firebaseSignOut(getFirebaseAuth()).catch(() => undefined);
+          }
+        } finally {
+          if (active) setIsLoading(false);
+        }
+      });
+    } catch {
+      setIsLoading(false);
     }
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(newUser));
-    setAccessToken(newAccessToken);
-    setRefreshTokenVal(newRefreshToken ?? null);
-    setUser(newUser);
-  }, []);
+
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, [queryClient, syncUser]);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const { signInWithEmailAndPassword } = await import('firebase/auth');
+    const credential = await signInWithEmailAndPassword(getFirebaseAuth(), email.trim(), password);
+    await syncUser(credential.user);
+  }, [syncUser]);
+
+  const register = useCallback(async (data: {
+    name: string;
+    email: string;
+    password: string;
+    phone?: string;
+    referralCode?: string;
+  }) => {
+    const { createUserWithEmailAndPassword, updateProfile } = await import('firebase/auth');
+    const credential = await createUserWithEmailAndPassword(getFirebaseAuth(), data.email.trim(), data.password);
+    await updateProfile(credential.user, { displayName: data.name.trim() });
+    await syncUser(credential.user, { name: data.name, phone: data.phone, referralCode: data.referralCode });
+  }, [syncUser]);
+
+  const guestLogin = useCallback(async () => {
+    const { signInAnonymously } = await import('firebase/auth');
+    const credential = await signInAnonymously(getFirebaseAuth());
+    await syncUser(credential.user);
+  }, [syncUser]);
 
   const logout = useCallback(async () => {
-    // Attempt server-side logout if we have tokens
-    if (refreshTokenVal) {
-      try {
-        const client = new LaptopMitraApiClient({
-          baseUrl: API_BASE_URL,
-          getToken: () => accessToken,
-        });
-        await client.logout(refreshTokenVal);
-      } catch {
-        // Best-effort — clear local state regardless
-      }
+    try {
+      const currentUser = getFirebaseAuth().currentUser;
+      if (currentUser) await firebaseSignOut(getFirebaseAuth());
+    } finally {
+      setUser(null);
+      setFirebaseUser(null);
+      queryClient.clear();
+      await clearAuth();
     }
-    await Promise.all([
-      SecureStore.deleteItemAsync(TOKEN_KEY),
-      SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
-      SecureStore.deleteItemAsync(USER_KEY),
-    ]);
-    setAccessToken(null);
-    setRefreshTokenVal(null);
-    setUser(null);
-  }, [accessToken, refreshTokenVal]);
+  }, [queryClient]);
 
-  const updateUser = useCallback((updatedUser: User) => {
-    setUser(updatedUser);
-    SecureStore.setItemAsync(USER_KEY, JSON.stringify(updatedUser));
-  }, []);
-
-  const getClient = useCallback(() => {
-    return new LaptopMitraApiClient({
-      baseUrl: API_BASE_URL,
-      getToken: () => accessToken,
-    });
-  }, [accessToken]);
+  const updateUser = useCallback((updatedUser: User) => setUser(updatedUser), []);
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        accessToken,
-        refreshToken: refreshTokenVal,
+        firebaseUser,
         isLoading,
-        isAuthenticated: !!accessToken && !!user,
+        isAuthenticated: !isLoading && !!firebaseUser && !!user,
         isGuest: !!user?.isGuest,
         login,
+        register,
+        guestLogin,
         logout,
         updateUser,
         getClient,

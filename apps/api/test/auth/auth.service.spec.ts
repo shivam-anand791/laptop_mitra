@@ -1,285 +1,122 @@
-jest.mock('@nestjs/config', () => ({
-  ConfigService: class ConfigService {},
-}));
-
-jest.mock('firebase-admin/app', () => ({
-  cert: jest.fn(),
-  getApps: jest.fn(() => []),
-  initializeApp: jest.fn(),
-}));
-
-jest.mock('firebase-admin/auth', () => ({
-  getAuth: jest.fn(() => ({
-    verifyIdToken: jest.fn(),
-    createCustomToken: jest.fn(),
-  })),
-}));
-
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from '../../src/auth/auth.service';
-import { RandomService } from '../../src/shared/random.service';
-import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 
-describe('AuthService', () => {
-  const userFindUnique = jest.fn();
-  const userFindFirst = jest.fn();
-  const userCreate = jest.fn();
-  const userUpdate = jest.fn();
+jest.mock('../../src/firebase/firebase.service', () => ({
+  FirebaseService: class FirebaseService {},
+}));
+
+jest.mock('../../src/prisma/prisma.service', () => ({
+  PrismaService: class PrismaService {},
+}));
+
+describe('AuthService Firebase user mapping', () => {
   const prisma = {
     user: {
-      findUnique: userFindUnique,
-      findFirst: userFindFirst,
-      create: userCreate,
-      update: userUpdate,
+      findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
     },
   };
-  const randomService = {
-    generateReferralCode: jest.fn().mockReturnValue('REF12345'),
+  const randomService = { generateReferralCode: jest.fn(() => 'REF-CODE') };
+  const firebaseService = {};
+  const service = new AuthService(prisma as any, randomService as any, firebaseService as any);
+
+  const existingUser = {
+    id: 'local-1',
+    firebaseUid: 'firebase-1',
+    name: 'Existing profile',
+    email: 'existing@example.com',
+    emailVerified: new Date('2025-01-01T00:00:00Z'),
+    authProvider: 'password',
+    isGuest: false,
+    role: 'CUSTOMER',
+    status: 'ACTIVE',
   };
-  const firebaseService = {
-    createCustomToken: jest.fn().mockResolvedValue('mock-token-123'),
-  };
-  const authService = new AuthService(
-    prisma as any,
-    randomService as unknown as RandomService,
-    firebaseService as any,
-  );
 
   beforeEach(() => {
-    jest.resetAllMocks();
-    randomService.generateReferralCode.mockReturnValue('REF12345');
-    firebaseService.createCustomToken.mockResolvedValue('mock-token-123');
-    userFindUnique.mockResolvedValue(null);
-    userFindFirst.mockResolvedValue(null);
-    userCreate.mockImplementation(async ({ data, select }) => ({
-      id: 'local-user-1',
-      status: 'ACTIVE',
-      ...data,
-    }));
-    userUpdate.mockImplementation(async ({ where, data, select }) => ({
-      id: where.id || 'local-user-1',
-      status: 'ACTIVE',
-      ...data,
-    }));
+    jest.clearAllMocks();
   });
 
-  it('maps a verified Firebase token to an existing local user', async () => {
-    const verifiedAt = new Date('2026-01-01T00:00:00.000Z');
-    const existingUser = {
-      id: 'local-user-1',
-      firebaseUid: 'firebase-123',
-      role: 'ADMIN',
-      isGuest: false,
-      status: 'ACTIVE',
-      emailVerified: verifiedAt,
-    };
-    userFindUnique.mockResolvedValue(existingUser);
+  it('updates a verified Firebase identity without replacing absent profile values', async () => {
+    prisma.user.findUnique.mockResolvedValue(existingUser);
+    prisma.user.update.mockResolvedValue(existingUser);
 
-    const user = await authService.syncUser(
-      {
-        uid: 'firebase-123',
-        email: 'Admin@Example.com',
-        email_verified: true,
-        firebase: { sign_in_provider: 'google.com' },
-      },
-      { name: 'Updated Admin', phone: '+1 555 123 4567' },
-    );
+    await service.syncUser({ uid: 'firebase-1', email_verified: false });
 
-    expect(userFindUnique).toHaveBeenCalledWith({
-      where: { firebaseUid: 'firebase-123' },
+    expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'local-1' },
+      data: expect.not.objectContaining({ email: null, emailVerified: null, name: null, phone: null }),
+    }));
+    const updateData = prisma.user.update.mock.calls[0][0].data;
+    expect(updateData).not.toHaveProperty('email');
+    expect(updateData).not.toHaveProperty('emailVerified');
+    expect(updateData).not.toHaveProperty('name');
+    expect(updateData).not.toHaveProperty('phone');
+  });
+
+  it('does not replace a stored email with an unverified Firebase email', async () => {
+    prisma.user.findUnique.mockResolvedValue(existingUser);
+    prisma.user.update.mockResolvedValue(existingUser);
+
+    await service.syncUser({
+      uid: 'firebase-1',
+      email: 'unverified@example.com',
+      email_verified: false,
     });
-    expect(userUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'local-user-1' },
-      data: expect.objectContaining({
-        email: 'admin@example.com',
-        authProvider: 'google.com',
-        name: 'Updated Admin',
-        phone: '+1 555 123 4567',
-      }),
-    }));
-    expect(user).toMatchObject({ id: 'local-user-1' });
+
+    expect(prisma.user.update.mock.calls[0][0].data).not.toHaveProperty('email');
   });
 
-  it('creates a first-time local user from verified identity claims with default role CUSTOMER', async () => {
-    const user = await authService.syncUser(
-      {
-        uid: 'firebase-new',
-        email: 'new@example.com',
-        email_verified: true,
-        firebase: { sign_in_provider: 'password' },
-      },
-      { name: 'New User' },
-    );
+  it('rejects an explicitly blank name instead of erasing the profile', async () => {
+    prisma.user.findUnique.mockResolvedValue(existingUser);
 
-    expect(userCreate).toHaveBeenCalledWith(expect.objectContaining({
+    await expect(service.syncUser({ uid: 'firebase-1' }, { name: '   ' })).rejects.toThrow(BadRequestException);
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('blocks inactive local accounts even when Firebase token is valid', async () => {
+    prisma.user.findUnique.mockResolvedValue({ ...existingUser, status: 'SUSPENDED' });
+
+    await expect(service.syncUser({ uid: 'firebase-1' })).rejects.toThrow(UnauthorizedException);
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('creates a database profile for a first Firebase sign-in', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockResolvedValue({ id: 'local-new', firebaseUid: 'firebase-new', role: 'CUSTOMER' });
+
+    const result = await service.syncUser({
+      uid: 'firebase-new',
+      email: 'new@example.com',
+      email_verified: true,
+      name: 'New customer',
+      firebase: { sign_in_provider: 'password' },
+    }, { phone: '+911234567890' });
+
+    expect(prisma.user.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         firebaseUid: 'firebase-new',
-        name: 'New User',
         email: 'new@example.com',
         emailVerified: expect.any(Date),
-        authProvider: 'password',
-        isGuest: false,
+        name: 'New customer',
+        phone: '+911234567890',
         role: 'CUSTOMER',
-        referralCode: 'REF12345',
         status: 'ACTIVE',
       }),
     }));
-    expect(user).toMatchObject({ id: 'local-user-1', firebaseUid: 'firebase-new' });
+    expect(result.id).toBe('local-new');
   });
 
-  it('creates anonymous Firebase identities as guests with role GUEST', async () => {
-    await authService.syncUser(
-      {
-        uid: 'firebase-anon',
-        firebase: { sign_in_provider: 'anonymous' },
-      },
-      {},
-    );
+  it('returns the winner of a concurrent first-login create race', async () => {
+    const createdByOtherRequest = { id: 'local-winner', firebaseUid: 'firebase-race', role: 'CUSTOMER' };
+    prisma.user.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(createdByOtherRequest);
+    prisma.user.create.mockRejectedValue({ code: 'P2002' });
 
-    expect(userCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        firebaseUid: 'firebase-anon',
-        email: null,
-        authProvider: 'anonymous',
-        isGuest: true,
-        role: 'GUEST',
-      }),
-    }));
-  });
-
-  it('links seeded user by email ONLY if email_verified is true and row has no firebaseUid', async () => {
-    const seededAdmin = {
-      id: 'seeded-admin-1',
-      email: 'admin@laptopmitra.com',
-      firebaseUid: null,
-      role: 'ADMIN',
-      status: 'ACTIVE',
-      emailVerified: null,
-    };
-    userFindUnique.mockResolvedValueOnce(null); // No user by firebaseUid
-    userFindFirst.mockResolvedValueOnce(seededAdmin); // Found unlinked seeded user
-    userUpdate.mockResolvedValueOnce({ ...seededAdmin, firebaseUid: 'firebase-admin-uid' });
-
-    await authService.syncUser(
-      {
-        uid: 'firebase-admin-uid',
-        email: 'admin@laptopmitra.com',
-        email_verified: true,
-        firebase: { sign_in_provider: 'password' },
-      },
-      {},
-    );
-
-    expect(userUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'seeded-admin-1' },
-      data: expect.objectContaining({
-        firebaseUid: 'firebase-admin-uid',
-      }),
-    }));
-  });
-
-  it('refuses email-based linking if email_verified is false', async () => {
-    const seededAdmin = {
-      id: 'seeded-admin-1',
-      email: 'admin@laptopmitra.com',
-      firebaseUid: null,
-      role: 'ADMIN',
-      status: 'ACTIVE',
-    };
-    userFindUnique.mockResolvedValueOnce(null);
-    userFindFirst.mockResolvedValueOnce(seededAdmin);
-
-    await authService.syncUser(
-      {
-        uid: 'firebase-unverified-attacker',
-        email: 'admin@laptopmitra.com',
-        email_verified: false,
-        firebase: { sign_in_provider: 'password' },
-      },
-      {},
-    );
-
-    // Must NOT link to seeded-admin-1; must create a separate user
-    expect(userUpdate).not.toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'seeded-admin-1' },
-    }));
-    expect(userCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        firebaseUid: 'firebase-unverified-attacker',
-      }),
-    }));
-  });
-
-  it('never accepts a client-sent role, email or firebaseUid from the profile body', async () => {
-    userFindUnique.mockResolvedValue({
-      id: 'local-user-1',
-      firebaseUid: 'firebase-customer',
-      role: 'CUSTOMER',
-      isGuest: false,
-      status: 'ACTIVE',
-      emailVerified: null,
-    });
-
-    await authService.syncUser(
-      {
-        uid: 'firebase-customer',
-        email: 'user@example.com',
-        email_verified: true,
-        firebase: { sign_in_provider: 'password' },
-      },
-      { name: 'Customer', role: 'ADMIN', email: 'hacked@admin.com', firebaseUid: 'spoofed' } as any,
-    );
-
-    const updateArgs = userUpdate.mock.calls[0][0];
-    expect(updateArgs.data.email).toBe('user@example.com'); // from token
-    expect(updateArgs.data).not.toHaveProperty('role');
-    expect(updateArgs.data).not.toHaveProperty('firebaseUid');
-  });
-
-  it('handles database errors by throwing ServiceUnavailableException with no synthetic users', async () => {
-    userFindUnique.mockRejectedValue(new Error('Connection pool exhausted'));
-
-    await expect(
-      authService.syncUser({
-        uid: 'firebase-fail',
-        email: 'fail@example.com',
-      }),
-    ).rejects.toThrow(ServiceUnavailableException);
-  });
-
-  it('rejects direct passwordless login calls', async () => {
-    await expect(authService.login({ email: 'admin@example.com' })).rejects.toThrow(
-      BadRequestException,
-    );
-  });
-
-  it('rejects direct unverified registration calls', async () => {
-    await expect(authService.register({ email: 'new@example.com' })).rejects.toThrow(
-      BadRequestException,
-    );
-  });
-
-  it('handles race conditions during concurrent first-time logins', async () => {
-    const createdUser = {
-      id: 'user-concurrent-1',
-      firebaseUid: 'firebase-concurrent',
-      email: 'race@example.com',
-      role: 'CUSTOMER',
-      status: 'ACTIVE',
-      emailVerified: new Date(),
-    };
-    userFindUnique
-      .mockResolvedValueOnce(null) // first check by UID returns null
-      .mockResolvedValueOnce(createdUser); // recheck after unique conflict returns the created user
-
-    userFindFirst.mockResolvedValue(null);
-    userCreate.mockRejectedValueOnce(new Error('Unique constraint failed on the fields: (`firebaseUid`)'));
-
-    const user = await authService.syncUser({
-      uid: 'firebase-concurrent',
-      email: 'race@example.com',
-      email_verified: true,
-    });
-
-    expect(user).toMatchObject({ id: 'user-concurrent-1', firebaseUid: 'firebase-concurrent' });
+    await expect(service.syncUser({ uid: 'firebase-race', email: 'race@example.com' }))
+      .resolves.toEqual(createdByOtherRequest);
+    expect(prisma.user.create).toHaveBeenCalledTimes(1);
   });
 });

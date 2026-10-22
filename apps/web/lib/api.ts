@@ -13,7 +13,7 @@ import {
   NotificationPreferences,
 } from './types';
 import { NEXT_PUBLIC_API_URL } from './config';
-import { auth } from './firebase';
+import { auth, signOut } from './firebase';
 
 const API_BASE_URL = NEXT_PUBLIC_API_URL;
 
@@ -25,31 +25,27 @@ export class ApiError extends Error {
 }
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  let token = typeof window !== 'undefined' ? localStorage.getItem('lm_token') : null;
-
-  // Seamlessly resolve fresh ID token if Firebase user is actively signed in
-  if (typeof window !== 'undefined' && auth?.currentUser) {
+  let token: string | null = null;
+  const url = new URL(endpoint.startsWith('/') ? endpoint : `/${endpoint}`, `${API_BASE_URL}/`);
+  if (url.origin === new URL(API_BASE_URL).origin && auth.currentUser) {
     try {
-      const freshToken = await auth.currentUser.getIdToken();
-      if (freshToken) {
-        token = freshToken;
-        localStorage.setItem('lm_token', freshToken);
-      }
+      token = await auth.currentUser.getIdToken();
     } catch {
-      // Retain stored token fallback
+      token = null;
     }
   }
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...((options.headers as Record<string, string>) || {}),
-  };
-
-  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const headers: Record<string, string> = { ...((options.headers as Record<string, string>) || {}) };
+  headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  if (token && url.origin === new URL(API_BASE_URL).origin) {
+    headers.Authorization = `Bearer ${token}`;
+  } else {
+    delete headers.Authorization;
+    delete headers.authorization;
+  }
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(url.toString(), {
       ...options,
       headers,
     });
@@ -65,6 +61,9 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
             : res.status === 500
               ? 'Backend service error. Please try again later.'
               : `Request failed with status ${res.status}`);
+      if (res.status === 401 && auth.currentUser) {
+        await signOut(auth).catch(() => undefined);
+      }
       throw new ApiError(res.status, message, errData);
     }
 
@@ -123,94 +122,17 @@ export const api = {
   },
 
   // Auth
-  async login(email: string, password?: string): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    const res = await request<{ accessToken?: string; access_token?: string; refreshToken: string; user: User }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    const token = res.accessToken || res.access_token || '';
-    if (token && typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', token);
-      localStorage.setItem('lm_refresh_token', res.refreshToken);
-      localStorage.setItem('lm_user', JSON.stringify(res.user));
-    }
-    return {
-      accessToken: token,
-      refreshToken: res.refreshToken,
-      user: res.user,
-    };
-  },
-
-  async guestLogin(): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    const res = await request<{ accessToken?: string; access_token?: string; refreshToken: string; user: User }>('/auth/guest', {
-      method: 'POST',
-    });
-    const token = res.accessToken || res.access_token || '';
-    if (token && typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', token);
-      localStorage.setItem('lm_refresh_token', res.refreshToken);
-      localStorage.setItem('lm_user', JSON.stringify(res.user));
-    }
-    return {
-      accessToken: token,
-      refreshToken: res.refreshToken,
-      user: res.user,
-    };
-  },
-
-  async register(data: { name?: string; email: string; password?: string; referralCode?: string; phone?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    const res = await request<{ accessToken?: string; access_token?: string; refreshToken: string; user: User }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-    const token = res.accessToken || res.access_token || '';
-    if (token && typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', token);
-      localStorage.setItem('lm_refresh_token', res.refreshToken);
-      localStorage.setItem('lm_user', JSON.stringify(res.user));
-    }
-    return {
-      accessToken: token,
-      refreshToken: res.refreshToken,
-      user: res.user,
-    };
-  },
-
-  async linkGuestAccount(data: { email: string; password?: string; name?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    const res = await request<{ accessToken?: string; access_token?: string; refreshToken: string; user: User }>('/auth/link-guest', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-    const token = res.accessToken || res.access_token || '';
-    if (token && typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', token);
-      localStorage.setItem('lm_refresh_token', res.refreshToken);
-      localStorage.setItem('lm_user', JSON.stringify(res.user));
-    }
-    return {
-      accessToken: token,
-      refreshToken: res.refreshToken,
-      user: res.user,
-    };
-  },
-
   async syncUser(data?: { name?: string; phone?: string; referralCode?: string }): Promise<{ user: User }> {
     const res = await request<any>('/auth/sync', {
       method: 'POST',
       body: JSON.stringify(data || {}),
     });
     const user: User = (res?.user || res) as User;
-    if (user && typeof window !== 'undefined') {
-      localStorage.setItem('lm_user', JSON.stringify(user));
-    }
     return { user };
   },
 
   async getProfile(): Promise<User> {
     const res = await request<User>('/auth/profile');
-    if (res && typeof window !== 'undefined') {
-      localStorage.setItem('lm_user', JSON.stringify(res));
-    }
     return res;
   },
 
@@ -219,9 +141,6 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     });
-    if (res && typeof window !== 'undefined') {
-      localStorage.setItem('lm_user', JSON.stringify(res));
-    }
     return res;
   },
 
@@ -231,26 +150,7 @@ export const api = {
 
   async deleteAccount(): Promise<{ message: string }> {
     const res = await request<{ message: string }>('/auth/account', { method: 'DELETE' });
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('lm_token');
-      localStorage.removeItem('lm_refresh_token');
-      localStorage.removeItem('lm_user');
-    }
     return res;
-  },
-
-  async logout() {
-    try {
-      await request('/auth/logout', { method: 'POST' });
-    } catch {
-      // Best-effort logout
-    } finally {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('lm_token');
-        localStorage.removeItem('lm_refresh_token');
-        localStorage.removeItem('lm_user');
-      }
-    }
   },
 
   // Cart
@@ -335,6 +235,8 @@ export const api = {
     shippingAddress?: any;
     phone?: string;
     notes?: string;
+    email?: string;
+    paymentMethod?: 'razorpay' | 'cod';
   }): Promise<Order> {
     return await request<Order>('/orders', {
       method: 'POST',
@@ -383,10 +285,22 @@ export const api = {
     return await request<PaymentRecord[]>('/payments/history');
   },
 
-  async createRazorpayOrder(amount: number, orderId: string): Promise<any> {
+  async createRazorpayOrder(orderId: string): Promise<any> {
     return await request<any>('/payments/razorpay/order', {
       method: 'POST',
-      body: JSON.stringify({ amount, orderId }),
+      body: JSON.stringify({ orderId }),
+    });
+  },
+
+  async verifyRazorpayPayment(payload: {
+    orderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return request('/payments/razorpay/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 

@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product } from './types';
 import { api } from './api';
+import { useAuth } from './auth-context';
 
 interface WishlistContextType {
   items: Product[];
@@ -15,22 +16,31 @@ interface WishlistContextType {
 const WishlistContext = createContext<WishlistContextType | undefined>(undefined);
 
 export function WishlistProvider({ children }: { children: React.ReactNode }) {
-  const [items, setItems] = useState<Product[]>([]);
+  const { firebaseUser, isLoading } = useAuth();
+  const storageKey = `lm_wishlist:${firebaseUser?.uid ?? 'guest'}`;
+  const [wishlistState, setWishlistState] = useState<{ key: string; items: Product[] }>({ key: '', items: [] });
+  const items = wishlistState.key === storageKey ? wishlistState.items : [];
 
   useEffect(() => {
+    if (isLoading) return;
     try {
-      const stored = localStorage.getItem('lm_wishlist');
+      const stored = localStorage.getItem(storageKey);
       if (stored) {
-        setItems(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setWishlistState({ key: storageKey, items: parsed });
+          return;
+        }
       }
     } catch {
       // Ignore parse error
     }
-  }, []);
+    setWishlistState({ key: storageKey, items: [] });
+  }, [isLoading, storageKey]);
 
   const saveWishlist = (newItems: Product[]) => {
-    setItems(newItems);
-    localStorage.setItem('lm_wishlist', JSON.stringify(newItems));
+    setWishlistState({ key: storageKey, items: newItems });
+    localStorage.setItem(storageKey, JSON.stringify(newItems));
   };
 
   const isInWishlist = (productId: string) => {

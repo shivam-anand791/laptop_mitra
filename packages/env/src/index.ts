@@ -6,8 +6,7 @@ export { envSchema, envObjectSchema, type Env } from './schema.js';
 /** Fields whose values must never appear in logs or error output. */
 const SECRET_KEYS = new Set<keyof Env>([
   'DATABASE_URL',
-  'JWT_ACCESS_SECRET',
-  'JWT_REFRESH_SECRET',
+  'FIREBASE_PRIVATE_KEY',
   'RAZORPAY_KEY_SECRET',
   'RAZORPAY_WEBHOOK_SECRET',
   'SMTP_PASS',

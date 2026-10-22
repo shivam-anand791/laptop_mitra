@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User } from './types';
 import { api } from './api';
 import {
@@ -24,7 +24,7 @@ interface AuthContextType {
   register: (data: { name: string; email: string; password: string; referralCode?: string; phone?: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => void;
-  setUser: (user: User | null) => void;
+  setUser: React.Dispatch<React.SetStateAction<User | null>>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,110 +34,102 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const syncCurrentUser = useCallback(async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      setUser(null);
+      return;
+    }
+    const result = await api.syncUser({
+      name: currentUser.displayName ?? undefined,
+      phone: currentUser.phoneNumber ?? undefined,
+    });
+    setUser(result.user);
+  }, []);
+
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('lm_user');
-      if (stored) {
-        setUser(JSON.parse(stored));
+    let active = true;
+    let lastUid: string | null = null;
+    localStorage.removeItem('lm_token');
+    localStorage.removeItem('lm_refresh_token');
+    localStorage.removeItem('lm_user');
+    const unsubscribe = onIdTokenChanged(auth, async (nextFirebaseUser) => {
+      if (!active) return;
+      const nextUid = nextFirebaseUser?.uid ?? null;
+      if (nextUid !== lastUid) {
+        setUser(null);
+        lastUid = nextUid;
       }
-    } catch {
-      // Ignore parse error
-    }
-
-    let isMounted = true;
-
-    try {
-      const unsubscribe = onIdTokenChanged(auth, async (fbUser) => {
-        if (!isMounted) return;
-        setFirebaseUser(fbUser);
-        if (fbUser) {
-          try {
-            const token = await fbUser.getIdToken();
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('lm_token', token);
-            }
-            const res = await api.syncUser();
-            setUser(res.user);
-          } catch (err) {
-            console.warn('Failed to sync Firebase token with backend profile:', err);
-          }
-        } else {
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('lm_token');
-            localStorage.removeItem('lm_user');
-          }
-          setUser(null);
-        }
+      setFirebaseUser(nextFirebaseUser);
+      if (!nextFirebaseUser) {
         setIsLoading(false);
-      });
+        localStorage.removeItem('lm_token');
+        localStorage.removeItem('lm_refresh_token');
+        localStorage.removeItem('lm_user');
+        return;
+      }
 
-      return () => {
-        isMounted = false;
-        unsubscribe();
-      };
-    } catch {
-      setIsLoading(false);
-    }
+      setIsLoading(true);
+      try {
+        const result = await api.syncUser({
+          name: nextFirebaseUser.displayName ?? undefined,
+          phone: nextFirebaseUser.phoneNumber ?? undefined,
+        });
+        if (active) setUser(result.user);
+      } catch {
+        if (active) setUser(null);
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   const login = async (email: string, pass: string) => {
-    const cred = await signInWithEmailAndPassword(auth, email.trim(), pass);
-    const idToken = await cred.user.getIdToken();
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', idToken);
-    }
-    const res = await api.syncUser();
-    setUser(res.user);
+    await signInWithEmailAndPassword(auth, email.trim(), pass);
+    await syncCurrentUser();
   };
 
   const guestLogin = async () => {
-    const cred = await signInAnonymously(auth);
-    const idToken = await cred.user.getIdToken();
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', idToken);
-    }
-    const res = await api.syncUser();
-    setUser(res.user);
+    await signInAnonymously(auth);
+    await syncCurrentUser();
   };
 
-  const register = async (data: { name: string; email: string; password: string; referralCode?: string; phone?: string }) => {
-    const cred = await createUserWithEmailAndPassword(auth, data.email.trim(), data.password);
-    const idToken = await cred.user.getIdToken();
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', idToken);
-    }
-    const res = await api.syncUser({
-      name: data.name,
-      phone: data.phone,
-      referralCode: data.referralCode,
-    });
-    setUser(res.user);
+  const register = async (data: {
+    name: string;
+    email: string;
+    password: string;
+    referralCode?: string;
+    phone?: string;
+  }) => {
+    const credential = await createUserWithEmailAndPassword(auth, data.email.trim(), data.password);
+    const { updateProfile } = await import('firebase/auth');
+    await updateProfile(credential.user, { displayName: data.name.trim() });
+    const result = await api.syncUser({ name: data.name, phone: data.phone, referralCode: data.referralCode });
+    setUser(result.user);
   };
 
   const logout = async () => {
     try {
       await signOut(auth);
-    } catch {
-      // ignore
+    } finally {
+      setUser(null);
+      setFirebaseUser(null);
+      localStorage.removeItem('lm_token');
+      localStorage.removeItem('lm_refresh_token');
+      localStorage.removeItem('lm_user');
+      localStorage.removeItem('lm_cart');
+      localStorage.removeItem('lm_wishlist');
     }
-    await api.logout();
-    setUser(null);
-    setFirebaseUser(null);
   };
 
   const updateUser = (data: Partial<User>) => {
-    setUser((prev) => {
-      if (!prev) return null;
-      const updated = { ...prev, ...data };
-      try {
-        localStorage.setItem('lm_user', JSON.stringify(updated));
-      } catch {}
-      return updated;
-    });
+    setUser((prev) => (prev ? { ...prev, ...data } : null));
   };
-
-  const isAuthenticated = !!user;
-  const isGuest = !!user?.isGuest;
 
   return (
     <AuthContext.Provider
@@ -145,8 +137,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         firebaseUser,
         isLoading,
-        isAuthenticated,
-        isGuest,
+        isAuthenticated: !isLoading && !!firebaseUser && !!user,
+        isGuest: !!user?.isGuest,
         login,
         guestLogin,
         register,

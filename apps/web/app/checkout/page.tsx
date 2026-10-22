@@ -154,16 +154,16 @@ export default function CheckoutPage() {
         }
 
         try {
-          const rzpOrder = await api.createRazorpayOrder(finalAmount, order.id);
+          const rzpOrder = await api.createRazorpayOrder(order.id);
 
           if (typeof window !== 'undefined' && window.Razorpay) {
             const options = {
               key: razorpayKey,
-              amount: rzpOrder.amount || Math.round(finalAmount * 100),
+              amount: rzpOrder.amount,
               currency: 'INR',
               name: 'LaptopMitra',
               description: `Order ${order.orderNumber} - Certified Refurbished Laptop`,
-              order_id: rzpOrder.id.startsWith('order_mock_') ? undefined : rzpOrder.id,
+              order_id: rzpOrder.id,
               image: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=200&q=80',
               prefill: {
                 name: formData.fullName,
@@ -174,8 +174,18 @@ export default function CheckoutPage() {
                 color: '#1D6FF2',
               },
               handler: async (response: any) => {
-                clearCart();
-                setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any });
+                try {
+                  await api.verifyRazorpayPayment({
+                    orderId: order.id,
+                    razorpayOrderId: response.razorpay_order_id,
+                    razorpayPaymentId: response.razorpay_payment_id,
+                    razorpaySignature: response.razorpay_signature,
+                  });
+                  clearCart();
+                  setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any, status: 'CONFIRMED' as any });
+                } catch {
+                  alert(`We could not confirm payment for order ${order.orderNumber}. Check your order history before trying again.`);
+                }
               },
               modal: {
                 ondismiss: () => {
@@ -187,14 +197,16 @@ export default function CheckoutPage() {
             const rzpInstance = new window.Razorpay(options);
             rzpInstance.open();
           } else {
-            // Fallback if script not loaded
-            clearCart();
-            setCompletedOrder(order);
+            await api.cancelOrder(order.id);
+            alert('Secure payment checkout is unavailable. Your pending order was cancelled. Please try again.');
           }
         } catch {
-          // Fallback to order confirmation
-          clearCart();
-          setCompletedOrder(order);
+          try {
+            await api.cancelOrder(order.id);
+          } catch {
+            // Reservation expiry handles cleanup if cancellation cannot reach the API.
+          }
+          alert('Payment could not be started. Your order has not been confirmed. Please try again.');
         }
       } else {
         // COD (Cash on Delivery)

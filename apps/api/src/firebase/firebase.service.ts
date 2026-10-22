@@ -14,17 +14,19 @@ export class FirebaseService {
   constructor(private readonly configService: ConfigService) {
     let auth: Auth;
     try {
-      const { credential, projectId, clientEmail } = this.getCredential();
+      const { credential, projectId } = this.getCredential();
       const existingApps = getApps();
-      const app: App = existingApps.length > 0
-        ? existingApps[0]
-        : initializeApp({ credential, projectId });
+      const existingApp = existingApps.find((candidate) => candidate.name === '[DEFAULT]');
+      if (existingApp && existingApp.options.projectId !== projectId) {
+        throw new Error('Firebase project mismatch between the initialized app and configured credentials');
+      }
+      const app: App = existingApp ?? initializeApp({ credential, projectId });
       auth = getAuth(app);
 
       if (process.env.FIREBASE_AUTH_EMULATOR_HOST) {
         this.logger.log(`Using Firebase Auth Emulator at ${process.env.FIREBASE_AUTH_EMULATOR_HOST}`);
       }
-      this.logger.log(`Firebase Admin initialized successfully for project: ${projectId} (client_email: ${clientEmail})`);
+      this.logger.log('Firebase Admin initialized successfully');
     } catch (error: any) {
       const rawMessage = error instanceof Error ? error.message : String(error);
       const sanitized = rawMessage.replace(/-----BEGIN[^-]+-----[\s\S]*?-----END[^-]+-----/g, '[REDACTED_KEY]');
@@ -43,11 +45,7 @@ export class FirebaseService {
     this.auth = auth;
 
     const configuredCheckRevoked = this.configService.get<string>('FIREBASE_CHECK_REVOKED')?.toLowerCase();
-    this.checkRevoked = configuredCheckRevoked === 'true'
-      ? true
-      : configuredCheckRevoked === 'false'
-        ? false
-        : this.configService.get<string>('NODE_ENV') === 'production';
+    this.checkRevoked = configuredCheckRevoked === 'true';
   }
 
   createCustomToken(uid: string, developerClaims?: object): Promise<string> {
@@ -57,11 +55,11 @@ export class FirebaseService {
     return this.auth.createCustomToken(uid, developerClaims);
   }
 
-  async verifyIdToken(idToken: string): Promise<DecodedIdToken> {
+  async verifyIdToken(idToken: string, checkRevoked = this.checkRevoked): Promise<DecodedIdToken> {
     if (!this.auth || typeof this.auth.verifyIdToken !== 'function') {
       throw new Error('Firebase Auth is not initialized');
     }
-    return this.auth.verifyIdToken(idToken, this.checkRevoked);
+    return this.auth.verifyIdToken(idToken, checkRevoked);
   }
 
   async revokeRefreshTokens(uid: string): Promise<void> {
