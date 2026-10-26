@@ -13,13 +13,25 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://laptopmitra-api.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://laptopmitra-api.onrender.com",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyACj0fden0ISvJ8Of1F_2R8VQ-kq1X46hc",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "laptop-mitra.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "laptop-mitra",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "laptop-mitra.appspot.com",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "101564514748",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:101564514748:web:abcdef123456"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://laptopmitra-api.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://laptopmitra-api.onrender.com",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyACj0fden0ISvJ8Of1F_2R8VQ-kq1X46hc",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "laptop-mitra.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "laptop-mitra",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "laptop-mitra.appspot.com",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "101564514748",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:101564514748:web:abcdef123456"
       }
     }
   },
