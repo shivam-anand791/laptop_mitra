@@ -12,9 +12,9 @@ import type {
   SupportTicket,
   SupportTicketMessage,
   NotificationPreferences,
-} from '../../types/dist/index';
+} from '@laptopmitra/types';
 
-export * from '../../types/dist/index';
+export * from '@laptopmitra/types';
 
 export interface ApiClientConfig {
   baseUrl: string;
