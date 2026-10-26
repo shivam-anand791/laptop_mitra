@@ -31,7 +31,10 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "API_PORT": "3001"
+      "API_PORT": "3001",
+      "eas": {
+        "projectId": "20fc0d7d-ba42-4e2f-b8d4-aded3b947bd0"
+      }
     }
   }
 }
