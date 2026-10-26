@@ -20,9 +20,9 @@
     ],
     "paths": {
       "@/*": ["./*"],
-      "@laptopmitra/tokens": ["../../packages/tokens/dist"],
-      "@laptopmitra/types": ["../../packages/types/dist"],
-      "@laptopmitra/api-client": ["../../packages/api-client/dist"]
+      "@laptopmitra/tokens": ["../../packages/tokens/src"],
+      "@laptopmitra/types": ["../../packages/types/src"],
+      "@laptopmitra/api-client": ["../../packages/api-client/src"]
     }
   },
   "include": [
@@ -33,5 +33,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
+  ]
 }
