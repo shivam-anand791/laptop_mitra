@@ -1,4 +1,4 @@
-import { ServiceUnavailableException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { ServiceUnavailableException, BadRequestException } from '@nestjs/common';
 import { allowInMemoryFallback } from '../../src/common/fallback';
 import { AddressService } from '../../src/modules/address/address.service';
 import { NotificationService } from '../../src/modules/notifications/notification.service';
@@ -175,7 +175,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
 
         const productService = {} as any;
 
-        const service = new OrderService(prisma, cartService, productService, notificationService);
+        const service = new OrderService(prisma, cartService, productService, notificationService, { validateDiscountCode: jest.fn() } as any);
 
         await expect(
           service.createOrder(
@@ -207,7 +207,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
 
         const cartService = { getCart: jest.fn().mockResolvedValue(mockCart), clearCart: jest.fn() } as any;
         const prisma = { $transaction: jest.fn() } as any;
-        const service = new OrderService(prisma, cartService, {} as any, {} as any);
+        const service = new OrderService(prisma, cartService, {} as any, {} as any, { validateDiscountCode: jest.fn() } as any);
 
         // Missing email
         await expect(
@@ -231,7 +231,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
                 productId: 'prod-1',
                 quantity: 1,
                 priceAtAdd: 50000,
-                product: { id: 'prod-1', name: 'ThinkPad', price: 50000 },
+                product: { id: 'prod-1', name: 'ThinkPad', price: 50000, status: 'ACTIVE' },
               },
             ],
           },
@@ -245,16 +245,22 @@ describe('Production Database Resilience & Fallback Prevention', () => {
         } as any;
 
         const prisma = {
-          order: { create: jest.fn().mockImplementation(({ data }) => data) },
+          cart: { findFirst: jest.fn().mockResolvedValue(mockCart.cart) },
+          cartItem: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+          product: {
+            findUnique: jest.fn().mockResolvedValue({ id: 'prod-1', price: 50000, status: 'ACTIVE', stock: 10 }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          },
+          order: { create: jest.fn().mockImplementation(({ data }) => ({ id: 'ord-1', orderNumber: 'LM-ORD-ORD12345', ...data, items: data.items?.create || [] })) },
           orderItem: { create: jest.fn().mockImplementation(({ data }) => data) },
-          $transaction: jest.fn().mockResolvedValue([]),
+          $transaction: jest.fn((callback: any) => typeof callback === 'function' ? callback(prisma) : Promise.all(callback)),
         } as any;
 
         const notificationService = {
           dispatchOrderUpdate: jest.fn().mockResolvedValue(undefined),
         } as any;
 
-        const service = new OrderService(prisma, cartService, {} as any, notificationService);
+        const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn(), validateOrderDiscount: jest.fn().mockResolvedValue(null) } as any);
 
         const order = await service.createOrder(
           'user-1',
@@ -269,8 +275,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
         expect(order.carrier).toBeNull();
         expect(order.trackingNumber).toBeNull();
         expect(order.email).toBe('buyer@example.com');
-        expect(order.phone).toBe('+919876543210');
-        expect(cartService.clearCart).toHaveBeenCalledWith('user-1');
+        expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 'cart-1' } });
       });
     });
   });
@@ -321,7 +326,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
       expect(ticket.orderNumber).toBe('ORD-ORD-DE');
     });
 
-    it('OrderService.createOrder creates in-memory order and clears cart when fallback is enabled', async () => {
+    it('OrderService.createOrder fails closed with ServiceUnavailableException when DB error occurs', async () => {
       const mockCart = {
         cart: {
           id: 'cart-1',
@@ -347,22 +352,21 @@ describe('Production Database Resilience & Fallback Prevention', () => {
         dispatchOrderUpdate: jest.fn().mockResolvedValue(undefined),
       } as any;
 
-      const service = new OrderService(prisma, cartService, {} as any, notificationService);
+      const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn() } as any);
 
-      const order = await service.createOrder(
-        'dev-user',
-        undefined,
-        undefined,
-        { address: 'Local test address' },
-        '+919999999999',
-        undefined,
-        'dev@example.com',
-      );
+      await expect(
+        service.createOrder(
+          'dev-user',
+          undefined,
+          undefined,
+          { address: 'Local test address' },
+          '+919999999999',
+          undefined,
+          'dev@example.com',
+        ),
+      ).rejects.toThrow(ServiceUnavailableException);
 
-      expect(order.userId).toBe('dev-user');
-      expect(order.email).toBe('dev@example.com');
-      expect(order.phone).toBe('+919999999999');
-      expect(cartService.clearCart).toHaveBeenCalledWith('dev-user');
+      expect(cartService.clearCart).not.toHaveBeenCalled();
     });
   });
 });

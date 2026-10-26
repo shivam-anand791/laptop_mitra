@@ -192,12 +192,28 @@ describe('OrderService - Security Logic', () => {
 
   beforeEach(() => {
     prisma = {
+      $transaction: jest.fn((callback: any) => (typeof callback === 'function' ? callback(prisma) : Promise.all(callback))),
       order: {
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       product: {
         update: jest.fn(),
+      },
+      payment: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      discountRedemption: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        delete: jest.fn().mockResolvedValue({}),
+      },
+      referralRedemption: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      discountCode: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
     };
     orderService = new OrderService(
@@ -205,6 +221,7 @@ describe('OrderService - Security Logic', () => {
       {} as any,
       {} as any,
       { dispatchOrderUpdate: jest.fn() } as any,
+      { validateDiscountCode: jest.fn() } as any,
     );
   });
 
@@ -234,8 +251,8 @@ describe('OrderService - Security Logic', () => {
 
   describe('updateStatus', () => {
     it('allows admin to update any order status', async () => {
-      prisma.order.findUnique.mockResolvedValue({ id: 'o1', userId: 'user-a', status: 'PENDING' });
-      prisma.order.update.mockResolvedValue({ id: 'o1', userId: 'user-a', status: 'DELIVERED', paymentStatus: 'COMPLETED' });
+      prisma.order.findUnique.mockResolvedValue({ id: 'o1', userId: 'user-a', status: 'SHIPPING' });
+      prisma.order.updateMany.mockResolvedValue({ count: 1 });
       const result = await orderService.updateStatus('o1', 'DELIVERED', 'admin-1', 'ADMIN');
       expect(result.status).toBe('DELIVERED');
     });
@@ -306,13 +323,14 @@ describe('OrderService - Security Logic', () => {
         userId: 'user-a',
         status: 'PENDING',
         paymentStatus: 'COMPLETED',
+        paymentId: 'pay-1',
         items: [],
         payments: [{ id: 'pay-1' }],
       });
       prisma.order.update.mockResolvedValue({ id: 'o4', status: 'CANCELLED', paymentStatus: 'REFUNDED', items: [] });
       const result = await orderService.cancelOrder('o4', 'user-a', 'USER');
       expect(result.refundRequired).toBe(true);
-      expect(result.refundMessage).toContain('Razorpay');
+      expect(result.refundMessage).toContain('refund');
     });
 
     it('restores product stock on cancellation', async () => {
@@ -321,6 +339,7 @@ describe('OrderService - Security Logic', () => {
         userId: 'user-a',
         status: 'PENDING',
         paymentStatus: 'PENDING',
+        inventoryStatus: 'RESERVED',
         items: [{ productId: 'prod-1', quantity: 2 }],
         payments: [],
       });

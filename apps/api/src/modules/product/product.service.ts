@@ -245,6 +245,7 @@ export class ProductService {
       ? (typeof rawCompare === 'number' ? rawCompare : parseFloat(rawCompare?.toString() || '0'))
       : null;
 
+    /* eslint-disable-next-line no-restricted-properties */
     const assetBaseUrl = process.env.PUBLIC_ASSET_BASE_URL?.replace(/\/$/, '') || '';
     const images = (p.images || []).map((img: any) => ({
       id: img.id || `img-${Math.random()}`,
@@ -409,7 +410,7 @@ export class ProductService {
     };
   }
 
-  async findOne(id: string, includeRelations: string[] = []): Promise<Product> {
+  async findOne(id: string, _includeRelations: string[] = []): Promise<Product> {
     try {
       const dbProduct = await this.prisma.product.findUnique({
         where: { id },

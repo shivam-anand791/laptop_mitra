@@ -15,7 +15,7 @@ jest.mock('firebase-admin/auth', () => ({
   })),
 }));
 
-import { ForbiddenException, BadRequestException, ExecutionContext } from '@nestjs/common';
+import { ForbiddenException, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../src/guards/roles.guard';
 import { AuthService } from '../../src/auth/auth.service';

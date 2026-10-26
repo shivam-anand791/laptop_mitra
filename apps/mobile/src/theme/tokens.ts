@@ -1,87 +1,86 @@
+import {
+  colors as sharedColors,
+  spacing as sharedSpacing,
+  radius as sharedRadius,
+  mobileShadows,
+  typography as sharedTypography,
+  accessibility as sharedAccessibility,
+} from '@laptopmitra/tokens';
+
 export const colors = {
-  // Brand
-  primary: '#1D6FF2',
-  primaryHover: '#1558C0',
-  primaryLight: '#EFF6FF',
-  primaryBorder: '#BFDBFE',
+  // Brand — Restrained blue #2563EB & Tech Navy
+  primary: sharedColors.brand.primary,
+  primaryHover: sharedColors.brand.primaryHover,
+  primaryLight: sharedColors.brand.primaryLight,
+  primaryBorder: sharedColors.brand.primaryBorder,
 
-  navy: '#0B1F4B',
-  navyHover: '#162D66',
-  navyLight: '#1E3A8A',
+  navy: sharedColors.brand.navy,
+  navyHover: sharedColors.brand.navyHover,
+  navyLight: sharedColors.brand.navyLight,
 
-  // Canvas & Surfaces
-  pageBg: '#F5F7FA',
-  cardBg: '#FFFFFF',
-  cardBorder: '#E2E8F0',
-  cardBorderLight: '#F1F5F9',
+  // Canvas & Surfaces — Light canvas #F8FAFC & Clean Cards
+  pageBg: sharedColors.canvas.pageBg,
+  cardBg: sharedColors.canvas.cardBg,
+  cardBorder: sharedColors.border.default,
+  cardBorderLight: sharedColors.border.subtle,
 
-  // Text
-  textPrimary: '#0F172A',
-  textSecondary: '#64748B',
-  textMuted: '#94A3B8',
-  textWhite: '#FFFFFF',
+  // Text Hierarchy — Primary #111827
+  textPrimary: sharedColors.text.primary,
+  textSecondary: sharedColors.text.secondary,
+  textMuted: sharedColors.text.muted,
+  textWhite: sharedColors.text.inverse,
 
-  // Status & Feedback
-  green: '#10B981',
-  greenText: '#047857',
-  greenLight: '#ECFDF5',
-  greenBorder: '#A7F3D0',
+  // Semantic Status & Feedback
+  green: sharedColors.semantic.success.main,
+  greenText: sharedColors.semantic.success.text,
+  greenLight: sharedColors.semantic.success.bg,
+  greenBorder: sharedColors.semantic.success.border,
 
-  orange: '#F59E0B',
-  orangeText: '#B45309',
-  orangeLight: '#FFFBEB',
-  orangeBorder: '#FDE68A',
+  orange: sharedColors.semantic.warning.main,
+  orangeText: sharedColors.semantic.warning.text,
+  orangeLight: sharedColors.semantic.warning.bg,
+  orangeBorder: sharedColors.semantic.warning.border,
 
-  danger: '#EF4444',
-  dangerText: '#DC2626',
-  dangerLight: '#FEF2F2',
-  dangerBorder: '#FECACA',
+  danger: sharedColors.semantic.error.main,
+  dangerText: sharedColors.semantic.error.text,
+  dangerLight: sharedColors.semantic.error.bg,
+  dangerBorder: sharedColors.semantic.error.border,
+
+  info: sharedColors.semantic.info.main,
+  infoText: sharedColors.semantic.info.text,
+  infoLight: sharedColors.semantic.info.bg,
+  infoBorder: sharedColors.semantic.info.border,
 } as const;
 
 export const spacing = {
-  xxs: 2,
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
-  xxxl: 32,
+  none: sharedSpacing.none,
+  xxs: sharedSpacing.xxs,
+  xs: sharedSpacing.xs,
+  sm: sharedSpacing.sm,
+  md: sharedSpacing.md,
+  lg: sharedSpacing.base, // 16
+  xl: sharedSpacing.lg,   // 20
+  xxl: sharedSpacing.xl,  // 24
+  xxxl: sharedSpacing['2xl'], // 32
 } as const;
 
 export const radius = {
-  xs: 4,
-  sm: 6,
-  md: 8,
-  lg: 12,
-  xl: 16,
-  xxl: 24,
-  full: 9999,
+  none: sharedRadius.none,
+  xs: sharedRadius.xs,
+  sm: sharedRadius.sm,
+  md: sharedRadius.md,
+  lg: sharedRadius.lg,
+  xl: sharedRadius.xl,
+  xxl: sharedRadius['2xl'],
+  full: sharedRadius.full,
 } as const;
 
 export const shadows = {
-  none: {},
-  sm: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  md: {
-    shadowColor: '#0B1F4B',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  lg: {
-    shadowColor: '#0B1F4B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 4,
-  },
+  none: mobileShadows.none,
+  sm: mobileShadows.sm,
+  md: mobileShadows.md,
+  lg: mobileShadows.lg,
+  card: mobileShadows.card,
 } as const;
 
 export const typography = {
@@ -127,3 +126,10 @@ export const typography = {
     letterSpacing: 0.4,
   },
 } as const;
+
+export const accessibility = {
+  minTouchTarget: sharedAccessibility.minTouchTargetMobile,
+  maxFontMultiplier: sharedAccessibility.textScaling.maxMultiplier,
+} as const;
+
+export { sharedColors, sharedSpacing, sharedRadius, sharedTypography, sharedAccessibility };

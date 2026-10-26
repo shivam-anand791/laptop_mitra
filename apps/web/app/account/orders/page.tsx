@@ -47,6 +47,17 @@ export default function OrdersPage() {
 
   useEffect(() => {
     fetchOrders(selectedStatus);
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchOrders(selectedStatus);
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
   }, [selectedStatus]);
 
   const filteredOrders = orders.filter((o) => {

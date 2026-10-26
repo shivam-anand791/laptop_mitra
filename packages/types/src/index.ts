@@ -149,11 +149,96 @@ export interface OrderItem {
   warrantyValidUntil?: string | null;
 }
 
+export const ORDER_STATUSES = [
+  'PENDING',
+  'CONFIRMED',
+  'SHIPPING',
+  'DELIVERED',
+  'CANCELLED',
+  'REFUNDED',
+] as const;
+export type OrderStatus = typeof ORDER_STATUSES[number];
+
+export const USER_STATUSES = ['ACTIVE', 'SUSPENDED', 'DELETED'] as const;
+export type UserStatus = typeof USER_STATUSES[number];
+
+export const USER_ROLES = ['CUSTOMER', 'ADMIN', 'MODERATOR', 'GUEST'] as const;
+export type UserRole = typeof USER_ROLES[number];
+
+export const ORDER_TRANSITION_MAP: Record<OrderStatus, readonly OrderStatus[]> = {
+  PENDING: ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED: ['SHIPPING', 'CANCELLED'],
+  SHIPPING: ['DELIVERED'],
+  DELIVERED: ['REFUNDED'],
+  CANCELLED: [],
+  REFUNDED: [],
+};
+
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AdminAnalyticsResponse {
+  range: '7d' | '30d' | '90d';
+  revenueByDay: Array<{ date: string; amount: number }>;
+  ordersByDay: Array<{ date: string; count: number }>;
+  ordersByStatus: Array<{ status: string; count: number }>;
+  topProducts: Array<{ id: string; name: string; units: number; revenue: number }>;
+  newUsersByDay: Array<{ date: string; count: number }>;
+  summary: {
+    totalRevenue: number;
+    totalOrders: number;
+    totalNewUsers: number;
+  };
+  revenue?: {
+    daily: Array<{ date: string; amount: number }>;
+    total: number;
+    growth: number;
+  };
+  orders?: {
+    total: number;
+    pending: number;
+    completed: number;
+    cancelled: number;
+    conversionRate: number;
+  };
+  users?: {
+    total: number;
+    active: number;
+    newThisMonth: number;
+    growth: number;
+  };
+  products?: {
+    total: number;
+    lowStock: number;
+    bestSellers: Array<{ name: string; sales: number }>;
+  };
+}
+
+export interface AdminDashboardStats {
+  totalUsers: number;
+  totalProducts: number;
+  totalOrders: number;
+  pendingOrders: number;
+  deliveredOrders: number;
+  revenueCompleted: number;
+  revenuePending: number;
+  lowStockProducts: number;
+  ordersToday: number;
+  revenue: {
+    completed: number;
+    pending: number;
+  };
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
   userId: string;
-  status: 'PENDING' | 'CONFIRMED' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED' | string;
+  status: OrderStatus | string;
   paymentStatus: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'REFUNDED' | string;
   paymentMethod?: string | null;
   paymentId?: string | null;
@@ -179,6 +264,17 @@ export interface Order {
 export interface OrderListResponse {
   orders: Order[];
   total: number;
+}
+
+export interface CreateOrderPayload {
+  referralCode?: string;
+  discountCode?: string;
+  shippingAddress?: any;
+  phone?: string;
+  notes?: string;
+  email?: string;
+  paymentMethod?: 'razorpay' | 'cod' | string;
+  idempotencyKey?: string;
 }
 
 export interface SupportTicketMessage {
@@ -243,5 +339,18 @@ export interface DiscountCode {
   validFrom?: Date | string | null;
   validUntil?: Date | string | null;
 }
+
+export interface AdminSettings {
+  storeName: string;
+  supportEmail: string;
+  contactPhone: string;
+  storeAddress: string;
+  lowStockThreshold: number;
+  freeShippingThreshold: number;
+  standardDeliveryDays: string;
+  expressDeliveryDays: string;
+}
+
+export type UpdateAdminSettingsDto = Partial<AdminSettings>;
 
 

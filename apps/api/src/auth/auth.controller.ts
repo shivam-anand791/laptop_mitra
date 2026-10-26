@@ -5,6 +5,7 @@ import { AuthService } from './auth.service';
 import { AllowUnlinkedFirebaseUser } from '../decorators/allow-firebase-sync.decorator';
 import { Public } from '../decorators/public.decorator';
 import { SyncUserDto } from './dto/sync-user.dto';
+import { CheckFirebaseRevocation } from '../decorators/check-firebase-revocation.decorator';
 
 @ApiTags('Authentication')
 @ApiBearerAuth()
@@ -91,6 +92,7 @@ export class AuthController {
   }
 
   @Post('signout-everywhere')
+  @CheckFirebaseRevocation()
   @ApiOperation({ summary: 'Revoke all sessions and sign out everywhere' })
   @ApiResponse({ status: 200, description: 'Signed out everywhere' })
   async signoutEverywhere(@Req() req: any) {
@@ -98,6 +100,7 @@ export class AuthController {
   }
 
   @Delete('account')
+  @CheckFirebaseRevocation()
   @ApiOperation({ summary: 'Delete user account and anonymize PII' })
   @ApiResponse({ status: 200, description: 'Account deleted' })
   async deleteAccount(@Req() req: any) {

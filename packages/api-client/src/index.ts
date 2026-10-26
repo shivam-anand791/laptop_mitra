@@ -19,6 +19,7 @@ export * from '../../types/dist/index';
 export interface ApiClientConfig {
   baseUrl: string;
   getToken?: (() => string | null | Promise<string | null>) | undefined;
+  onUnauthorized?: (() => void | Promise<void>) | undefined;
 }
 
 declare const process: any;
@@ -26,10 +27,12 @@ declare const process: any;
 export class LaptopMitraApiClient {
   private baseUrl: string;
   private getToken?: (() => string | null | Promise<string | null>) | undefined;
+  private onUnauthorized?: (() => void | Promise<void>) | undefined;
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
     this.getToken = config.getToken;
+    this.onUnauthorized = config.onUnauthorized;
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -57,6 +60,9 @@ export class LaptopMitraApiClient {
 
     if (!res.ok) {
       const errorData = (await res.json().catch(() => ({ message: res.statusText }))) as { message?: string };
+      if (res.status === 401) {
+        await this.onUnauthorized?.();
+      }
       throw new Error(errorData.message || `API error ${res.status}`);
     }
 
@@ -79,33 +85,6 @@ export class LaptopMitraApiClient {
   }
 
   // Auth
-  async login(email: string, pass: string): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password: pass }),
-    });
-  }
-
-  async guestLogin(): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/guest', {
-      method: 'POST',
-    });
-  }
-
-  async register(data: { name: string; email: string; password: string; phone?: string; referralCode?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
-    return this.request<{ accessToken: string; refreshToken: string }>('/auth/refresh', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken }),
-    });
-  }
-
   async syncUser(data?: { name?: string; phone?: string; referralCode?: string }): Promise<{ user: User }> {
     return this.request<{ user: User }>('/auth/sync', {
       method: 'POST',
@@ -124,13 +103,6 @@ export class LaptopMitraApiClient {
     });
   }
 
-  async logout(refreshToken: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/auth/logout', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken }),
-    });
-  }
-
   async signoutEverywhere(): Promise<{ message: string }> {
     return this.request<{ message: string }>('/auth/signout-everywhere', {
       method: 'POST',
@@ -140,13 +112,6 @@ export class LaptopMitraApiClient {
   async deleteAccount(): Promise<{ message: string }> {
     return this.request<{ message: string }>('/auth/account', {
       method: 'DELETE',
-    });
-  }
-
-  async linkGuestAccount(data: { email: string; password?: string; name?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    return this.request<{ accessToken: string; refreshToken: string; user: User }>('/auth/link-guest', {
-      method: 'POST',
-      body: JSON.stringify(data),
     });
   }
 
@@ -179,7 +144,8 @@ export class LaptopMitraApiClient {
 
   // Wishlist
   async getWishlist(): Promise<WishlistItem[]> {
-    return this.request<WishlistItem[]>('/wishlist');
+    const res = await this.request<any>('/wishlist');
+    return Array.isArray(res) ? res : (res?.items ?? res?.wishlist?.items ?? []);
   }
 
   async addToWishlist(productId: string): Promise<{ wishlistItem: WishlistItem; message: string }> {
@@ -204,9 +170,17 @@ export class LaptopMitraApiClient {
     shippingAddress?: any;
     phone?: string;
     notes?: string;
+    email?: string;
+    paymentMethod?: 'razorpay' | 'cod';
+    idempotencyKey?: string;
   }): Promise<Order> {
+    const headers: Record<string, string> = {};
+    if (payload.idempotencyKey) {
+      headers['Idempotency-Key'] = payload.idempotencyKey;
+    }
     return this.request<Order>('/orders', {
       method: 'POST',
+      headers,
       body: JSON.stringify(payload),
     });
   }
@@ -237,12 +211,38 @@ export class LaptopMitraApiClient {
     });
   }
 
-  async getOrderInvoice(id: string): Promise<{ order: Order; invoiceNumber: string; issuedAt: string }> {
-    return this.request<{ order: Order; invoiceNumber: string; issuedAt: string }>(`/orders/${id}/invoice`);
+  async getOrderInvoice(id: string): Promise<{
+    order: Order;
+    invoiceNumber: string;
+    issuedAt: string;
+    seller?: {
+      name: string;
+      gstin: string;
+      address: string;
+      phone: string;
+      email: string;
+    };
+    taxBreakdown?: {
+      taxableAmount: number;
+      cgst: number;
+      sgst: number;
+      totalTax: number;
+      grandTotal: number;
+    };
+  }> {
+    return this.request<any>(`/orders/${id}/invoice`);
   }
 
-  async trackOrder(id: string): Promise<{ status: string; carrier?: string; trackingNumber?: string; timeline: Array<{ status: string; time: string; note: string }> }> {
-    return this.request<{ status: string; carrier?: string; trackingNumber?: string; timeline: Array<{ status: string; time: string; note: string }> }>(`/orders/${id}/track`);
+  async trackOrder(id: string): Promise<{
+    orderId?: string;
+    orderNumber?: string;
+    status: string;
+    carrier?: string;
+    trackingNumber?: string;
+    estimatedDelivery?: string;
+    timeline: Array<{ status: string; time: string; note: string }>;
+  }> {
+    return this.request<any>(`/orders/${id}/track`);
   }
 
   // Payments
@@ -250,16 +250,32 @@ export class LaptopMitraApiClient {
     return this.request<PaymentRecord[]>('/payments/history');
   }
 
-  async createRazorpayOrder(amount: number, orderId: string): Promise<any> {
+  async createRazorpayOrder(orderId: string): Promise<any> {
     return this.request<any>('/payments/razorpay/order', {
       method: 'POST',
-      body: JSON.stringify({ amount, orderId }),
+      body: JSON.stringify({ orderId }),
+    });
+  }
+
+  async verifyRazorpayPayment(payload: {
+    orderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/payments/razorpay/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 
   // Support & Warranty
   async getTickets(): Promise<SupportTicket[]> {
     return this.request<SupportTicket[]>('/support/tickets');
+  }
+
+  async getTicket(id: string): Promise<SupportTicket> {
+    return this.request<SupportTicket>(`/support/tickets/${id}`);
   }
 
   async createTicket(data: { subject: string; orderId?: string; message: string; category?: string }): Promise<SupportTicket> {
@@ -369,26 +385,78 @@ export class LaptopMitraApiClient {
     });
   }
 
-  // Auth — Password Reset
-  async forgotPassword(email: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/auth/forgot-password', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
+  // Admin Endpoints
+  async getAdminDashboard(): Promise<{
+    totalUsers: number;
+    totalProducts: number;
+    totalOrders: number;
+    pendingOrders: number;
+    deliveredOrders: number;
+    revenueCompleted: number;
+    revenuePending: number;
+    revenue: { completed: number; pending: number };
+  }> {
+    return this.request<any>('/admin/dashboard');
+  }
+
+  async getAdminAnalytics(): Promise<{
+    revenue: { daily: { date: string; amount: number }[]; total: number; growth: number };
+    orders: { total: number; pending: number; completed: number; cancelled: number; conversionRate: number };
+    users: { total: number; active: number; newThisMonth: number; growth: number };
+    products: { total: number; lowStock: number; bestSellers: { name: string; sales: number }[] };
+  }> {
+    return this.request<any>('/admin/analytics');
+  }
+
+  async getAdminUsers(): Promise<User[]> {
+    return this.request<User[]>('/admin/users');
+  }
+
+  async updateAdminUserStatus(userId: string, status: string): Promise<any> {
+    return this.request<any>(`/admin/users/${userId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
     });
   }
 
-  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify({ token, newPassword }),
-    });
+  async getAdminProducts(): Promise<Product[]> {
+    return this.request<Product[]>('/admin/products');
   }
 
-  async changePassword(data: { currentPassword: string; newPassword: string }): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/auth/change-password', {
+  async createAdminProduct(data: any): Promise<Product> {
+    return this.request<Product>('/admin/products', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
+
+  async updateAdminProduct(productId: string, data: any): Promise<Product> {
+    return this.request<Product>(`/admin/products/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAdminProduct(productId: string): Promise<{ success?: boolean }> {
+    return this.request<any>(`/admin/products/${productId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAdminOrders(): Promise<Order[]> {
+    return this.request<Order[]>('/admin/orders');
+  }
+
+  async getAdminOrder(orderId: string): Promise<Order> {
+    return this.request<Order>(`/admin/orders/${orderId}`);
+  }
+
+  async updateAdminOrderStatus(orderId: string, status: string): Promise<Order> {
+    return this.request<Order>(`/admin/orders/${orderId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
+
 }
 

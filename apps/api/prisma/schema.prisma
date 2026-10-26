@@ -55,6 +55,9 @@ model User {
   referrals         Referral[]
   addresses         Address[]
   deviceTokens      DeviceToken[]
+  discountRedemptions DiscountRedemption[]
+  referredRedemptions ReferralRedemption[] @relation("ReferralRecipient")
+  issuedRedemptions   ReferralRedemption[] @relation("ReferralIssuer")
 }
 
 model Address {
@@ -132,6 +135,9 @@ model Product {
   cartItems     CartItem[]
   orderItems    OrderItem[]
   wishlistItems WishlistItem[]
+
+  @@index([status])
+  @@index([stock])
 }
 
 // Product Image
@@ -214,6 +220,8 @@ model Order {
   paymentMethod    String?     // "razorpay" | "wallet" | "cod"
   paymentId        String?     // Razorpay payment ID
   razorpayOrderId  String?     // Razorpay order ID
+  inventoryStatus String      @default("NONE") // NONE | RESERVED | CONSUMED | RELEASED
+  reservationExpiresAt DateTime?
   razorpaySignature String?     // For webhook verification
   subtotal         Decimal
   discountAmount   Decimal     @default(0)
@@ -232,6 +240,15 @@ model Order {
   items        OrderItem[]
   deliveries   Delivery[]
   payments     Payment[]
+  discountRedemption DiscountRedemption?
+  referralRedemption ReferralRedemption?
+
+  @@unique([razorpayOrderId])
+  @@index([inventoryStatus, reservationExpiresAt])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 model OrderItem {
@@ -275,10 +292,14 @@ model Payment {
   status           String   @default("PENDING") // PENDING | COMPLETED | FAILED | REFUNDED
   receiptId        String?
   attemptCount     Int      @default(0)
+  refundId         String?  @unique
+  refundStatus     String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   @@index([orderId])
+  @@unique([razorpayOrderId])
+  @@unique([razorpayPaymentId])
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +317,7 @@ model DiscountCode {
   maxUses       Int?     // Total uses allowed (null = unlimited)
   uses          Int      @default(0)
   maxUsesPerUser Int?    // Per-user limit (null = unlimited)
+  maxDiscountValue Decimal? // Optional cap for percentage discounts
   isActive      Boolean  @default(true)
   validFrom     DateTime?
   validUntil    DateTime?
@@ -303,6 +325,7 @@ model DiscountCode {
   appliesToIds  String?  // Comma-separated product/category IDs
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  redemptions   DiscountRedemption[]
 
   @@index([code])
 }
@@ -325,4 +348,46 @@ model Referral {
 
   @@index([userId])
   @@index([code])
+}
+
+model DiscountRedemption {
+  id             String       @id @default(uuid())
+  discountCode   DiscountCode @relation(fields: [discountCodeId], references: [id], onDelete: Restrict)
+  discountCodeId String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  userId         String
+  order          Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId        String       @unique
+  createdAt      DateTime     @default(now())
+
+  @@index([discountCodeId, userId])
+}
+
+model ReferralRedemption {
+  id             String   @id @default(uuid())
+  referrer       User     @relation("ReferralIssuer", fields: [referrerUserId], references: [id], onDelete: Restrict)
+  referrerUserId String
+  referredUser   User     @relation("ReferralRecipient", fields: [referredUserId], references: [id], onDelete: Restrict)
+  referredUserId String   @unique
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId        String   @unique
+  referralCode   String
+  discountAmount Decimal
+  createdAt      DateTime @default(now())
+
+  @@index([referrerUserId])
+}
+
+// ---------------------------------------------------------------------------
+// Platform & Store Configuration Settings
+// ---------------------------------------------------------------------------
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_settings")
 }

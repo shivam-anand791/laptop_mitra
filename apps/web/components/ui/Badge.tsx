@@ -1,6 +1,6 @@
 import React from 'react';
 
-type BadgeVariant =
+export type BadgeVariant =
   | 'primary'
   | 'secondary'
   | 'success'
@@ -14,9 +14,9 @@ type BadgeVariant =
   | 'hotDeal'
   | 'inStock';
 
-type BadgeSize = 'sm' | 'md';
+export type BadgeSize = 'sm' | 'md';
 
-interface BadgeProps {
+export interface BadgeProps {
   variant?: BadgeVariant;
   size?: BadgeSize;
   dot?: boolean;
@@ -26,18 +26,18 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  primary: 'bg-[#EBF2FF] text-[#1D6FF2] border border-blue-200/80',
-  secondary: 'bg-slate-100 text-slate-700 border border-slate-200',
-  success: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  warning: 'bg-amber-50 text-amber-700 border border-amber-200',
-  danger: 'bg-rose-50 text-rose-700 border border-rose-200',
-  info: 'bg-sky-50 text-sky-700 border border-sky-200',
-  muted: 'bg-slate-100 text-slate-500 border border-slate-200',
-  refurb: 'bg-[#0B1F4B] text-white border border-[#0B1F4B] font-extrabold shadow-xs',
-  bestSeller: 'bg-[#1D6FF2] text-white border border-[#1D6FF2] font-extrabold shadow-xs',
-  newArrival: 'bg-[#EBF2FF] text-[#1D6FF2] border border-blue-200 font-extrabold',
-  hotDeal: 'bg-[#F97316] text-white border border-[#F97316] font-extrabold shadow-xs',
-  inStock: 'bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold',
+  primary: 'bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE]',
+  secondary: 'bg-slate-100 text-[#475569] border border-slate-200',
+  success: 'bg-[#F0FDF4] text-[#15803D] border border-[#BBF7D0]',
+  warning: 'bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]',
+  danger: 'bg-[#FEF2F2] text-[#B91C1C] border border-[#FECACA]',
+  info: 'bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE]',
+  muted: 'bg-slate-100 text-[#94A3B8] border border-slate-200',
+  refurb: 'bg-[#0B1F4B] text-white border border-[#0B1F4B] font-bold shadow-xs',
+  bestSeller: 'bg-[#2563EB] text-white border border-[#2563EB] font-bold shadow-xs',
+  newArrival: 'bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] font-bold',
+  hotDeal: 'bg-[#EA580C] text-white border border-[#EA580C] font-bold shadow-xs',
+  inStock: 'bg-[#F0FDF4] text-[#16A34A] border border-[#BBF7D0] font-semibold',
 };
 
 const sizeStyles: Record<BadgeSize, string> = {
@@ -67,14 +67,14 @@ export default function Badge({
         <span
           className={[
             'w-1.5 h-1.5 rounded-full shrink-0',
-            variant === 'success' && 'bg-emerald-500',
-            variant === 'warning' && 'bg-amber-500',
-            variant === 'danger' && 'bg-rose-500',
-            variant === 'info' && 'bg-sky-500',
-            variant === 'primary' && 'bg-[#1D6FF2]',
+            variant === 'success' && 'bg-[#16A34A]',
+            variant === 'warning' && 'bg-[#D97706]',
+            variant === 'danger' && 'bg-[#DC2626]',
+            variant === 'info' && 'bg-[#2563EB]',
+            variant === 'primary' && 'bg-[#2563EB]',
             variant === 'secondary' && 'bg-slate-400',
             variant === 'muted' && 'bg-slate-400',
-            variant === 'inStock' && 'bg-emerald-500',
+            variant === 'inStock' && 'bg-[#16A34A]',
           ].filter(Boolean).join(' ')}
           aria-hidden="true"
         />
@@ -87,9 +87,9 @@ export default function Badge({
 
 /* ── Grade Badge (domain-specific) ── */
 
-type Grade = 'A+' | 'A' | 'B';
+export type Grade = 'A+' | 'A' | 'B';
 
-interface GradeBadgeProps {
+export interface GradeBadgeProps {
   grade: Grade;
   size?: BadgeSize;
   className?: string;
@@ -97,21 +97,21 @@ interface GradeBadgeProps {
 
 const gradeStyles: Record<Grade, { bg: string; text: string; label: string; border: string }> = {
   'A+': {
-    bg: 'bg-emerald-50',
-    text: 'text-emerald-700',
-    border: 'border-emerald-200',
+    bg: 'bg-[#F0FDF4]',
+    text: 'text-[#15803D]',
+    border: 'border-[#BBF7D0]',
     label: 'Grade A+ Certified',
   },
   A: {
-    bg: 'bg-blue-50',
-    text: 'text-[#1D6FF2]',
-    border: 'border-blue-200',
+    bg: 'bg-[#EFF6FF]',
+    text: 'text-[#2563EB]',
+    border: 'border-[#BFDBFE]',
     label: 'Grade A Certified',
   },
   B: {
-    bg: 'bg-amber-50',
-    text: 'text-amber-700',
-    border: 'border-amber-200',
+    bg: 'bg-[#FFFBEB]',
+    text: 'text-[#B45309]',
+    border: 'border-[#FDE68A]',
     label: 'Grade B',
   },
 };

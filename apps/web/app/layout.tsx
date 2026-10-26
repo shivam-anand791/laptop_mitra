@@ -21,6 +21,18 @@ import { Providers } from './providers';
 export const metadata: Metadata = {
   title: 'LaptopMitra | Certified Pre-Owned & Refurbished Laptops',
   description: 'India\'s #1 marketplace for certified refurbished laptops. 32-point inspection, 1-year warranty, free express delivery, and flat ₹500 discounts with Mitra codes.',
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+  },
+  manifest: '/site.webmanifest',
 };
 
 export default function RootLayout({

@@ -8,7 +8,7 @@ describe('UsersController - GET /users/:id (Finding H1 IDOR Protection)', () => 
   let usersService: jest.Mocked<UsersService>;
 
   const mockUserA = { id: 'user-a', role: 'CUSTOMER', email: 'user.a@example.com' };
-  const mockUserB = { id: 'user-b', role: 'CUSTOMER', email: 'user.b@example.com' };
+  const _mockUserB = { id: 'user-b', role: 'CUSTOMER', email: 'user.b@example.com' };
   const mockAdmin = { id: 'admin-1', role: 'ADMIN', email: 'admin@example.com' };
   const mockGuest = { id: 'guest-1', role: 'GUEST', isGuest: true };
 

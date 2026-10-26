@@ -1,175 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { Suspense, useState, useEffect, useTransition, useMemo, useCallback } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import Link from 'next/link';
+import { useAdminOrders, useAdminStats } from '../../../lib/admin-queries';
+import { AdminOrder, ORDER_STATUSES, parseShippingAddress } from '../../../lib/types';
+import { formatINR, formatDate, toNumber } from '../../../lib/format';
+import { QueryState } from '../../../components/admin/QueryState';
+import Button from '../../../components/ui/Button';
 
-interface Order {
-  id: string;
-  orderNumber: string;
-  status: string;
-  paymentStatus: string;
-  paymentMethod: string | null;
-  subtotal: any;
-  discountAmount: any;
-  finalAmount: any;
-  shippingAddress: any;
-  phone: string | null;
-  email: string;
-  notes: string | null;
-  createdAt: string;
-  updatedAt: string;
-  user: {
-    id: string;
-    name: string | null;
-    email: string;
-  };
-  items: {
-    id: string;
-    quantity: number;
-    price: any;
-    product: {
-      id: string;
-      name: string;
-    };
-  }[];
-  deliveries: {
-    id: string;
-    status: string;
-    trackingNumber: string | null;
-    carrier: string | null;
-  }[];
-}
+// ---------------------------------------------------------------------------
+// Status Badge Components
+// ---------------------------------------------------------------------------
 
-const apiClient = {
-  async get(url: string) {
-    const mockOrders: Order[] = [
-      {
-        id: 'order-1',
-        orderNumber: 'ORD-12345',
-        status: 'CONFIRMED',
-        paymentStatus: 'COMPLETED',
-        paymentMethod: 'razorpay',
-        subtotal: 78000,
-        discountAmount: 7800,
-        finalAmount: 70200,
-        shippingAddress: { address: '123 Main St, Mumbai', city: 'Mumbai', state: 'MH', pincode: '400001' },
-        phone: '+919876543210',
-        email: 'john@example.com',
-        notes: null,
-        createdAt: '2024-09-15T14:30:00.000Z',
-        updatedAt: '2024-09-18T10:15:00.000Z',
-        user: { id: 'user-1', name: 'John Doe', email: 'john@example.com' },
-        items: [
-          {
-            id: 'item-1',
-            quantity: 1,
-            price: 78000,
-            product: { id: 'prod-1', name: 'Dell Latitude 5420' },
-          },
-        ],
-        deliveries: [{ id: 'del-1', status: 'PENDING', trackingNumber: null, carrier: null }],
-      },
-      {
-        id: 'order-2',
-        orderNumber: 'ORD-12346',
-        status: 'PENDING',
-        paymentStatus: 'PENDING',
-        paymentMethod: 'razorpay',
-        subtotal: 137000,
-        discountAmount: 0,
-        finalAmount: 137000,
-        shippingAddress: { address: '456 Park Ave, Delhi', city: 'Delhi', state: 'DL', pincode: '110001' },
-        phone: '+919876543210',
-        email: 'jane@example.com',
-        notes: 'Please deliver after 6 PM',
-        createdAt: '2024-09-20T09:00:00.000Z',
-        updatedAt: '2024-09-20T09:00:00.000Z',
-        user: { id: 'user-2', name: 'Jane Smith', email: 'jane@example.com' },
-        items: [
-          {
-            id: 'item-2',
-            quantity: 1,
-            price: 89000,
-            product: { id: 'prod-3', name: 'Lenovo ThinkPad X1 Carbon' },
-          },
-          {
-            id: 'item-3',
-            quantity: 1,
-            price: 48000,
-            product: { id: 'prod-2', name: 'HP EliteBook 840 G8' },
-          },
-        ],
-        deliveries: [{ id: 'del-2', status: 'PENDING', trackingNumber: null, carrier: null }],
-      },
-      {
-        id: 'order-3',
-        orderNumber: 'ORD-12344',
-        status: 'DELIVERED',
-        paymentStatus: 'COMPLETED',
-        paymentMethod: 'razorpay',
-        subtotal: 185000,
-        discountAmount: 18500,
-        finalAmount: 166500,
-        shippingAddress: { address: '789 Lake Rd, Bangalore', city: 'Bangalore', state: 'KA', pincode: '560001' },
-        phone: '+919876543210',
-        email: 'bob@example.com',
-        notes: null,
-        createdAt: '2024-09-01T12:00:00.000Z',
-        updatedAt: '2024-09-05T18:30:00.000Z',
-        user: { id: 'user-3', name: 'Bob Wilson', email: 'bob@example.com' },
-        items: [
-          {
-            id: 'item-4',
-            quantity: 1,
-            price: 185000,
-            product: { id: 'prod-4', name: 'Apple MacBook Pro 16"' },
-          },
-        ],
-        deliveries: [{ id: 'del-3', status: 'DELIVERED', trackingNumber: 'TRK-987654321', carrier: 'DTDC' }],
-      },
-      {
-        id: 'order-4',
-        orderNumber: 'ORD-12347',
-        status: 'CANCELLED',
-        paymentStatus: 'REFUNDED',
-        paymentMethod: 'cod',
-        subtotal: 35000,
-        discountAmount: 0,
-        finalAmount: 35000,
-        shippingAddress: { address: '321 Hill St, Chennai', city: 'Chennai', state: 'TN', pincode: '600001' },
-        phone: '+919876543210',
-        email: 'alice@example.com',
-        notes: null,
-        createdAt: '2024-09-19T15:45:00.000Z',
-        updatedAt: '2024-09-20T08:00:00.000Z',
-        user: { id: 'user-4', name: null, email: 'alice@example.com' },
-        items: [
-          {
-            id: 'item-5',
-            quantity: 1,
-            price: 35000,
-            product: { id: 'prod-5', name: 'ASUS VivoBook 15' },
-          },
-        ],
-        deliveries: [{ id: 'del-4', status: 'CANCELLED', trackingNumber: null, carrier: null }],
-      },
-    ];
-
-    if (url === '/admin/orders') {
-      return { data: mockOrders };
-    }
-    if (url.startsWith('/admin/orders/')) {
-      const order = mockOrders.find((o) => o.id === url.split('/')[3]);
-      return { data: order || null };
-    }
-    throw new Error('Unknown endpoint');
-  },
-
-  async put(url: string, body: any) {
-    return { data: { success: true } };
-  },
-};
-
-function OrderStatusBadge({ status }: { status: string }) {
+export function OrderStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     PENDING: 'badge-warning',
     CONFIRMED: 'badge-info',
@@ -181,7 +25,7 @@ function OrderStatusBadge({ status }: { status: string }) {
   return <span className={`badge ${styles[status] || 'badge-gray'}`}>{status}</span>;
 }
 
-function PaymentStatusBadge({ status }: { status: string }) {
+export function PaymentStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     PENDING: 'badge-warning',
     PROCESSING: 'badge-info',
@@ -192,213 +36,496 @@ function PaymentStatusBadge({ status }: { status: string }) {
   return <span className={`badge ${styles[status] || 'badge-gray'}`}>{status}</span>;
 }
 
-function formatPrice(price: any) {
-  const numPrice = typeof price === 'object' ? Number(price) : Number(price);
-  return `₹${numPrice.toLocaleString('en-IN')}`;
-}
+// ---------------------------------------------------------------------------
+// Skeleton Loading Fallback
+// ---------------------------------------------------------------------------
 
-function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString('en-IN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [paymentFilter, setPaymentFilter] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
-
-  useEffect(() => {
-    async function loadOrders() {
-      try {
-        const response: any = await apiClient.get('/admin/orders');
-        setOrders(response.data as Order[]);
-      } catch (error) {
-        console.error('Failed to load orders:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadOrders();
-  }, []);
-
-  const filteredOrders = orders.filter((order) => {
-    const statusMatch = statusFilter === 'all' || order.status === statusFilter;
-    const paymentMatch = paymentFilter === 'all' || order.paymentStatus === paymentFilter;
-    const searchMatch =
-      searchTerm === '' ||
-      order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.email.toLowerCase().includes(searchTerm.toLowerCase());
-    return statusMatch && paymentMatch && searchMatch;
-  });
-
-  const totalRevenue = filteredOrders
-    .filter((o) => o.paymentStatus === 'COMPLETED')
-    .reduce((sum, o) => sum + Number(o.finalAmount), 0);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+function OrdersLoadingSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <div className="h-8 bg-gray-200 dark:bg-gray-800 rounded w-48" />
+          <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-64" />
+        </div>
       </div>
-    );
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-24 bg-gray-200 dark:bg-gray-800 rounded-2xl" />
+        ))}
+      </div>
+      <div className="h-14 bg-gray-200 dark:bg-gray-800 rounded-xl" />
+      <div className="h-96 bg-gray-200 dark:bg-gray-800 rounded-2xl" />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Content
+// ---------------------------------------------------------------------------
+
+function OrdersPageContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [, startTransition] = useTransition();
+
+  // 1. Read filter values from URL query string
+  const currentStatus = searchParams.get('status') || 'all';
+  const currentPaymentStatus = searchParams.get('paymentStatus') || 'all';
+  const currentSearch = searchParams.get('search') || '';
+  const currentFrom = searchParams.get('from') || '';
+  const currentTo = searchParams.get('to') || '';
+  const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+
+  // Local state for debounced search input
+  const [searchInput, setSearchInput] = useState(currentSearch);
+  const [prevSearchParam, setPrevSearchParam] = useState(currentSearch);
+
+  // Synchronize state when URL query param changes without effect cascading renders
+  if (prevSearchParam !== currentSearch) {
+    setPrevSearchParam(currentSearch);
+    setSearchInput(currentSearch);
   }
+
+  // URL Query String Updater
+  const updateUrlFilters = useCallback(
+    (updates: Record<string, string | null | undefined>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value || value === 'all' || value.trim?.() === '') {
+          params.delete(key);
+        } else {
+          params.set(key, value);
+        }
+      });
+
+      startTransition(() => {
+        const queryString = params.toString();
+        router.push(pathname + (queryString ? `?${queryString}` : ''), { scroll: false });
+      });
+    },
+    [searchParams, pathname, router],
+  );
+
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      if (searchInput !== currentSearch) {
+        updateUrlFilters({ search: searchInput, page: '1' });
+      }
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchInput, currentSearch, updateUrlFilters]);
+
+  // Handlers for filter controls
+  const handleStatusChange = (status: string) => {
+    updateUrlFilters({ status, page: '1' });
+  };
+
+  const handlePaymentChange = (paymentStatus: string) => {
+    updateUrlFilters({ paymentStatus, page: '1' });
+  };
+
+  const handleDateChange = (from: string, to: string) => {
+    updateUrlFilters({ from, to, page: '1' });
+  };
+
+  const handlePageChange = (page: number) => {
+    updateUrlFilters({ page: String(page) });
+  };
+
+  const handleClearFilters = () => {
+    setSearchInput('');
+    startTransition(() => {
+      router.push(pathname, { scroll: false });
+    });
+  };
+
+  // 2. Fetch authoritative stats and paginated orders
+  const { data: stats, isLoading: statsLoading } = useAdminStats();
+
+  const queryParams = useMemo(() => ({
+    page: currentPage,
+    pageSize: 20,
+    status: currentStatus !== 'all' ? currentStatus : undefined,
+    paymentStatus: currentPaymentStatus !== 'all' ? currentPaymentStatus : undefined,
+    search: currentSearch || undefined,
+    from: currentFrom || undefined,
+    to: currentTo || undefined,
+  }), [currentPage, currentStatus, currentPaymentStatus, currentSearch, currentFrom, currentTo]);
+
+  const {
+    data: ordersData,
+    isLoading: ordersLoading,
+    error: ordersError,
+    refetch: refetchOrders,
+    isPlaceholderData,
+  } = useAdminOrders(queryParams);
+
+  // Normalize response shape (API returns { items, total, page, pageSize })
+  const ordersList: AdminOrder[] = Array.isArray(ordersData)
+    ? ordersData
+    : ordersData?.items ?? [];
+  const totalOrders = Array.isArray(ordersData)
+    ? ordersData.length
+    : ordersData?.total ?? 0;
+  const pageSize = Array.isArray(ordersData) ? 20 : ordersData?.pageSize ?? 20;
+  const totalPages = Math.max(1, Math.ceil(totalOrders / pageSize));
+
+  // CSV Export handler for currently filtered visible page
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExportCSV = () => {
+    if (ordersList.length === 0) return;
+    setIsExporting(true);
+    try {
+      const headers = ['Order Number', 'Customer Name', 'Email', 'Phone', 'Date', 'Items Count', 'Final Amount (INR)', 'Status', 'Payment Status', 'Payment Method'];
+      const rows = ordersList.map((o) => {
+        const addr = parseShippingAddress(o.shippingAddress);
+        return [
+          `"${o.orderNumber || o.id}"`,
+          `"${o.user?.name || addr.fullName || ''}"`,
+          `"${o.email || o.user?.email || ''}"`,
+          `"${o.phone || addr.phone || ''}"`,
+          `"${new Date(o.createdAt).toISOString()}"`,
+          `"${o.items?.reduce((sum, item) => sum + (item.quantity || 1), 0) || 0}"`,
+          `"${toNumber(o.finalAmount)}"`,
+          `"${o.status}"`,
+          `"${o.paymentStatus}"`,
+          `"${o.paymentMethod || 'COD'}"`,
+        ];
+      });
+
+      const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `laptopmitra-orders-page-${currentPage}-${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const hasActiveFilters =
+    currentStatus !== 'all' ||
+    currentPaymentStatus !== 'all' ||
+    Boolean(currentSearch) ||
+    Boolean(currentFrom) ||
+    Boolean(currentTo);
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Orders</h1>
-        <div className="text-sm text-gray-500 dark:text-gray-400">
-          Total Revenue: {formatPrice(totalRevenue)}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Order Management</h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Real-time orders, state transitions, and fulfillment verification
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => refetchOrders()}
+            className="btn btn-secondary text-xs flex items-center space-x-1.5"
+            title="Refresh orders from backend"
+          >
+            <span>↻</span>
+            <span>Refresh</span>
+          </button>
+          <button
+            onClick={handleExportCSV}
+            disabled={ordersList.length === 0 || isExporting}
+            className="btn btn-secondary text-xs flex items-center space-x-1.5 disabled:opacity-50"
+            title="Export currently visible page of orders as CSV"
+          >
+            <span>📥</span>
+            <span>{isExporting ? 'Exporting...' : 'Export Page CSV'}</span>
+          </button>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <input
-          type="text"
-          placeholder="Search by order # or email..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="input"
-          aria-label="Search orders"
-        />
-
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="input"
-          aria-label="Filter by order status"
-        >
-          <option value="all">All Statuses</option>
-          <option value="PENDING">Pending</option>
-          <option value="CONFIRMED">Confirmed</option>
-          <option value="SHIPPING">Shipping</option>
-          <option value="DELIVERED">Delivered</option>
-          <option value="CANCELLED">Cancelled</option>
-          <option value="REFUNDED">Refunded</option>
-        </select>
-
-        <select
-          value={paymentFilter}
-          onChange={(e) => setPaymentFilter(e.target.value)}
-          className="input"
-          aria-label="Filter by payment status"
-        >
-          <option value="all">All Payment Statuses</option>
-          <option value="PENDING">Payment Pending</option>
-          <option value="COMPLETED">Payment Completed</option>
-          <option value="FAILED">Payment Failed</option>
-          <option value="REFUNDED">Payment Refunded</option>
-        </select>
-      </div>
-
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="card">
-          <div className="p-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Orders</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{orders.length}</p>
-          </div>
+      {/* Summary Cards (Authoritative from GET /admin/dashboard/stats) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="card p-4 transition-all">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Orders</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+            {statsLoading ? '...' : stats?.totalOrders ?? '—'}
+          </p>
+          <span className="text-[11px] text-gray-500">Authoritative database count</span>
         </div>
-        <div className="card">
-          <div className="p-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Pending</p>
-            <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
-              {orders.filter((o) => o.status === 'PENDING').length}
-            </p>
-          </div>
+
+        <div className="card p-4 transition-all">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Pending Fulfillment</p>
+          <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">
+            {statsLoading ? '...' : stats?.pendingOrders ?? '—'}
+          </p>
+          <span className="text-[11px] text-gray-500">Requires processing</span>
         </div>
-        <div className="card">
-          <div className="p-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Processing</p>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {orders.filter((o) => o.status === 'CONFIRMED' || o.status === 'SHIPPING').length}
-            </p>
-          </div>
+
+        <div className="card p-4 transition-all">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Delivered Orders</p>
+          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+            {statsLoading ? '...' : stats?.deliveredOrders ?? '—'}
+          </p>
+          <span className="text-[11px] text-gray-500">Completed deliveries</span>
         </div>
-        <div className="card">
-          <div className="p-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Delivered</p>
-            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {orders.filter((o) => o.status === 'DELIVERED').length}
-            </p>
-          </div>
+
+        <div className="card p-4 transition-all">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Completed Revenue</p>
+          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+            {statsLoading ? '...' : formatINR(stats?.revenueCompleted ?? 0)}
+          </p>
+          <span className="text-[11px] text-gray-500">Paid orders</span>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="table-container card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Order #</th>
-              <th>Customer</th>
-              <th>Date</th>
-              <th>Items</th>
-              <th>Amount</th>
-              <th>Status</th>
-              <th>Payment</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredOrders.map((order) => (
-              <tr key={order.id}>
-                <td className="font-mono text-sm text-gray-900 dark:text-white">
-                  {order.orderNumber}
-                </td>
-                <td>
-                  <div>
-                    <span className="font-medium text-gray-900 dark:text-white block">
-                      {order.user.name || 'Unnamed User'}
-                    </span>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      {order.user.email}
-                    </span>
-                  </div>
-                </td>
-                <td className="text-sm text-gray-600 dark:text-gray-300">
-                  {formatDate(order.createdAt)}
-                </td>
-                <td className="text-sm text-gray-600 dark:text-gray-300">
-                  {order.items.reduce((sum, item) => sum + item.quantity, 0)} items
-                </td>
-                <td className="text-gray-900 dark:text-white font-medium">
-                  {formatPrice(order.finalAmount)}
-                </td>
-                <td>
-                  <OrderStatusBadge status={order.status} />
-                </td>
-                <td>
-                  <PaymentStatusBadge status={order.paymentStatus} />
-                </td>
-                <td>
-                  <a
-                    href={`/admin/orders/${order.id}`}
-                    className="text-sm text-primary hover:text-blue-700 dark:text-blue-400 hover:dark:text-blue-300"
-                    aria-label={`View order ${order.orderNumber}`}
-                  >
-                    View
-                  </a>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Search & Filters Bar */}
+      <div className="card p-4 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-center">
+          {/* Search Input */}
+          <div className="lg:col-span-4">
+            <input
+              type="text"
+              placeholder="Search by order #, email, phone, name..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="input w-full text-xs"
+              aria-label="Search orders"
+            />
+          </div>
 
-        {filteredOrders.length === 0 && (
-          <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-            No orders found matching your filters
+          {/* Status Filter */}
+          <div className="lg:col-span-2">
+            <select
+              value={currentStatus}
+              onChange={(e) => handleStatusChange(e.target.value)}
+              className="input w-full text-xs"
+              aria-label="Filter by order status"
+            >
+              <option value="all">All Order Statuses</option>
+              {ORDER_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Payment Filter */}
+          <div className="lg:col-span-2">
+            <select
+              value={currentPaymentStatus}
+              onChange={(e) => handlePaymentChange(e.target.value)}
+              className="input w-full text-xs"
+              aria-label="Filter by payment status"
+            >
+              <option value="all">All Payment Statuses</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="PENDING">Pending</option>
+              <option value="PROCESSING">Processing</option>
+              <option value="FAILED">Failed</option>
+              <option value="REFUNDED">Refunded</option>
+            </select>
+          </div>
+
+          {/* Date Range: From */}
+          <div className="lg:col-span-2">
+            <input
+              type="date"
+              value={currentFrom}
+              onChange={(e) => handleDateChange(e.target.value, currentTo)}
+              className="input w-full text-xs"
+              title="From Date"
+              aria-label="From Date"
+            />
+          </div>
+
+          {/* Date Range: To */}
+          <div className="lg:col-span-2">
+            <input
+              type="date"
+              value={currentTo}
+              onChange={(e) => handleDateChange(currentFrom, e.target.value)}
+              className="input w-full text-xs"
+              title="To Date"
+              aria-label="To Date"
+            />
+          </div>
+        </div>
+
+        {/* Active Filters Pill / Reset */}
+        {hasActiveFilters && (
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-800 text-xs">
+            <div className="text-gray-500">
+              Active filters applied. Showing matching orders.
+            </div>
+            <button
+              onClick={handleClearFilters}
+              className="text-primary hover:underline font-medium"
+            >
+              Reset Filters
+            </button>
           </div>
         )}
       </div>
+
+      {/* Orders Table Container */}
+      <QueryState
+        isLoading={ordersLoading && !isPlaceholderData}
+        error={ordersError}
+        isEmpty={ordersList.length === 0}
+        onRetry={() => refetchOrders()}
+        emptyTitle="No orders found"
+        emptyMessage={
+          hasActiveFilters
+            ? 'No orders matched the selected filter criteria. Try clearing search or resetting status.'
+            : 'There are currently no orders registered in the system.'
+        }
+        emptyAction={
+          hasActiveFilters ? (
+            <Button size="sm" variant="secondary" onClick={handleClearFilters}>
+              Reset Filters
+            </Button>
+          ) : undefined
+        }
+      >
+        <div className={`table-container card transition-opacity duration-150 ${isPlaceholderData ? 'opacity-60' : 'opacity-100'}`}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Order #</th>
+                <th>Customer</th>
+                <th>Date</th>
+                <th>Items</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Payment</th>
+                <th className="text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ordersList.map((order) => {
+                const totalItemQty =
+                  order.items?.reduce((sum, item) => sum + (item.quantity || 1), 0) || 1;
+                const addr = parseShippingAddress(order.shippingAddress);
+                const customerName =
+                  order.user?.name ||
+                  addr.fullName ||
+                  order.email?.split('@')[0] ||
+                  'Customer';
+
+                return (
+                  <tr key={order.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
+                    {/* Order Number */}
+                    <td>
+                      <Link
+                        href={`/admin/orders/${order.id}`}
+                        className="font-mono text-xs font-bold text-primary hover:underline"
+                      >
+                        #{order.orderNumber || order.id.slice(-8)}
+                      </Link>
+                    </td>
+
+                    {/* Customer */}
+                    <td>
+                      <div>
+                        <span className="font-medium text-gray-900 dark:text-white block text-xs">
+                          {customerName}
+                        </span>
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 truncate block max-w-[180px]">
+                          {order.email}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Date */}
+                    <td className="text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      {formatDate(order.createdAt)}
+                    </td>
+
+                    {/* Items */}
+                    <td className="text-xs text-gray-600 dark:text-gray-300">
+                      {totalItemQty} {totalItemQty === 1 ? 'item' : 'items'}
+                    </td>
+
+                    {/* Amount */}
+                    <td className="text-gray-900 dark:text-white font-bold text-xs whitespace-nowrap">
+                      {formatINR(order.finalAmount)}
+                    </td>
+
+                    {/* Status Badge */}
+                    <td>
+                      <OrderStatusBadge status={order.status} />
+                    </td>
+
+                    {/* Payment Badge */}
+                    <td>
+                      <PaymentStatusBadge status={order.paymentStatus} />
+                    </td>
+
+                    {/* View Action Link */}
+                    <td className="text-right">
+                      <Link
+                        href={`/admin/orders/${order.id}`}
+                        className="btn btn-secondary text-xs py-1 px-2.5 inline-block"
+                        aria-label={`View details for order ${order.orderNumber}`}
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Responsive Pagination Controls */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 card p-4 text-xs">
+          <div className="text-gray-500 dark:text-gray-400">
+            Showing <span className="font-semibold text-gray-900 dark:text-white">{ordersList.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}</span> to{' '}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {Math.min(currentPage * pageSize, totalOrders)}
+            </span>{' '}
+            of <span className="font-semibold text-gray-900 dark:text-white">{totalOrders}</span> orders
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage <= 1 || isPlaceholderData}
+              className="btn btn-secondary text-xs px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Previous page"
+            >
+              ← Previous
+            </button>
+
+            <span className="px-2 text-gray-600 dark:text-gray-300 font-medium">
+              Page {currentPage} of {totalPages}
+            </span>
+
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage >= totalPages || isPlaceholderData}
+              className="btn btn-secondary text-xs px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Next page"
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      </QueryState>
     </div>
+  );
+}
+
+export default function AdminOrdersPage() {
+  return (
+    <Suspense fallback={<OrdersLoadingSkeleton />}>
+      <OrdersPageContent />
+    </Suspense>
   );
 }

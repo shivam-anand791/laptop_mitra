@@ -129,6 +129,7 @@ export default function CheckoutPage() {
         referralCode: appliedDiscount?.type === 'referral' ? appliedDiscount.code : undefined,
         paymentMethod: paymentMethod,
         email: formData.email,
+        idempotencyKey: `lm-web-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         shippingAddress: {
           fullName: formData.fullName,
           phone: formData.phone,
@@ -154,16 +155,16 @@ export default function CheckoutPage() {
         }
 
         try {
-          const rzpOrder = await api.createRazorpayOrder(finalAmount, order.id);
+          const rzpOrder = await api.createRazorpayOrder(order.id);
 
           if (typeof window !== 'undefined' && window.Razorpay) {
             const options = {
               key: razorpayKey,
-              amount: rzpOrder.amount || Math.round(finalAmount * 100),
+              amount: rzpOrder.amount,
               currency: 'INR',
               name: 'LaptopMitra',
               description: `Order ${order.orderNumber} - Certified Refurbished Laptop`,
-              order_id: rzpOrder.id.startsWith('order_mock_') ? undefined : rzpOrder.id,
+              order_id: rzpOrder.id,
               image: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=200&q=80',
               prefill: {
                 name: formData.fullName,
@@ -174,8 +175,18 @@ export default function CheckoutPage() {
                 color: '#1D6FF2',
               },
               handler: async (response: any) => {
-                clearCart();
-                setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any });
+                try {
+                  await api.verifyRazorpayPayment({
+                    orderId: order.id,
+                    razorpayOrderId: response.razorpay_order_id,
+                    razorpayPaymentId: response.razorpay_payment_id,
+                    razorpaySignature: response.razorpay_signature,
+                  });
+                  clearCart();
+                  setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any, status: 'CONFIRMED' as any });
+                } catch {
+                  alert(`We could not confirm payment for order ${order.orderNumber}. Check your order history before trying again.`);
+                }
               },
               modal: {
                 ondismiss: () => {
@@ -187,14 +198,16 @@ export default function CheckoutPage() {
             const rzpInstance = new window.Razorpay(options);
             rzpInstance.open();
           } else {
-            // Fallback if script not loaded
-            clearCart();
-            setCompletedOrder(order);
+            await api.cancelOrder(order.id);
+            alert('Secure payment checkout is unavailable. Your pending order was cancelled. Please try again.');
           }
         } catch {
-          // Fallback to order confirmation
-          clearCart();
-          setCompletedOrder(order);
+          try {
+            await api.cancelOrder(order.id);
+          } catch {
+            // Reservation expiry handles cleanup if cancellation cannot reach the API.
+          }
+          alert('Payment could not be started. Your order has not been confirmed. Please try again.');
         }
       } else {
         // COD (Cash on Delivery)
@@ -219,14 +232,14 @@ export default function CheckoutPage() {
             </div>
 
             <div className="space-y-2">
-              <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-[#F0FDF4] text-[#15803D] border border-[#BBF7D0]">
                 Order Confirmed &amp; In Process
               </span>
-              <h1 className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-bold text-[#111827] tracking-tight">
                 Thank You for Choosing LaptopMitra!
               </h1>
-              <p className="text-xs text-slate-500">
-                Order Reference: <strong className="text-[#0B1F4B] font-mono text-sm">{completedOrder.orderNumber}</strong>
+              <p className="text-xs text-[#475569]">
+                Order Reference: <strong className="text-[#111827] font-mono text-sm">{completedOrder.orderNumber}</strong>
               </p>
             </div>
 
@@ -256,7 +269,7 @@ export default function CheckoutPage() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
               <Link
                 href="/profile"
-                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#1D6FF2] hover:bg-[#1558C0] text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all"
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs shadow-xs transition-all"
               >
                 📦 View Order in Account
               </Link>
@@ -452,11 +465,11 @@ export default function CheckoutPage() {
 
                 {/* 3. Payment Method */}
                 <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-4">
-                  <div className="flex items-center gap-2.5 pb-3 border-b border-[#E4E9F2]">
-                    <span className="w-6 h-6 rounded-full bg-[#1D6FF2] text-white flex items-center justify-center text-xs font-bold font-mono">
+                  <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2E8F0]">
+                    <span className="w-6 h-6 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold font-mono">
                       3
                     </span>
-                    <h2 className="text-base font-black text-[#0B1F4B]">
+                    <h2 className="text-base font-bold text-[#111827]">
                       Payment Method
                     </h2>
                   </div>
@@ -606,12 +619,12 @@ export default function CheckoutPage() {
                   </div>
 
                   {/* Total Amount */}
-                  <div className="pt-3 border-t border-[#E4E9F2] flex items-baseline justify-between">
+                  <div className="pt-3 border-t border-[#E2E8F0] flex items-baseline justify-between">
                     <div>
-                      <span className="text-sm font-black text-[#0B1F4B] block">Final Payable</span>
-                      <span className="text-[10px] text-slate-400">All Taxes &amp; Shipping Included</span>
+                      <span className="text-sm font-bold text-[#111827] block">Final Payable</span>
+                      <span className="text-[10px] text-[#475569]">All Taxes &amp; Shipping Included</span>
                     </div>
-                    <span className="text-2xl font-black text-[#0B1F4B] tabular-nums">
+                    <span className="text-2xl font-bold text-[#111827] tabular-nums">
                       ₹{finalAmount.toLocaleString('en-IN')}
                     </span>
                   </div>
@@ -620,7 +633,7 @@ export default function CheckoutPage() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full h-11 px-4 rounded-xl bg-[#1D6FF2] hover:bg-[#1558C0] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-95 transition-all text-center cursor-pointer"
+                    className="w-full h-11 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs active:scale-95 transition-all text-center cursor-pointer"
                   >
                     {isSubmitting ? (
                       <span className="flex items-center gap-2">

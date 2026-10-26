@@ -15,15 +15,15 @@ const config = {
 
         /* ── LaptopMitra Primary Palette ── */
         "lm-blue": {
-          DEFAULT: "#1D6FF2",
-          hover: "#1558C0",
-          light: "#EBF2FF",
-          50: "#F0F5FF",
-          100: "#E1ECFE",
-          200: "#C2D9FD",
-          500: "#1D6FF2",
-          600: "#1558C0",
-          700: "#0E3E8C",
+          DEFAULT: "#2563EB",
+          hover: "#1D4ED8",
+          light: "#EFF6FF",
+          50: "#EFF6FF",
+          100: "#DBEAFE",
+          200: "#BFDBFE",
+          500: "#2563EB",
+          600: "#1D4ED8",
+          700: "#1E40AF",
         },
         "lm-navy": {
           DEFAULT: "#0B1F4B",
@@ -34,28 +34,28 @@ const config = {
           900: "#071433",
           950: "#040B1D",
         },
-        "lm-page": "#F5F7FA",
+        "lm-page": "#F8FAFC",
         "lm-card": "#FFFFFF",
-        "lm-border": "#E4E9F2",
+        "lm-border": "#E2E8F0",
         "lm-green": {
           DEFAULT: "#16A34A",
           stock: "#16A34A",
-          bg: "#DCFCE7",
+          bg: "#F0FDF4",
         },
         "lm-orange": {
-          DEFAULT: "#F97316",
-          badge: "#F97316",
-          bg: "#FFF7ED",
+          DEFAULT: "#D97706",
+          badge: "#D97706",
+          bg: "#FFFBEB",
         },
 
         /* ── Semantic palette ── */
-        primary: "#1D6FF2",
-        "primary-dim": "#1558C0",
+        primary: "#2563EB",
+        "primary-dim": "#1D4ED8",
         secondary: "#64748B",
         success: "#16A34A",
-        danger: "#EF4444",
-        warning: "#F59E0B",
-        info: "#3B82F6",
+        danger: "#DC2626",
+        warning: "#D97706",
+        info: "#2563EB",
 
         /* ── Custom navy scale (backward compat) ── */
         navy: {

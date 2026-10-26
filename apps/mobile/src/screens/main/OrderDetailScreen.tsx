@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput, RefreshControl } from 'react-native';
+import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useOrder, useCancelOrder, useReturnOrder, useReorder, useOrderInvoice, useOrderTracking } from '../../hooks/useApi';
@@ -36,9 +36,22 @@ export default function OrderDetailScreen() {
   const route = useRoute<OrderDetailRouteProp>();
   const { orderId } = route.params;
 
-  const { data: order, isLoading } = useOrder(orderId);
-  const { data: invoiceData } = useOrderInvoice(orderId);
-  const { data: trackData } = useOrderTracking(orderId);
+  const { data: order, isLoading, refetch: refetchOrder, isRefetching: isRefetchingOrder } = useOrder(orderId);
+  const { data: invoiceData, refetch: refetchInvoice } = useOrderInvoice(orderId);
+  const { data: trackData, refetch: refetchTracking } = useOrderTracking(orderId);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refetchOrder();
+      void refetchTracking();
+    }, [refetchOrder, refetchTracking]),
+  );
+
+  const handleRefresh = useCallback(() => {
+    void refetchOrder();
+    void refetchInvoice();
+    void refetchTracking();
+  }, [refetchOrder, refetchInvoice, refetchTracking]);
 
   const cancelOrder = useCancelOrder();
   const returnOrder = useReturnOrder();
@@ -125,7 +138,17 @@ export default function OrderDetailScreen() {
   const shippingAddress = order.shippingAddress as Record<string, string> | null;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefetchingOrder}
+          onRefresh={handleRefresh}
+          tintColor="#2563eb"
+        />
+      }
+    >
       {/* Order Header */}
       <View style={styles.headerSection}>
         <View style={styles.headerTopRow}>

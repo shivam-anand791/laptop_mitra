@@ -3,7 +3,9 @@ import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useResetPassword } from '../../hooks/useApi';
+import { useState } from 'react';
+import { confirmPasswordReset } from 'firebase/auth';
+import { getFirebaseAuth } from '../../firebase/firebase';
 import { AuthStackParamList, AuthNavigationProp } from '../../navigation/types';
 
 const resetPasswordSchema = z.object({
@@ -28,7 +30,8 @@ export default function ResetPasswordScreen() {
   const route = useRoute<ResetPasswordRouteProp>();
   const navigation = useNavigation<AuthNavigationProp>();
   const { token } = route.params;
-  const { mutate: apiResetPassword, isPending, isSuccess } = useResetPassword();
+  const [isPending, setIsPending] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const {
     control,
@@ -43,21 +46,21 @@ export default function ResetPasswordScreen() {
   });
 
   const onSubmit = async (data: ResetPasswordFormData) => {
-    apiResetPassword({ token, newPassword: data.newPassword }, {
-      onSuccess: () => {
-        Alert.alert(
-          'Password Reset Successful',
-          'Your password has been updated. You can now login with your new password.',
-          [
-            { text: 'Go to Login', onPress: () => navigation.navigate('Login') },
-          ],
-          { cancelable: false }
-        );
-      },
-      onError: (err: Error) => {
-        Alert.alert('Error', err.message || 'Failed to reset password. The link may have expired.');
-      },
-    });
+    setIsPending(true);
+    try {
+      await confirmPasswordReset(getFirebaseAuth(), token, data.newPassword);
+      setIsSuccess(true);
+      Alert.alert(
+        'Password Reset Successful',
+        'Your password has been updated. You can now login with your new password.',
+        [{ text: 'Go to Login', onPress: () => navigation.navigate('Login') }],
+        { cancelable: false },
+      );
+    } catch {
+      Alert.alert('Error', 'Failed to reset password. The link may have expired.');
+    } finally {
+      setIsPending(false);
+    }
   };
 
   return (

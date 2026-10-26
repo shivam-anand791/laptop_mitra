@@ -1,32 +1,67 @@
 import {
   Injectable,
-  UnauthorizedException,
+  OnModuleInit,
+  OnModuleDestroy,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
   ServiceUnavailableException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CartService } from '../cart/cart.service';
 import { ProductService } from '../product/product.service';
 import { NotificationService } from '../notifications/notification.service';
 import { Order, OrderItem } from '../../types';
+import { DiscountService } from '../discount/discount.service';
+import { PaymentService } from '../payments/payment.service';
+import { AdminService } from '../admin/admin.service';
 import { allowInMemoryFallback } from '../../common/fallback';
 
 // In-memory orders for fallback
 const inMemoryOrders: Map<string, Order[]> = new Map();
 
 @Injectable()
-export class OrderService {
+export class OrderService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OrderService.name);
+  private reservationCleanupTimer?: ReturnType<typeof setInterval>;
+  private static readonly RESERVATION_TTL_MS = 15 * 60 * 1000;
 
   constructor(
     private prisma: PrismaService,
     private cartService: CartService,
     private productService: ProductService,
     private notificationService: NotificationService,
+    private discountService: DiscountService,
+    private paymentService?: PaymentService,
+    @Optional() private adminService?: AdminService,
   ) {}
+
+  onModuleInit() {
+    this.reservationCleanupTimer = setInterval(() => {
+      void this.expireAbandonedReservations().catch((error) => {
+        this.logger.error(`Failed to expire checkout reservations: ${error?.message || error}`);
+      });
+    }, 60_000);
+    this.reservationCleanupTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.reservationCleanupTimer) clearInterval(this.reservationCleanupTimer);
+  }
+
+  private async runSerializable<T>(operation: (transaction: any) => Promise<T>): Promise<T> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(operation, { isolationLevel: 'Serializable' });
+      } catch (error: any) {
+        if (error?.code !== 'P2034' || attempt === 2) throw error;
+      }
+    }
+    throw new ServiceUnavailableException('Order service is temporarily unavailable');
+  }
 
   private normalizeOrder(o: any): Order {
     const rawSubtotal = o.subtotal;
@@ -93,13 +128,9 @@ export class OrderService {
     notes?: string,
     email?: string,
     user?: any,
+    paymentMethod = 'razorpay',
+    idempotencyKey?: string,
   ): Promise<Order> {
-    const { cart, total, itemCount } = await this.cartService.getCart(userId);
-
-    if (itemCount === 0) {
-      throw new BadRequestException('Cart is empty');
-    }
-
     const resolvedEmail = (email || shippingAddress?.email || user?.email)?.trim();
     const resolvedPhone = (phone || shippingAddress?.phone || user?.phone)?.trim();
 
@@ -109,128 +140,198 @@ export class OrderService {
     if (!resolvedPhone) {
       throw new BadRequestException('Phone number is required to place an order');
     }
+    if (!['razorpay', 'cod'].includes(paymentMethod)) {
+      throw new BadRequestException('Unsupported payment method');
+    }
 
-    let discountAmount = 0;
-    let discountType: string | null = null;
-    let finalAmount = total;
-
-    if (discountCode) {
-      if (discountCode.toUpperCase() === 'FIRST10') {
-        discountAmount = Math.round(total * 0.1);
-        discountType = 'percentage';
-        finalAmount = total - discountAmount;
-      } else if (discountCode.toUpperCase() === 'WELCOME500') {
-        discountAmount = 500;
-        discountType = 'fixed';
-        finalAmount = Math.max(0, total - discountAmount);
+    if (idempotencyKey?.trim()) {
+      const cleanKey = idempotencyKey.trim();
+      try {
+        const recentOrders = await this.prisma.order.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          include: {
+            items: { include: { product: true } },
+            deliveries: true,
+            payments: true,
+          },
+        });
+        const existing = recentOrders.find((o: any) => {
+          const addr = o.shippingAddress;
+          return addr && typeof addr === 'object' && addr._idempotencyKey === cleanKey;
+        });
+        if (existing) {
+          return this.normalizeOrder(existing);
+        }
+      } catch {
+        // Proceed with order creation if DB query fails
       }
-    }
 
-    let referralDiscount = 0;
-    if (referralCode) {
-      referralDiscount = Math.round(total * 0.05);
-      finalAmount = Math.max(0, finalAmount - referralDiscount);
-    }
-
-    const orderId = `ord-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const orderNumber = `LM-${Date.now().toString().slice(-6)}`;
-    const now = new Date().toISOString();
-
-    const orderItems: OrderItem[] = cart.items.map((it) => ({
-      id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-      orderId,
-      productId: it.productId,
-      quantity: it.quantity,
-      price: typeof it.priceAtAdd === 'number' ? it.priceAtAdd : parseFloat(it.priceAtAdd?.toString() || '0') || 0,
-      product: it.product as any,
-      warrantyStatus: 'ACTIVE',
-      warrantyValidUntil: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    }));
-
-    const newOrder: Order = {
-      id: orderId,
-      orderNumber,
-      userId,
-      status: 'PENDING',
-      paymentStatus: 'PENDING',
-      paymentMethod: 'razorpay',
-      paymentId: null,
-      subtotal: total,
-      discountAmount,
-      discountType,
-      referralCode: referralCode || null,
-      referralDiscount,
-      finalAmount,
-      shippingAddress: shippingAddress || null,
-      phone: resolvedPhone,
-      email: resolvedEmail,
-      notes: notes || null,
-      trackingNumber: null,
-      carrier: null,
-      returnStatus: 'NONE',
-      returnReason: null,
-      items: orderItems,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const orderCreateOp = this.prisma.order.create({
-      data: {
-        id: orderId,
-        orderNumber,
-        userId,
-        status: newOrder.status,
-        paymentStatus: newOrder.paymentStatus,
-        paymentMethod: newOrder.paymentMethod,
-        paymentId: newOrder.paymentId,
-        subtotal: newOrder.subtotal,
-        discountAmount: newOrder.discountAmount,
-        discountType: newOrder.discountType,
-        finalAmount: newOrder.finalAmount,
-        shippingAddress: newOrder.shippingAddress || undefined,
-        phone: newOrder.phone,
-        email: newOrder.email,
-        notes: newOrder.notes,
-        referralCode: newOrder.referralCode,
-        referralDiscount: newOrder.referralDiscount,
-      },
-    });
-
-    const itemCreateOps = cart.items.map((it) => {
-      const itemPrice = typeof it.priceAtAdd === 'number'
-        ? it.priceAtAdd
-        : parseFloat(it.priceAtAdd?.toString() || '0') || 0;
-      return this.prisma.orderItem.create({
-        data: {
-          orderId,
-          productId: it.productId,
-          quantity: it.quantity,
-          price: itemPrice,
-        },
+      const memOrders = inMemoryOrders.get(userId) || [];
+      const memExisting = memOrders.find((o: any) => {
+        const addr = o.shippingAddress;
+        return addr && typeof addr === 'object' && addr._idempotencyKey === cleanKey;
       });
-    });
-
-    try {
-      await this.prisma.$transaction([orderCreateOp, ...itemCreateOps]);
-    } catch (error: any) {
-      this.logger.error(`Database error while creating order: ${error?.message || error}`);
-      if (!allowInMemoryFallback()) {
-        throw new ServiceUnavailableException('Order service is temporarily unavailable');
+      if (memExisting) {
+        return memExisting;
       }
     }
 
-    const currentOrders = inMemoryOrders.get(userId) || [];
-    currentOrders.unshift(newOrder);
-    inMemoryOrders.set(userId, currentOrders);
-
-    await this.cartService.clearCart(userId);
+    let order: any;
     try {
-      await this.notificationService.dispatchOrderUpdate(userId, orderId, 'PENDING');
+      order = await this.runSerializable(async (transaction) => {
+        const cart = await transaction.cart.findFirst({
+          where: { userId },
+          include: { items: { include: { product: true } } },
+        });
+        if (!cart?.items?.length) throw new BadRequestException('Cart is empty');
+
+        let subtotalPaise = 0;
+        const pricedItems = cart.items.map((item: any) => {
+          const quantity = Number(item.quantity);
+          const currentPrice = Number(item.product?.price);
+          if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+            throw new BadRequestException('Cart contains an invalid quantity');
+          }
+          if (!item.product || item.product.status !== 'ACTIVE') {
+            throw new BadRequestException('A product in your cart is no longer available');
+          }
+          if (!Number.isFinite(currentPrice) || currentPrice < 0) {
+            throw new BadRequestException('A product in your cart has invalid pricing');
+          }
+          const unitPricePaise = Math.round(currentPrice * 100);
+          subtotalPaise += unitPricePaise * quantity;
+          return {
+            productId: item.productId,
+            categoryId: item.product.categoryId,
+            quantity,
+            unitPricePaise,
+            product: item.product,
+          };
+        });
+        if (!Number.isSafeInteger(subtotalPaise) || subtotalPaise <= 0) {
+          throw new BadRequestException('Order total is invalid');
+        }
+
+        for (const item of pricedItems) {
+          const stockWhere: any = { id: item.productId, status: 'ACTIVE' };
+          if (!item.product.allowBackorder) stockWhere.stock = { gte: item.quantity };
+          const reserved = await transaction.product.updateMany({
+            where: stockWhere,
+            data: { stock: { decrement: item.quantity } },
+          });
+          if (reserved.count !== 1) {
+            throw new BadRequestException(`${item.product.name} no longer has sufficient stock`);
+          }
+        }
+
+        const coupon = await this.discountService.validateOrderDiscount(
+          transaction,
+          discountCode,
+          userId,
+          pricedItems,
+          subtotalPaise,
+        );
+        const couponDiscountPaise = coupon?.discountAmountPaise || 0;
+
+        let referral: any = null;
+        let referralDiscountPaise = 0;
+        const normalizedReferral = referralCode?.trim();
+        if (normalizedReferral) {
+          referral = await transaction.user.findFirst({
+            where: {
+              referralCode: { equals: normalizedReferral, mode: 'insensitive' },
+              status: 'ACTIVE',
+            },
+          });
+          if (!referral) throw new BadRequestException('Invalid or inactive referral code');
+          if (referral.id === userId) throw new BadRequestException('Self-referrals are not allowed');
+
+          const priorOrderCount = await transaction.order.count({
+            where: { userId, status: { not: 'CANCELLED' } },
+          });
+          const priorReferral = await transaction.referralRedemption.findUnique({
+            where: { referredUserId: userId },
+          });
+          if (priorOrderCount > 0 || priorReferral) {
+            throw new BadRequestException('Referral discounts are only available on your first order');
+          }
+
+          // The storefront promises ₹500 off a first purchase for a referral.
+          referralDiscountPaise = Math.min(50_000, subtotalPaise - couponDiscountPaise);
+        }
+
+        const discountPaise = couponDiscountPaise + referralDiscountPaise;
+        const finalPaise = Math.max(0, subtotalPaise - discountPaise);
+        const now = new Date();
+        const reservationExpiresAt = paymentMethod === 'razorpay'
+          ? new Date(now.getTime() + OrderService.RESERVATION_TTL_MS)
+          : null;
+        const created = await transaction.order.create({
+          data: {
+            userId,
+            status: 'PENDING',
+            paymentStatus: 'PENDING',
+            paymentMethod,
+            subtotal: (subtotalPaise / 100).toFixed(2),
+            discountAmount: (discountPaise / 100).toFixed(2),
+            discountType: coupon && referral
+              ? `${coupon.type}+referral`
+              : coupon?.type || (referralDiscountPaise ? 'referral' : null),
+            finalAmount: (finalPaise / 100).toFixed(2),
+            shippingAddress: shippingAddress
+              ? { ...shippingAddress, ...(idempotencyKey ? { _idempotencyKey: idempotencyKey.trim() } : {}) }
+              : (idempotencyKey ? { _idempotencyKey: idempotencyKey.trim() } : undefined),
+            phone: resolvedPhone,
+            email: resolvedEmail,
+            notes: notes || null,
+            referralCode: referralDiscountPaise ? referral.code : null,
+            referralDiscount: (referralDiscountPaise / 100).toFixed(2),
+            inventoryStatus: paymentMethod === 'cod' ? 'CONSUMED' : 'RESERVED',
+            reservationExpiresAt,
+            items: {
+              create: pricedItems.map((item: any) => ({
+                productId: item.productId,
+                quantity: item.quantity,
+                price: (item.unitPricePaise / 100).toFixed(2),
+              })),
+            },
+          },
+          include: { items: { include: { product: true } } },
+        });
+
+        if (coupon) {
+          await this.discountService.consumeOrderDiscount(transaction, coupon.id, userId, created.id);
+        }
+        if (referral && referralDiscountPaise > 0) {
+          await transaction.referralRedemption.create({
+            data: {
+              referrerUserId: referral.id,
+              referredUserId: userId,
+              orderId: created.id,
+              referralCode: referral.code,
+              discountAmount: (referralDiscountPaise / 100).toFixed(2),
+            },
+          });
+        }
+
+        await transaction.cartItem.deleteMany({ where: { cartId: cart.id } });
+        return created;
+      });
+    } catch (error: any) {
+      if (error instanceof BadRequestException || error instanceof ForbiddenException) throw error;
+      this.logger.error(`Database error while creating order: ${error?.message || error}`);
+      throw new ServiceUnavailableException('Order service is temporarily unavailable');
+    }
+
+    try {
+      await this.notificationService.dispatchOrderUpdate(userId, order.id, 'PENDING');
     } catch {
       // notification fallback
     }
 
-    return newOrder;
+    return this.normalizeOrder(order);
   }
 
   async findByUser(userId: string, status?: string): Promise<Order[]> {
@@ -301,77 +402,165 @@ export class OrderService {
   }
 
   async updateStatus(id: string, status: string, userId: string, userRole: string): Promise<Order> {
-    const order = await this.findOne(id, userId, userRole);
     if (userRole !== 'ADMIN') {
       throw new ForbiddenException('Insufficient permissions');
     }
-    order.status = status as any;
-    order.updatedAt = new Date().toISOString();
-    try {
-      await this.prisma.order.update({
-        where: { id: order.id },
-        data: { status, updatedAt: new Date() },
-      });
-    } catch (error: any) {
-      this.logger.error(`Database error while updating order status: ${error?.message || error}`);
-      if (!allowInMemoryFallback()) {
-        throw new ServiceUnavailableException('Order service is temporarily unavailable');
-      }
+    if (this.adminService) {
+      const updated = await this.adminService.updateOrderStatus(id, status, userId);
+      return this.normalizeOrder(updated);
     }
-    return order;
+    const order = await this.findOne(id, userId, userRole);
+    const allowedTransitions: Record<string, string[]> = {
+      PENDING: ['CONFIRMED', 'CANCELLED'],
+      CONFIRMED: ['SHIPPING', 'CANCELLED'],
+      SHIPPING: ['DELIVERED'],
+      DELIVERED: ['REFUNDED'],
+    };
+    if (!allowedTransitions[order.status]?.includes(status)) {
+      throw new BadRequestException('Unsupported order status transition');
+    }
+
+    const updated = await this.prisma.order.updateMany({
+      where: { id: order.id, status: order.status },
+      data: { status, updatedAt: new Date() },
+    });
+    if (updated.count !== 1) throw new ConflictException('Order status changed; reload and try again');
+    return { ...order, status: status as any, updatedAt: new Date().toISOString() };
   }
 
   async cancelOrder(id: string, userId: string, userRole: string): Promise<Order & { refundRequired?: boolean; refundMessage?: string | null }> {
-    const order = await this.findOne(id, userId, userRole);
-
-    const allowedStatuses = ['PENDING', 'CONFIRMED'];
-    if (!allowedStatuses.includes(order.status)) {
-      throw new BadRequestException(
-        `Cannot cancel order in status "${order.status}". Cancellation is only allowed for PENDING or CONFIRMED orders.`,
-      );
-    }
-
-    const wasPaid = order.paymentStatus === 'COMPLETED';
-    order.status = 'CANCELLED';
-    order.paymentStatus = 'REFUNDED';
-    order.updatedAt = new Date().toISOString();
-
-    const refundRequired = wasPaid;
-    const refundMessage = wasPaid
-      ? 'Payment was completed - refund needs to be processed via Razorpay'
-      : null;
-
-    try {
-      await this.prisma.order.update({
-        where: { id: order.id },
-        data: { status: 'CANCELLED', paymentStatus: 'REFUNDED' },
+    const transition = await this.prisma.$transaction(async (transaction: any) => {
+      const order = await transaction.order.findUnique({
+        where: { id },
+        include: { items: true, payments: true },
       });
+      if (!order) throw new NotFoundException(`Order with id ${id} not found`);
+      if (userRole !== 'ADMIN' && order.userId !== userId) {
+        throw new ForbiddenException('Access denied: You can only cancel your own orders');
+      }
+      if (order.status === 'CANCELLED') return { order, shouldRefund: false };
+      if (!['PENDING', 'CONFIRMED'].includes(order.status)) {
+        throw new BadRequestException(`Cannot cancel order in status "${order.status}"`);
+      }
 
-      // Restore product stock
-      for (const item of order.items || []) {
-        if (item.productId && item.quantity) {
-          try {
-            await this.prisma.product?.update({
-              where: { id: item.productId },
-              data: { stock: { increment: item.quantity } },
-            });
-          } catch {
-            // best-effort product stock restore
-          }
+      const wasPaid = order.paymentStatus === 'COMPLETED';
+      if (wasPaid && !order.paymentId) {
+        throw new ServiceUnavailableException('Captured payment record is missing');
+      }
+      const nextPaymentStatus = wasPaid ? 'REFUND_PENDING' : order.paymentStatus;
+      const inventoryWasHeld = ['RESERVED', 'CONSUMED'].includes(order.inventoryStatus);
+      const updated = await transaction.order.updateMany({
+        where: {
+          id,
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+          inventoryStatus: order.inventoryStatus,
+        },
+        data: {
+          status: 'CANCELLED',
+          paymentStatus: nextPaymentStatus,
+          inventoryStatus: inventoryWasHeld ? 'RELEASED' : order.inventoryStatus,
+          reservationExpiresAt: null,
+        },
+      });
+      if (updated.count !== 1) throw new ConflictException('Order changed; reload and try again');
+
+      if (inventoryWasHeld) {
+        for (const item of order.items) {
+          await transaction.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
         }
       }
-    } catch (error: any) {
-      this.logger.error(`Database error while cancelling order: ${error?.message || error}`);
-      if (!allowInMemoryFallback()) {
-        throw new ServiceUnavailableException('Order service is temporarily unavailable');
+      if (!wasPaid) await this.releaseOrderPromotions(transaction, order.id);
+      return { order: { ...order, status: 'CANCELLED', paymentStatus: nextPaymentStatus }, shouldRefund: wasPaid };
+    });
+
+    let refundStatus: string | undefined;
+    if (transition.shouldRefund && transition.order.paymentId && this.paymentService) {
+      try {
+        refundStatus = (await this.paymentService.refundPayment(id, transition.order.paymentId)).status;
+      } catch (error: any) {
+        this.logger.error(`Refund processing could not be confirmed for order ${id}: ${error?.message || error}`);
+        refundStatus = 'REFUND_PENDING';
       }
     }
 
+    const refundRequired = transition.shouldRefund;
+    const refundMessage = refundStatus === 'REFUNDED'
+      ? 'Payment refund completed'
+      : refundStatus === 'REFUND_FAILED'
+        ? 'Order cancelled; refund needs review'
+        : refundRequired
+          ? 'Order cancelled; refund is pending confirmation'
+          : null;
     return {
-      ...order,
+      ...this.normalizeOrder({
+        ...transition.order,
+        paymentStatus: refundStatus || transition.order.paymentStatus,
+      }),
       refundRequired,
       refundMessage,
     };
+  }
+
+  private async releaseOrderPromotions(transaction: any, orderId: string) {
+    const couponRedemption = await transaction.discountRedemption.findUnique({ where: { orderId } });
+    if (couponRedemption) {
+      await transaction.discountCode.updateMany({
+        where: { id: couponRedemption.discountCodeId, uses: { gt: 0 } },
+        data: { uses: { decrement: 1 } },
+      });
+      await transaction.discountRedemption.delete({ where: { orderId } });
+    }
+    await transaction.referralRedemption.deleteMany({ where: { orderId } });
+  }
+
+  async expireAbandonedReservations(now = new Date()): Promise<number> {
+    const expired = await (this.prisma as any).order.findMany({
+      where: {
+        status: 'PENDING',
+        paymentMethod: 'razorpay',
+        paymentStatus: { in: ['PENDING', 'FAILED'] },
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: { lte: now },
+      },
+      include: { items: true },
+    });
+    let releasedCount = 0;
+
+    for (const candidate of expired) {
+      const released = await this.prisma.$transaction(async (transaction: any) => {
+        const order = await transaction.order.findUnique({
+          where: { id: candidate.id },
+          include: { items: true },
+        });
+        if (!order || order.status !== 'PENDING' || order.inventoryStatus !== 'RESERVED') return false;
+        const updated = await transaction.order.updateMany({
+          where: {
+            id: order.id,
+            status: 'PENDING',
+            inventoryStatus: 'RESERVED',
+            reservationExpiresAt: { lte: now },
+            paymentStatus: { in: ['PENDING', 'FAILED'] },
+          },
+          data: { status: 'CANCELLED', inventoryStatus: 'RELEASED', reservationExpiresAt: null },
+        });
+        if (updated.count !== 1) return false;
+
+        for (const item of order.items) {
+          await transaction.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+        await this.releaseOrderPromotions(transaction, order.id);
+        return true;
+      });
+      if (released) releasedCount += 1;
+    }
+    return releasedCount;
   }
 
   async requestReturn(id: string, userId: string, reason: string): Promise<{ message: string; returnStatus: string }> {

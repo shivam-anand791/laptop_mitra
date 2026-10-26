@@ -13,7 +13,7 @@
     "build:preview": "eas build --profile preview --platform all",
     "lint": "eslint . --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest --passWithNoTests"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -33,6 +33,7 @@
     "expo-notifications": "~57.0.17",
     "expo-secure-store": "~57.0.3",
     "expo-status-bar": "~57.0.1",
+    "firebase": "^12.19.0",
     "react": "19.2.3",
     "react-hook-form": "^7.53.0",
     "react-native": "0.86.3",

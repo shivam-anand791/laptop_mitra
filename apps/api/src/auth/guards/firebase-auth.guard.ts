@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -9,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ALLOW_UNLINKED_FIREBASE_USER_KEY } from '../../decorators/allow-firebase-sync.decorator';
 import { PUBLIC_ROUTE_KEY } from '../../decorators/public.decorator';
 import { FirebaseService } from '../../firebase/firebase.service';
+import { CHECK_FIREBASE_REVOCATION_KEY } from '../../decorators/check-firebase-revocation.decorator';
 
 @Injectable()
 export class FirebaseAuthGuard implements CanActivate {
@@ -37,16 +39,32 @@ export class FirebaseAuthGuard implements CanActivate {
 
     let identity;
     try {
-      identity = await this.firebaseService.verifyIdToken(match[1]);
+      const checkRevoked = this.reflector.getAllAndOverride<boolean>(
+        CHECK_FIREBASE_REVOCATION_KEY,
+        [handler, controller],
+      );
+      identity = await this.firebaseService.verifyIdToken(match[1], checkRevoked);
       if (!identity.uid) {
-        throw new Error('Firebase identity has no UID');
+        throw new UnauthorizedException('Unauthorized');
       }
-    } catch {
-      throw new UnauthorizedException('Unauthorized');
+    } catch (error: any) {
+      const code = typeof error?.code === 'string' ? error.code : '';
+      const invalidCredentialCodes = new Set([
+        'auth/argument-error',
+        'auth/id-token-expired',
+        'auth/id-token-revoked',
+        'auth/invalid-id-token',
+        'auth/user-disabled',
+        'auth/user-not-found',
+      ]);
+      if (invalidCredentialCodes.has(code) || error instanceof UnauthorizedException) {
+        throw new UnauthorizedException('Unauthorized');
+      }
+      throw new ServiceUnavailableException('Authentication service temporarily unavailable');
     }
 
     request.firebaseIdentity = identity;
-    let user = await this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { firebaseUid: identity.uid },
       select: {
         id: true,
@@ -57,20 +75,6 @@ export class FirebaseAuthGuard implements CanActivate {
         referralCode: true,
       },
     });
-
-    if (!user) {
-      user = await this.prisma.user.findUnique({
-        where: { id: identity.uid },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          status: true,
-          referralCode: true,
-        },
-      });
-    }
 
     if (!user) {
       const allowUnlinkedUser = this.reflector.getAllAndOverride<boolean>(

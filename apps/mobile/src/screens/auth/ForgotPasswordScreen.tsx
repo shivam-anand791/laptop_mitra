@@ -2,7 +2,9 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityInd
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useForgotPassword } from '../../hooks/useApi';
+import { useState } from 'react';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { getFirebaseAuth } from '../../firebase/firebase';
 import { useNavigation } from '@react-navigation/native';
 import { AuthNavigationProp } from '../../navigation/types';
 
@@ -14,7 +16,8 @@ type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
 
 export default function ForgotPasswordScreen() {
   const navigation = useNavigation<AuthNavigationProp>();
-  const { mutate: apiForgotPassword, isPending, isSuccess } = useForgotPassword();
+  const [isPending, setIsPending] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const {
     control,
@@ -28,21 +31,26 @@ export default function ForgotPasswordScreen() {
   });
 
   const onSubmit = async (data: ForgotPasswordFormData) => {
-    apiForgotPassword(data.email, {
-      onSuccess: () => {
-        Alert.alert(
-          'Reset Email Sent',
-          'If an account with that email exists, you\'ll receive a password reset link shortly.',
-          [
-            { text: 'Back to Login', onPress: () => navigation.navigate('Login') },
-          ],
-          { cancelable: false }
-        );
-      },
-      onError: (err: Error) => {
-        Alert.alert('Error', err.message || 'Failed to send reset email. Please try again.');
-      },
-    });
+    setIsPending(true);
+    try {
+      await sendPasswordResetEmail(getFirebaseAuth(), data.email.trim());
+      setIsSuccess(true);
+      Alert.alert(
+        'Reset Email Sent',
+        'If an account with that email exists, you\'ll receive a password reset link shortly.',
+        [{ text: 'Back to Login', onPress: () => navigation.navigate('Login') }],
+        { cancelable: false },
+      );
+    } catch (error: any) {
+      if (error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-email') {
+        setIsSuccess(true);
+        Alert.alert('Reset Email Sent', 'If an account with that email exists, you\'ll receive a password reset link shortly.');
+      } else {
+        Alert.alert('Error', 'Failed to send reset email. Please try again.');
+      }
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const goToLogin = () => navigation.navigate('Login');

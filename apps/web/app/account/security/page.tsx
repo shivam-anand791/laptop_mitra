@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { User } from '@/lib/types';
+import { useAuth } from '@/lib/auth-context';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -22,6 +23,7 @@ import {
 
 export default function SecurityPage() {
   const router = useRouter();
+  const { logout } = useAuth();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -36,14 +38,6 @@ export default function SecurityPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
-    const localUser = localStorage.getItem('lm_user');
-    if (localUser) {
-      try {
-        setUser(JSON.parse(localUser));
-      } catch {
-        // ignore
-      }
-    }
     api.getProfile()
       .then((u) => {
         setUser(u);
@@ -62,7 +56,7 @@ export default function SecurityPage() {
       const res = await api.signoutEverywhere();
       setSignOutEverywhereMsg(res.message || 'All sessions have been revoked. Please sign in again.');
       setTimeout(() => {
-        api.logout().then(() => router.push('/login'));
+        logout().then(() => router.push('/login'));
       }, 2000);
     } catch (err: any) {
       alert(err?.message || 'Failed to revoke sessions.');
@@ -82,6 +76,7 @@ export default function SecurityPage() {
     setDeleteError(null);
     try {
       await api.deleteAccount();
+      await logout();
       alert('Your account has been deleted and personal data anonymized.');
       router.push('/');
     } catch (err: any) {

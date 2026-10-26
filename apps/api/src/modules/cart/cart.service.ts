@@ -88,31 +88,45 @@ export class CartService {
   async removeItem(userId: string, itemId: string) {
     // Verify the item belongs to this user's cart
     const cart = await this.getOrCreateCart(userId);
-    const item = await this.prisma.cartItem.findUnique({
+    let item = await this.prisma.cartItem.findUnique({
       where: { id: itemId },
       include: { cart: true },
     });
 
     if (!item || item.cartId !== cart.id) {
+      item = await this.prisma.cartItem.findFirst({
+        where: { cartId: cart.id, productId: itemId },
+        include: { cart: true },
+      });
+    }
+
+    if (!item || item.cartId !== cart.id) {
       throw new NotFoundException('Item not found in cart');
     }
 
-    await this.prisma.cartItem.delete({ where: { id: itemId } });
+    await this.prisma.cartItem.delete({ where: { id: item.id } });
   }
 
   async updateQuantity(userId: string, itemId: string, quantity: number) {
     const cart = await this.getOrCreateCart(userId);
-    const item = await this.prisma.cartItem.findUnique({
+    let item = await this.prisma.cartItem.findUnique({
       where: { id: itemId },
       include: { product: true, cart: true },
     });
+
+    if (!item || item.cartId !== cart.id) {
+      item = await this.prisma.cartItem.findFirst({
+        where: { cartId: cart.id, productId: itemId },
+        include: { product: true, cart: true },
+      });
+    }
 
     if (!item || item.cartId !== cart.id) {
       throw new NotFoundException('Item not found in cart');
     }
 
     if (quantity <= 0) {
-      await this.prisma.cartItem.delete({ where: { id: itemId } });
+      await this.prisma.cartItem.delete({ where: { id: item.id } });
       return { ...item, quantity: 0 };
     }
 
@@ -121,7 +135,7 @@ export class CartService {
     }
 
     return this.prisma.cartItem.update({
-      where: { id: itemId },
+      where: { id: item.id },
       data: { quantity },
       include: { product: true },
     });
@@ -142,6 +156,15 @@ export class CartService {
 
     const itemCount = cart.items.reduce((count, item) => count + item.quantity, 0);
 
-    return { cart, total: Number(total.toFixed(2)), itemCount };
+    return {
+      id: cart.id,
+      userId: cart.userId,
+      items: cart.items,
+      createdAt: cart.createdAt,
+      updatedAt: cart.updatedAt,
+      cart,
+      total: Number(total.toFixed(2)),
+      itemCount,
+    };
   }
 }

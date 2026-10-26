@@ -2,40 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Cart, CartItem } from '@laptopmitra/types';
 import { useAuth } from '../providers/AuthProvider';
 
-// Auth hooks
-export function useLogin() {
-  return useMutation({
-    mutationFn: async (data: { email: string; password: string }) => {
-      const { LaptopMitraApiClient } = await import('@laptopmitra/api-client');
-      const { API_BASE_URL } = await import('../config');
-      const client = new LaptopMitraApiClient({ baseUrl: API_BASE_URL });
-      return client.login(data.email, data.password);
-    },
-  });
-}
-
-export function useGuestLogin() {
-  return useMutation({
-    mutationFn: async () => {
-      const { LaptopMitraApiClient } = await import('@laptopmitra/api-client');
-      const { API_BASE_URL } = await import('../config');
-      const client = new LaptopMitraApiClient({ baseUrl: API_BASE_URL });
-      return client.guestLogin();
-    },
-  });
-}
-
-export function useRegister() {
-  return useMutation({
-    mutationFn: async (data: { name: string; email: string; password: string; phone?: string }) => {
-      const { LaptopMitraApiClient } = await import('@laptopmitra/api-client');
-      const { API_BASE_URL } = await import('../config');
-      const client = new LaptopMitraApiClient({ baseUrl: API_BASE_URL });
-      return client.register(data);
-    },
-  });
-}
-
 // Products hooks
 export function useProducts(params?: Record<string, any>) {
   const { getClient } = useAuth();
@@ -80,6 +46,8 @@ export function useCart() {
       };
     },
     enabled: isAuthenticated,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
@@ -166,7 +134,10 @@ export function useWishlist() {
   const { getClient, isAuthenticated } = useAuth();
   return useQuery({
     queryKey: ['wishlist'],
-    queryFn: () => getClient().getWishlist(),
+    queryFn: async () => {
+      const res = await getClient().getWishlist();
+      return Array.isArray(res) ? res : ((res as any)?.items ?? (res as any)?.wishlist?.items ?? []);
+    },
     enabled: isAuthenticated,
   });
 }
@@ -225,6 +196,8 @@ export function useOrders() {
     queryKey: ['orders'],
     queryFn: () => getClient().getOrders(),
     enabled: isAuthenticated,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
@@ -234,6 +207,8 @@ export function useOrder(id: string) {
     queryKey: ['order', id],
     queryFn: () => getClient().getOrder(id),
     enabled: isAuthenticated && !!id,
+    staleTime: 5_000,
+    refetchOnMount: 'always',
   });
 }
 
@@ -247,10 +222,13 @@ export function useCreateOrder() {
       shippingAddress?: any;
       phone?: string;
       notes?: string;
+      paymentMethod?: 'razorpay' | 'cod';
+      idempotencyKey?: string;
     }) => getClient().createOrder(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['cart'] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
     },
   });
 }
@@ -370,37 +348,6 @@ export function useCategoryBySlug(slug: string) {
   });
 }
 
-// Password reset hooks (stub — backend endpoints not yet implemented)
-export function useForgotPassword() {
-  return useMutation({
-    mutationFn: async (email: string) => {
-      const { LaptopMitraApiClient } = await import('@laptopmitra/api-client');
-      const { API_BASE_URL } = await import('../config');
-      const client = new LaptopMitraApiClient({ baseUrl: API_BASE_URL });
-      return client.forgotPassword(email);
-    },
-  });
-}
-
-export function useResetPassword() {
-  return useMutation({
-    mutationFn: async ({ token, newPassword }: { token: string; newPassword: string }) => {
-      const { LaptopMitraApiClient } = await import('@laptopmitra/api-client');
-      const { API_BASE_URL } = await import('../config');
-      const client = new LaptopMitraApiClient({ baseUrl: API_BASE_URL });
-      return client.resetPassword(token, newPassword);
-    },
-  });
-}
-
-export function useChangePassword() {
-  const { getClient } = useAuth();
-  return useMutation({
-    mutationFn: (data: { currentPassword: string; newPassword: string }) =>
-      getClient().changePassword(data),
-  });
-}
-
 // Order return and reorder hooks
 export function useReturnOrder() {
   const queryClient = useQueryClient();
@@ -487,6 +434,24 @@ export function useAddTicketMessage() {
   });
 }
 
+export function useTicket(id: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['support-ticket', id],
+    queryFn: () => getClient().getTicket(id),
+    enabled: isAuthenticated && !!id,
+  });
+}
+
+export function useWarrantyStatus(orderItemId: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['warranty-status', orderItemId],
+    queryFn: () => getClient().getWarrantyStatus(orderItemId),
+    enabled: isAuthenticated && !!orderItemId,
+  });
+}
+
 // Referral / Affiliate hook
 export function useReferralStats() {
   const { getClient, isAuthenticated } = useAuth();
@@ -533,11 +498,4 @@ export function useDeleteAccount() {
   });
 }
 
-export function useLinkGuestAccount() {
-  const { getClient } = useAuth();
-  return useMutation({
-    mutationFn: (data: { email: string; password?: string; name?: string }) =>
-      getClient().linkGuestAccount(data),
-  });
-}
 

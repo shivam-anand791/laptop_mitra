@@ -21,7 +21,7 @@
     "noFallthroughCasesInSwitch": false,
     "paths": {
       "@/*": ["./src/*"],
-      "@laptopmitra/types": ["../../packages/types/src/index.ts", "../../packages/types/dist/index.d.ts"]
+      "@laptopmitra/types": ["../../packages/types/dist"]
     }
   },
 

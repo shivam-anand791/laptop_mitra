@@ -18,6 +18,12 @@ const nextConfig: NextConfig = {
       hostname,
     })),
   },
+  // Monorepo package transpilation
+  transpilePackages: [
+    "@laptopmitra/tokens",
+    "@laptopmitra/types",
+    "@laptopmitra/api-client",
+  ],
   // Turborepo integration
   outputFileTracingRoot: path.join(__dirname, "../.."),
 };

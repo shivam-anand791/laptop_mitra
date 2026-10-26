@@ -11,9 +11,10 @@ import {
   SupportTicket,
   SupportTicketMessage,
   NotificationPreferences,
+  AdminAnalyticsResponse,
 } from './types';
 import { NEXT_PUBLIC_API_URL } from './config';
-import { auth } from './firebase';
+import { auth, signOut } from './firebase';
 
 const API_BASE_URL = NEXT_PUBLIC_API_URL;
 
@@ -24,37 +25,51 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  let token = typeof window !== 'undefined' ? localStorage.getItem('lm_token') : null;
-
-  // Seamlessly resolve fresh ID token if Firebase user is actively signed in
-  if (typeof window !== 'undefined' && auth?.currentUser) {
+export async function request<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  isRetry = false
+): Promise<T> {
+  let token: string | null = null;
+  const url = new URL(endpoint.startsWith('/') ? endpoint : `/${endpoint}`, `${API_BASE_URL}/`);
+  if (url.origin === new URL(API_BASE_URL).origin && auth.currentUser) {
     try {
-      const freshToken = await auth.currentUser.getIdToken();
-      if (freshToken) {
-        token = freshToken;
-        localStorage.setItem('lm_token', freshToken);
-      }
+      token = await auth.currentUser.getIdToken();
     } catch {
-      // Retain stored token fallback
+      token = null;
     }
   }
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...((options.headers as Record<string, string>) || {}),
-  };
-
-  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const headers: Record<string, string> = { ...((options.headers as Record<string, string>) || {}) };
+  headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  if (token && url.origin === new URL(API_BASE_URL).origin) {
+    headers.Authorization = `Bearer ${token}`;
+  } else {
+    delete headers.Authorization;
+    delete headers.authorization;
+  }
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(url.toString(), {
       ...options,
       headers,
     });
 
     if (!res.ok) {
+      // 1. On 401: attempt token refresh once, then retry
+      if (res.status === 401 && !isRetry && auth.currentUser) {
+        try {
+          const freshToken = await auth.currentUser.getIdToken(true);
+          const retryHeaders = {
+            ...headers,
+            Authorization: `Bearer ${freshToken}`,
+          };
+          return await request<T>(endpoint, { ...options, headers: retryHeaders }, true);
+        } catch {
+          // Token refresh failed; proceed to signout and redirect
+        }
+      }
+
       const errData = await res.json().catch(() => ({ message: res.statusText }));
       const message =
         errData?.message ||
@@ -65,6 +80,27 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
             : res.status === 500
               ? 'Backend service error. Please try again later.'
               : `Request failed with status ${res.status}`);
+
+      // Global 403 handling: inform AdminGuard to render 403 screen
+      if (res.status === 403 && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('admin:forbidden'));
+      }
+
+      // Global 401 handling on admin routes / endpoints: redirect to login
+      if (res.status === 401) {
+        const isAdminContext =
+          endpoint.startsWith('/admin') ||
+          (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin'));
+
+        if (isAdminContext && typeof window !== 'undefined') {
+          window.location.href = '/login?next=/admin';
+        }
+
+        if (auth.currentUser) {
+          await signOut(auth).catch(() => undefined);
+        }
+      }
+
       throw new ApiError(res.status, message, errData);
     }
 
@@ -123,94 +159,17 @@ export const api = {
   },
 
   // Auth
-  async login(email: string, password?: string): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    const res = await request<{ accessToken?: string; access_token?: string; refreshToken: string; user: User }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    const token = res.accessToken || res.access_token || '';
-    if (token && typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', token);
-      localStorage.setItem('lm_refresh_token', res.refreshToken);
-      localStorage.setItem('lm_user', JSON.stringify(res.user));
-    }
-    return {
-      accessToken: token,
-      refreshToken: res.refreshToken,
-      user: res.user,
-    };
-  },
-
-  async guestLogin(): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    const res = await request<{ accessToken?: string; access_token?: string; refreshToken: string; user: User }>('/auth/guest', {
-      method: 'POST',
-    });
-    const token = res.accessToken || res.access_token || '';
-    if (token && typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', token);
-      localStorage.setItem('lm_refresh_token', res.refreshToken);
-      localStorage.setItem('lm_user', JSON.stringify(res.user));
-    }
-    return {
-      accessToken: token,
-      refreshToken: res.refreshToken,
-      user: res.user,
-    };
-  },
-
-  async register(data: { name?: string; email: string; password?: string; referralCode?: string; phone?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    const res = await request<{ accessToken?: string; access_token?: string; refreshToken: string; user: User }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-    const token = res.accessToken || res.access_token || '';
-    if (token && typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', token);
-      localStorage.setItem('lm_refresh_token', res.refreshToken);
-      localStorage.setItem('lm_user', JSON.stringify(res.user));
-    }
-    return {
-      accessToken: token,
-      refreshToken: res.refreshToken,
-      user: res.user,
-    };
-  },
-
-  async linkGuestAccount(data: { email: string; password?: string; name?: string }): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    const res = await request<{ accessToken?: string; access_token?: string; refreshToken: string; user: User }>('/auth/link-guest', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-    const token = res.accessToken || res.access_token || '';
-    if (token && typeof window !== 'undefined') {
-      localStorage.setItem('lm_token', token);
-      localStorage.setItem('lm_refresh_token', res.refreshToken);
-      localStorage.setItem('lm_user', JSON.stringify(res.user));
-    }
-    return {
-      accessToken: token,
-      refreshToken: res.refreshToken,
-      user: res.user,
-    };
-  },
-
   async syncUser(data?: { name?: string; phone?: string; referralCode?: string }): Promise<{ user: User }> {
     const res = await request<any>('/auth/sync', {
       method: 'POST',
       body: JSON.stringify(data || {}),
     });
     const user: User = (res?.user || res) as User;
-    if (user && typeof window !== 'undefined') {
-      localStorage.setItem('lm_user', JSON.stringify(user));
-    }
     return { user };
   },
 
   async getProfile(): Promise<User> {
     const res = await request<User>('/auth/profile');
-    if (res && typeof window !== 'undefined') {
-      localStorage.setItem('lm_user', JSON.stringify(res));
-    }
     return res;
   },
 
@@ -219,9 +178,6 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     });
-    if (res && typeof window !== 'undefined') {
-      localStorage.setItem('lm_user', JSON.stringify(res));
-    }
     return res;
   },
 
@@ -231,26 +187,7 @@ export const api = {
 
   async deleteAccount(): Promise<{ message: string }> {
     const res = await request<{ message: string }>('/auth/account', { method: 'DELETE' });
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('lm_token');
-      localStorage.removeItem('lm_refresh_token');
-      localStorage.removeItem('lm_user');
-    }
     return res;
-  },
-
-  async logout() {
-    try {
-      await request('/auth/logout', { method: 'POST' });
-    } catch {
-      // Best-effort logout
-    } finally {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('lm_token');
-        localStorage.removeItem('lm_refresh_token');
-        localStorage.removeItem('lm_user');
-      }
-    }
   },
 
   // Cart
@@ -287,7 +224,7 @@ export const api = {
   // Wishlist
   async getWishlist(): Promise<WishlistItem[]> {
     const res = await request<any>('/wishlist');
-    return res.items || [];
+    return Array.isArray(res) ? res : (res?.items ?? res?.wishlist?.items ?? []);
   },
 
   async addToWishlist(productId: string) {
@@ -335,9 +272,17 @@ export const api = {
     shippingAddress?: any;
     phone?: string;
     notes?: string;
+    email?: string;
+    paymentMethod?: 'razorpay' | 'cod';
+    idempotencyKey?: string;
   }): Promise<Order> {
+    const headers: Record<string, string> = {};
+    if (payload.idempotencyKey) {
+      headers['Idempotency-Key'] = payload.idempotencyKey;
+    }
     return await request<Order>('/orders', {
       method: 'POST',
+      headers,
       body: JSON.stringify(payload),
     });
   },
@@ -383,10 +328,22 @@ export const api = {
     return await request<PaymentRecord[]>('/payments/history');
   },
 
-  async createRazorpayOrder(amount: number, orderId: string): Promise<any> {
+  async createRazorpayOrder(orderId: string): Promise<any> {
     return await request<any>('/payments/razorpay/order', {
       method: 'POST',
-      body: JSON.stringify({ amount, orderId }),
+      body: JSON.stringify({ orderId }),
+    });
+  },
+
+  async verifyRazorpayPayment(payload: {
+    orderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return request('/payments/razorpay/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 
@@ -446,6 +403,88 @@ export const api = {
     return await request<any>('/discount/validate', {
       method: 'POST',
       body: JSON.stringify({ code, cartTotal }),
+    });
+  },
+
+  // Admin Endpoints
+  async getAdminDashboard(): Promise<{
+    totalUsers: number;
+    totalProducts: number;
+    totalOrders: number;
+    pendingOrders: number;
+    deliveredOrders: number;
+    revenueCompleted: number;
+    revenuePending: number;
+    revenue: { completed: number; pending: number };
+  }> {
+    return await request<any>('/admin/dashboard');
+  },
+
+  async getAdminAnalytics(range?: '7d' | '30d' | '90d' | string): Promise<AdminAnalyticsResponse> {
+    const qs = range ? `?range=${range}` : '';
+    return await request<AdminAnalyticsResponse>(`/admin/analytics${qs}`);
+  },
+
+  async getAdminUsers(params?: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    role?: string;
+    search?: string;
+  }): Promise<{ items: any[]; total: number; page: number; pageSize: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    if (params?.status && params.status !== 'all') searchParams.set('status', params.status);
+    if (params?.role && params.role !== 'all') searchParams.set('role', params.role);
+    if (params?.search && params.search.trim()) searchParams.set('search', params.search.trim());
+    const qs = searchParams.toString();
+    return await request<{ items: any[]; total: number; page: number; pageSize: number }>(`/admin/users${qs ? `?${qs}` : ''}`);
+  },
+
+  async updateAdminUserStatus(userId: string, status: string): Promise<any> {
+    return await request<any>(`/admin/users/${userId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  async getAdminProducts(): Promise<Product[]> {
+    return await request<Product[]>('/admin/products');
+  },
+
+  async createAdminProduct(data: any): Promise<Product> {
+    return await request<Product>('/admin/products', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateAdminProduct(productId: string, data: any): Promise<Product> {
+    return await request<Product>(`/admin/products/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteAdminProduct(productId: string): Promise<{ success?: boolean }> {
+    return await request<any>(`/admin/products/${productId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getAdminOrders(): Promise<Order[]> {
+    return await request<Order[]>('/admin/orders');
+  },
+
+  async getAdminOrder(orderId: string): Promise<Order> {
+    return await request<Order>(`/admin/orders/${orderId}`);
+  },
+
+  async updateAdminOrderStatus(orderId: string, status: string): Promise<Order> {
+    return await request<Order>(`/admin/orders/${orderId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
     });
   },
 };

@@ -24,6 +24,9 @@ const firebaseConfig = {
 
 function initFirebase(): { app: FirebaseApp; auth: Auth } {
   const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  if (app.options.projectId !== firebaseConfig.projectId) {
+    throw new Error('Firebase web configuration does not match the initialized Firebase project.');
+  }
   const auth = getAuth(app);
 
   // Connect to emulator ONLY in non-production environments

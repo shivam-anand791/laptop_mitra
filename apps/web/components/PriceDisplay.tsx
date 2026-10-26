@@ -1,8 +1,8 @@
 import React from 'react';
 
-interface PriceDisplayProps {
+export interface PriceDisplayProps {
   price: number;
-  compareAtPrice?: number;
+  compareAtPrice?: number | null;
   size?: 'sm' | 'md' | 'lg';
   showEmit?: boolean;
   className?: string;
@@ -20,9 +20,10 @@ export default function PriceDisplay({
   className = '',
 }: PriceDisplayProps) {
   const savings = compareAtPrice && compareAtPrice > price ? compareAtPrice - price : null;
-  const discountPercent = compareAtPrice && compareAtPrice > price
-    ? Math.round(((compareAtPrice - price) / compareAtPrice) * 100)
-    : null;
+  const discountPercent =
+    compareAtPrice && compareAtPrice > price
+      ? Math.round(((compareAtPrice - price) / compareAtPrice) * 100)
+      : null;
 
   const sizeConfig = {
     sm: {
@@ -45,30 +46,34 @@ export default function PriceDisplay({
   const s = sizeConfig[size];
 
   return (
-    <div className={['flex flex-col gap-0.5', className].join(' ')}>
+    <div
+      className={['flex flex-col gap-0.5', className].join(' ')}
+      aria-label={`Price: ${formatINR(price)}${
+        compareAtPrice && compareAtPrice > price ? `, original price ${formatINR(compareAtPrice)}` : ''
+      }`}
+    >
       <div className="flex items-baseline gap-2 flex-wrap">
-        <span className={`font-black text-[#0B1F4B] font-sans tracking-tight ${s.price}`}>
+        <span className={`font-black text-[#111827] font-sans tracking-tight ${s.price}`}>
           {formatINR(price)}
         </span>
         {compareAtPrice && compareAtPrice > price && (
-          <span className={`line-through text-slate-400 font-medium ${s.compare}`}>
+          <span className={`line-through text-[#94A3B8] font-medium ${s.compare}`} aria-hidden="true">
             {formatINR(compareAtPrice)}
           </span>
         )}
       </div>
 
       {savings && (
-        <p className={`text-emerald-700 font-semibold ${s.savings}`}>
+        <p className={`text-[#15803D] font-semibold ${s.savings}`}>
           Save {formatINR(savings)} ({discountPercent}% off)
         </p>
       )}
 
       {showEmit && (
-        <p className={`text-slate-500 font-medium ${s.savings}`}>
+        <p className={`text-[#475569] font-medium ${s.savings}`}>
           Or {formatINR(Math.round(price / 12))}/mo No-Cost EMI
         </p>
       )}
     </div>
   );
 }
-

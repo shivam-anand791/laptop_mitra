@@ -58,13 +58,13 @@ export default function CartPage() {
       <div className="bg-[#F8FAFC] min-h-screen py-6 sm:py-8 lg:py-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Header */}
-          <div className="flex items-center justify-between pb-5 border-b border-[#E4E9F2] mb-6">
+          <div className="flex items-center justify-between pb-5 border-b border-[#E2E8F0] mb-6">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-bold text-[#111827] tracking-tight">
                 Shopping Cart
               </h1>
-              <p className="text-xs text-slate-500 mt-1">
-                You have <strong className="text-[#0B1F4B] tabular-nums">{itemCount}</strong> {itemCount === 1 ? 'certified laptop' : 'certified laptops'} ready for express dispatch
+              <p className="text-xs text-[#475569] mt-1">
+                You have <strong className="text-[#111827] tabular-nums">{itemCount}</strong> {itemCount === 1 ? 'certified laptop' : 'certified laptops'} ready for express dispatch
               </p>
             </div>
             <button
@@ -89,12 +89,12 @@ export default function CartPage() {
                 return (
                   <div
                     key={item.productId}
-                    className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4 transition-all hover:border-slate-300"
+                    className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs flex flex-col sm:flex-row items-start sm:items-center gap-4 transition-all hover:border-slate-300"
                   >
                     {/* Thumbnail */}
                     <Link
                       href={`/products/${item.productId}`}
-                      className="shrink-0 w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-[#F8FAFC] border border-[#E4E9F2] flex items-center justify-center p-2 relative"
+                      className="shrink-0 w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-center p-2 relative"
                     >
                       {imgUrl.startsWith('http') ? (
                         /* eslint-disable-next-line @next/next/no-img-element */
@@ -224,8 +224,8 @@ export default function CartPage() {
 
             {/* ORDER SUMMARY SIDEBAR (4 cols) */}
             <div className="lg:col-span-4 space-y-5">
-              <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-5 sticky top-20">
-                <h2 className="text-lg font-black text-[#0B1F4B] tracking-tight">
+              <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E2E8F0] shadow-xs space-y-5 sticky top-20">
+                <h2 className="text-lg font-bold text-[#111827] tracking-tight">
                   Order Summary
                 </h2>
 
@@ -274,12 +274,12 @@ export default function CartPage() {
                 </div>
 
                 {/* Total */}
-                <div className="pt-3 border-t border-[#E4E9F2] flex items-baseline justify-between">
+                <div className="pt-3 border-t border-[#E2E8F0] flex items-baseline justify-between">
                   <div>
-                    <span className="text-sm font-black text-[#0B1F4B] block">Total Amount</span>
-                    <span className="text-[10px] text-slate-400">All Taxes &amp; Shipping Included</span>
+                    <span className="text-sm font-bold text-[#111827] block">Total Amount</span>
+                    <span className="text-[10px] text-[#475569]">All Taxes &amp; Shipping Included</span>
                   </div>
-                  <span className="text-2xl font-black text-[#0B1F4B] tabular-nums">
+                  <span className="text-2xl font-bold text-[#111827] tabular-nums">
                     ₹{subtotal.toLocaleString('en-IN')}
                   </span>
                 </div>
@@ -288,7 +288,7 @@ export default function CartPage() {
                 <div className="space-y-2 pt-2">
                   <Link
                     href="/checkout"
-                    className="w-full h-11 px-4 rounded-xl bg-[#1D6FF2] hover:bg-[#1558C0] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-95 transition-all text-center"
+                    className="w-full h-11 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs active:scale-95 transition-all text-center"
                   >
                     <span>Proceed to Secure Checkout</span>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
