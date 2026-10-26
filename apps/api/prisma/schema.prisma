@@ -135,6 +135,9 @@ model Product {
   cartItems     CartItem[]
   orderItems    OrderItem[]
   wishlistItems WishlistItem[]
+
+  @@index([status])
+  @@index([stock])
 }
 
 // Product Image
@@ -242,6 +245,10 @@ model Order {
 
   @@unique([razorpayOrderId])
   @@index([inventoryStatus, reservationExpiresAt])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 model OrderItem {
@@ -369,4 +376,18 @@ model ReferralRedemption {
   createdAt      DateTime @default(now())
 
   @@index([referrerUserId])
+}
+
+// ---------------------------------------------------------------------------
+// Platform & Store Configuration Settings
+// ---------------------------------------------------------------------------
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_settings")
 }

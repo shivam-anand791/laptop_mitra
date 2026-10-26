@@ -28,14 +28,14 @@ export class AuthService {
     private readonly firebaseService: FirebaseService,
   ) {}
 
-  async login(body: { email?: string; password?: string }) {
+  async login(_body: { email?: string; password?: string }) {
     // Direct passwordless token minting is strictly prohibited (F1)
     throw new BadRequestException(
       'Direct passwordless authentication is disabled. Authenticate with Firebase and call /auth/sync.',
     );
   }
 
-  async register(body: { name?: string; email?: string; password?: string; referralCode?: string; phone?: string }) {
+  async register(_body: { name?: string; email?: string; password?: string; referralCode?: string; phone?: string }) {
     // Direct unverified registration is strictly prohibited (F1)
     throw new BadRequestException(
       'Direct registration without Firebase identity is disabled. Create user with Firebase and call /auth/sync.',
@@ -49,7 +49,7 @@ export class AuthService {
     );
   }
 
-  async refreshToken(refreshToken?: string) {
+  async refreshToken(_refreshToken?: string) {
     throw new BadRequestException(
       'Token refresh is handled directly via the Firebase Auth client SDK.',
     );
@@ -318,7 +318,7 @@ export class AuthService {
     return { success: true, message: 'Account deleted and personal information anonymized' };
   }
 
-  async linkGuestAccount(userId: string, data: { email: string; password?: string; name?: string }) {
+  async linkGuestAccount(_userId: string, _data: { email: string; password?: string; name?: string }) {
     throw new BadRequestException(
       'Account linking must be performed via Firebase Auth client SDK and verified via /auth/sync.',
     );

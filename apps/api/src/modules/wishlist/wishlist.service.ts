@@ -66,16 +66,28 @@ export class WishlistService {
 
   async removeItem(userId: string, itemId: string) {
     const wishlist = await this.getOrCreateWishlist(userId);
-    const item = await this.prisma.wishlistItem.findUnique({
+    let item = await this.prisma.wishlistItem.findUnique({
       where: { id: itemId },
       include: { wishlist: true },
     });
 
     if (!item || item.wishlistId !== wishlist.id) {
+      item = await this.prisma.wishlistItem.findUnique({
+        where: {
+          wishlistId_productId: {
+            wishlistId: wishlist.id,
+            productId: itemId,
+          },
+        },
+        include: { wishlist: true },
+      });
+    }
+
+    if (!item || item.wishlistId !== wishlist.id) {
       throw new NotFoundException('Item not found in wishlist');
     }
 
-    await this.prisma.wishlistItem.delete({ where: { id: itemId } });
+    await this.prisma.wishlistItem.delete({ where: { id: item.id } });
   }
 
   async clearWishlist(userId: string) {
@@ -86,6 +98,10 @@ export class WishlistService {
   async getWishlist(userId: string) {
     const wishlist = await this.getOrCreateWishlist(userId);
     const itemCount = wishlist.items.length;
-    return { wishlist, itemCount };
+    return {
+      items: wishlist.items,
+      wishlist,
+      itemCount,
+    };
   }
 }

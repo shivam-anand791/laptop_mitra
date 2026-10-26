@@ -149,6 +149,8 @@ describe('secrets hygiene', () => {
   it('does not flag a legitimate high-entropy secret as a placeholder', () => {
     const result = envSchema.safeParse({
       ...baseEnv,
+      FIREBASE_PROJECT_ID: 'project-id',
+      FIREBASE_CLIENT_EMAIL: 'admin@project-id.iam.gserviceaccount.com',
       FIREBASE_PRIVATE_KEY: 'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKcwggSj',
     });
     assert.equal(result.success, true, JSON.stringify(result.error?.issues));

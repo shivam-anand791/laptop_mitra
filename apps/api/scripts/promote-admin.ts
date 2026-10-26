@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import * as readline from 'readline';
 
@@ -34,10 +35,11 @@ async function askConfirmation(question: string): Promise<boolean> {
 export async function main() {
   const args = process.argv.slice(2);
   const isProdFlag = args.includes('--i-know-this-is-prod');
-  const emailArg = args.find((arg) => !arg.startsWith('--'));
+  const autoConfirm = args.includes('-y') || args.includes('--yes');
+  const emailArg = args.find((arg) => !arg.startsWith('-'));
 
   if (!emailArg) {
-    console.error('Usage: ts-node scripts/promote-admin.ts <email> [--i-know-this-is-prod]');
+    console.error('Usage: ts-node scripts/promote-admin.ts <email> [-y|--yes] [--i-know-this-is-prod]');
     process.exit(1);
   }
 
@@ -58,10 +60,12 @@ export async function main() {
   console.log(`Environment:           ${process.env.NODE_ENV || 'development'}`);
   console.log(`--------------------------------`);
 
-  const confirmed = await askConfirmation(`Are you sure you want to promote ${email} to ADMIN? (y/N): `);
-  if (!confirmed) {
-    console.log('Action cancelled by user.');
-    process.exit(0);
+  if (!autoConfirm) {
+    const confirmed = await askConfirmation(`Are you sure you want to promote ${email} to ADMIN? (y/N): `);
+    if (!confirmed) {
+      console.log('Action cancelled by user.');
+      process.exit(0);
+    }
   }
 
   const prisma = new PrismaClient();

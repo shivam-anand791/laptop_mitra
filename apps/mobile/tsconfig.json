@@ -10,6 +10,7 @@
       "@/*": ["./src/*"],
       "@laptopmitra/api-client": ["../../packages/api-client/dist"],
       "@laptopmitra/types": ["../../packages/types/dist"],
+      "@laptopmitra/tokens": ["../../packages/tokens/dist"],
       "@laptopmitra/config": ["../../packages/config"]
     },
     "rootDir": "."

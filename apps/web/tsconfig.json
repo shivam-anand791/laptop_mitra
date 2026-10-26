@@ -19,7 +19,10 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@laptopmitra/tokens": ["../../packages/tokens/dist"],
+      "@laptopmitra/types": ["../../packages/types/dist"],
+      "@laptopmitra/api-client": ["../../packages/api-client/dist"]
     }
   },
   "include": [

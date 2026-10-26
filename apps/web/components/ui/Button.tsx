@@ -2,10 +2,10 @@
 
 import React from 'react';
 
-type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
-type ButtonSize = 'sm' | 'md' | 'lg';
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+export type ButtonSize = 'sm' | 'md' | 'lg';
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
@@ -16,36 +16,33 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary: [
-    'bg-[#1D6FF2] hover:bg-[#1558C0] text-white font-bold',
-    'shadow-sm shadow-blue-900/10 hover:shadow-md hover:shadow-blue-500/25',
-    'active:scale-[0.98]',
+    'bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold',
+    'shadow-xs hover:shadow-sm active:scale-[0.99]',
   ].join(' '),
   secondary: [
-    'bg-[#0B1F4B] hover:bg-[#071433] text-white font-bold',
-    'shadow-sm hover:shadow-md',
-    'active:scale-[0.98]',
+    'bg-[#0B1F4B] hover:bg-[#071433] text-white font-semibold',
+    'shadow-xs hover:shadow-sm active:scale-[0.99]',
   ].join(' '),
   outline: [
-    'bg-white hover:bg-slate-50 text-[#0B1F4B] font-bold',
-    'border border-[#E4E9F2] hover:border-slate-300 shadow-xs',
-    'active:scale-[0.98]',
+    'bg-white hover:bg-slate-50 text-[#111827] font-medium',
+    'border border-[#E2E8F0] hover:border-slate-300 shadow-xs',
+    'active:scale-[0.99]',
   ].join(' '),
   ghost: [
-    'bg-transparent text-[#475569] font-semibold',
-    'hover:text-[#0B1F4B] hover:bg-slate-100/70',
-    'active:scale-[0.98]',
+    'bg-transparent text-[#475569] font-medium',
+    'hover:text-[#111827] hover:bg-slate-100/80',
+    'active:scale-[0.99]',
   ].join(' '),
   danger: [
-    'bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold',
-    'shadow-sm hover:shadow-md shadow-red-500/20',
-    'active:scale-[0.98]',
+    'bg-[#DC2626] hover:bg-[#B91C1C] text-white font-semibold',
+    'shadow-xs hover:shadow-sm active:scale-[0.99]',
   ].join(' '),
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-xs rounded-lg gap-1.5',
-  md: 'h-10 px-4 text-xs sm:text-sm rounded-xl gap-2',
-  lg: 'h-11 sm:h-12 px-6 text-sm rounded-xl gap-2.5',
+  sm: 'min-h-[36px] px-3 text-xs rounded-lg gap-1.5',
+  md: 'min-h-[44px] px-4 text-sm rounded-lg gap-2', // Meets 44px WCAG touch target guideline
+  lg: 'min-h-[48px] px-6 text-base rounded-xl gap-2.5',
 };
 
 export default function Button({
@@ -64,8 +61,8 @@ export default function Button({
     <button
       className={[
         'inline-flex items-center justify-center font-medium cursor-pointer',
-        'transition-all duration-200 ease-out select-none',
-        'focus-visible:outline-2 focus-visible:outline-[#1D6FF2] focus-visible:outline-offset-2',
+        'transition-all duration-150 ease-out select-none',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:ring-offset-2',
         'disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100',
         variantStyles[variant],
         sizeStyles[size],
@@ -73,11 +70,12 @@ export default function Button({
         className,
       ].join(' ')}
       disabled={disabled || loading}
+      aria-busy={loading}
       {...props}
     >
       {loading ? (
         <svg
-          className="animate-spin-slow"
+          className="animate-spin"
           width={size === 'sm' ? 14 : size === 'lg' ? 20 : 16}
           height={size === 'sm' ? 14 : size === 'lg' ? 20 : 16}
           viewBox="0 0 24 24"

@@ -1,9 +1,10 @@
-import { Controller, Post, Get, Put, Patch, Param, Body, UseGuards, Query } from '@nestjs/common';
+import { Controller, Post, Get, Put, Patch, Param, Body, UseGuards, Query, Headers } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { GetUser } from '../../decorators/get-user.decorator';
 import { RolesGuard } from '../../guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
+import { UpdateOrderStatusDto } from '../admin/dto/update-order-status.dto';
 
 @ApiTags('orders')
 @Controller('orders')
@@ -27,8 +28,11 @@ export class OrderController {
       notes?: string;
       email?: string;
       paymentMethod?: string;
+      idempotencyKey?: string;
     },
+    @Headers('idempotency-key') idempotencyKeyHeader?: string,
   ) {
+    const idempotencyKey = idempotencyKeyHeader || body.idempotencyKey;
     return this.orderService.createOrder(
       user.id,
       body.referralCode,
@@ -39,6 +43,7 @@ export class OrderController {
       body.email,
       user,
       body.paymentMethod,
+      idempotencyKey,
     );
   }
 
@@ -66,9 +71,10 @@ export class OrderController {
   async updateStatus(
     @GetUser() user: any,
     @Param('id') id: string,
-    @Body('status') status: string,
+    @Body() dto: UpdateOrderStatusDto | any,
   ) {
-    return this.orderService.updateStatus(id, status, user.id, user.role);
+    const status = typeof dto === 'string' ? dto : dto?.status;
+    return this.orderService.updateStatus(id, status, user?.id, user?.role);
   }
 
   @Patch(':id/cancel')

@@ -23,20 +23,43 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isLoading) return;
+    let isCancelled = false;
+
     try {
       const stored = localStorage.getItem(storageKey);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
           setWishlistState({ key: storageKey, items: parsed });
-          return;
         }
+      } else {
+        setWishlistState({ key: storageKey, items: [] });
       }
     } catch {
-      // Ignore parse error
+      setWishlistState({ key: storageKey, items: [] });
     }
-    setWishlistState({ key: storageKey, items: [] });
-  }, [isLoading, storageKey]);
+
+    if (firebaseUser) {
+      api.getWishlist().then((serverItems: any[]) => {
+        if (isCancelled) return;
+        const products: Product[] = (Array.isArray(serverItems) ? serverItems : [])
+          .map((item: any) => item.product || item)
+          .filter(Boolean);
+        setWishlistState({ key: storageKey, items: products });
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(products));
+        } catch {
+          // Ignore
+        }
+      }).catch(() => {
+        // Fallback
+      });
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isLoading, storageKey, firebaseUser]);
 
   const saveWishlist = (newItems: Product[]) => {
     setWishlistState({ key: storageKey, items: newItems });

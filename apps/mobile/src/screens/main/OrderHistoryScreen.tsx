@@ -1,5 +1,6 @@
+import { useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useOrders } from '../../hooks/useApi';
 import { Order } from '@laptopmitra/types';
@@ -30,6 +31,12 @@ const formatDate = (dateStr: string) => {
 export default function OrderHistoryScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
   const { data: orders, isLoading, refetch, isRefetching } = useOrders();
+
+  useFocusEffect(
+    useCallback(() => {
+      void refetch();
+    }, [refetch]),
+  );
 
   const renderOrder = ({ item }: { item: Order }) => {
     const status = STATUS_COLORS[item.status] ?? getDefaultStatus();

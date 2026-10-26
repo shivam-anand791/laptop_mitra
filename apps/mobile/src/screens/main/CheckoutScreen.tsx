@@ -101,14 +101,21 @@ export default function CheckoutScreen() {
       return;
     }
 
+    if (paymentMethod === 'razorpay') {
+      Alert.alert(
+        'Online Payment Unavailable on Mobile',
+        'Direct online payment via Razorpay / UPI is not yet integrated into the mobile app. Please select Cash on Delivery (COD) or complete your order securely through our website.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
     const selectedAddress = addresses?.find((a) => a.id === selectedAddressId);
     if (!selectedAddress) return;
 
     setIsSubmitting(true);
 
     try {
-      // In sandbox mode, we skip Razorpay and just create the order with COD
-      // For Razorpay integration, you would use the razorpay-react-native SDK
       const payload: {
         discountCode?: string;
         referralCode?: string;
@@ -116,8 +123,10 @@ export default function CheckoutScreen() {
         phone?: string;
         notes?: string;
         paymentMethod?: 'razorpay' | 'cod';
+        idempotencyKey?: string;
       } = {
         paymentMethod: 'cod',
+        idempotencyKey: `lm-mob-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         shippingAddress: {
           fullName: selectedAddress.fullName ?? '',
           phone: selectedAddress.phone ?? '',
@@ -227,9 +236,14 @@ export default function CheckoutScreen() {
                 {paymentMethod === 'razorpay' && <View style={styles.radioInner} />}
               </View>
             </View>
-            <View>
-              <Text style={styles.paymentLabel}>Razorpay</Text>
-              <Text style={styles.paymentSubtext}>Credit/Debit Card, UPI, Netbanking</Text>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.paymentLabel}>Razorpay</Text>
+                <View style={styles.unavailableBadge}>
+                  <Text style={styles.unavailableBadgeText}>Web Only</Text>
+                </View>
+              </View>
+              <Text style={styles.paymentSubtext}>Credit/Debit Card, UPI, Netbanking (Unavailable on mobile)</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -633,5 +647,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
     opacity: 0.9,
+  },
+  unavailableBadge: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  unavailableBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#ef4444',
   },
 });

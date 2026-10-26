@@ -14,8 +14,9 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isGuest: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (data: { name: string; email: string; password: string; phone?: string; referralCode?: string }) => Promise<void>;
+  register: (data: { name: string; email: string; password: string; phone?: string | undefined; referralCode?: string | undefined }) => Promise<void>;
   guestLogin: () => Promise<void>;
+  linkGuestAccount: (data: { email: string; password: string; name?: string | undefined }) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (user: User) => void;
   getClient: () => LaptopMitraApiClient;
@@ -46,11 +47,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const syncUser = useCallback(async (
     currentUser: FirebaseUser,
-    profile?: { name?: string; phone?: string; referralCode?: string },
+    profile?: { name?: string | undefined; phone?: string | undefined; referralCode?: string | undefined },
   ) => {
     const token = await currentUser.getIdToken();
     const client = new LaptopMitraApiClient({ baseUrl: API_BASE_URL, getToken: () => token });
-    const result = await client.syncUser(profile);
+    const payload: { name?: string; phone?: string; referralCode?: string } = {};
+    if (profile?.name) payload.name = profile.name;
+    if (profile?.phone) payload.phone = profile.phone;
+    if (profile?.referralCode) payload.referralCode = profile.referralCode;
+    const result = await client.syncUser(Object.keys(payload).length > 0 ? payload : undefined);
     setUser(result.user);
     return result.user;
   }, []);
@@ -110,19 +115,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     name: string;
     email: string;
     password: string;
-    phone?: string;
-    referralCode?: string;
+    phone?: string | undefined;
+    referralCode?: string | undefined;
   }) => {
     const { createUserWithEmailAndPassword, updateProfile } = await import('firebase/auth');
     const credential = await createUserWithEmailAndPassword(getFirebaseAuth(), data.email.trim(), data.password);
     await updateProfile(credential.user, { displayName: data.name.trim() });
-    await syncUser(credential.user, { name: data.name, phone: data.phone, referralCode: data.referralCode });
+    await syncUser(credential.user, {
+      name: data.name,
+      ...(data.phone ? { phone: data.phone } : {}),
+      ...(data.referralCode ? { referralCode: data.referralCode } : {}),
+    });
   }, [syncUser]);
 
   const guestLogin = useCallback(async () => {
     const { signInAnonymously } = await import('firebase/auth');
     const credential = await signInAnonymously(getFirebaseAuth());
     await syncUser(credential.user);
+  }, [syncUser]);
+
+  const linkGuestAccount = useCallback(async (data: { email: string; password: string; name?: string | undefined }) => {
+    const { linkWithCredential, EmailAuthProvider, updateProfile } = await import('firebase/auth');
+    const currentUser = getFirebaseAuth().currentUser;
+    if (!currentUser) throw new Error('No active guest session to link.');
+    const credential = EmailAuthProvider.credential(data.email.trim(), data.password);
+    const result = await linkWithCredential(currentUser, credential);
+    if (data.name?.trim()) {
+      await updateProfile(result.user, { displayName: data.name.trim() });
+    }
+    await syncUser(result.user, {
+      ...(data.name ? { name: data.name.trim() } : {}),
+    });
   }, [syncUser]);
 
   const logout = useCallback(async () => {
@@ -150,6 +173,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         register,
         guestLogin,
+        linkGuestAccount,
         logout,
         updateUser,
         getClient,

@@ -8,5 +8,6 @@ import { RolesGuard } from '../../guards/roles.guard';
   imports: [PrismaModule],
   controllers: [AdminController],
   providers: [AdminService, RolesGuard],
+  exports: [AdminService],
 })
 export class AdminModule {}

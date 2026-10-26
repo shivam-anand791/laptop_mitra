@@ -10,5 +10,7 @@ module.exports = {
   testEnvironment: 'node',
   moduleNameMapper: {
     '^src/(.*)$': '<rootDir>/src/$1',
+    '^@nestjs/config$': '<rootDir>/test/mocks/nestjs-config.mock.ts',
+    '^@laptopmitra/types$': '<rootDir>/../../packages/types/src/index.ts',
   },
 };

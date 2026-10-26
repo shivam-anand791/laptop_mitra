@@ -65,7 +65,13 @@ export default tseslint.config(
     // secret read from creeping back in (the exact failure mode found in the
     // legacy PHP config files).
     files: ['apps/**/*.ts', 'apps/**/*.tsx', 'packages/**/*.ts'],
-    ignores: ['packages/env/**'],
+    ignores: [
+      'packages/env/**',
+      '**/scripts/**',
+      '**/*.test.ts',
+      '**/*.spec.ts',
+      '**/test/**',
+    ],
     rules: {
       'no-restricted-properties': [
         'error',

@@ -23,8 +23,9 @@ export class FirebaseService {
       const app: App = existingApp ?? initializeApp({ credential, projectId });
       auth = getAuth(app);
 
-      if (process.env.FIREBASE_AUTH_EMULATOR_HOST) {
-        this.logger.log(`Using Firebase Auth Emulator at ${process.env.FIREBASE_AUTH_EMULATOR_HOST}`);
+      const emulatorHost = this.configService.get<string>('FIREBASE_AUTH_EMULATOR_HOST');
+      if (emulatorHost) {
+        this.logger.log(`Using Firebase Auth Emulator at ${emulatorHost}`);
       }
       this.logger.log('Firebase Admin initialized successfully');
     } catch (error: any) {
@@ -76,9 +77,7 @@ export class FirebaseService {
 
 
   private getCredential(): { credential: any; projectId: string; clientEmail: string } {
-    const rawPath =
-      this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT_PATH') ||
-      process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+    const rawPath = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT_PATH');
 
     if (rawPath && typeof rawPath === 'string' && rawPath.trim().length > 0) {
       const trimmedPath = rawPath.trim();
@@ -131,8 +130,7 @@ export class FirebaseService {
           throw new Error(`Firebase service account at "${resolvedPath}" is missing "private_key" field`);
         }
 
-        const envProjectId =
-          this.configService.get<string>('FIREBASE_PROJECT_ID') || process.env.FIREBASE_PROJECT_ID;
+        const envProjectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
         if (envProjectId && envProjectId.trim() !== parsed.project_id.trim()) {
           throw new Error(
             `Firebase project mismatch: service account has project_id "${parsed.project_id}", but FIREBASE_PROJECT_ID is "${envProjectId}"`,
@@ -152,8 +150,8 @@ export class FirebaseService {
         };
       } else {
         const hasEnvCreds =
-          !!(this.configService.get<string>('FIREBASE_PRIVATE_KEY') || process.env.FIREBASE_PRIVATE_KEY) &&
-          !!(this.configService.get<string>('FIREBASE_PROJECT_ID') || process.env.FIREBASE_PROJECT_ID);
+          !!this.configService.get<string>('FIREBASE_PRIVATE_KEY') &&
+          !!this.configService.get<string>('FIREBASE_PROJECT_ID');
 
         if (!hasEnvCreds) {
           throw new Error(
@@ -166,12 +164,9 @@ export class FirebaseService {
       }
     }
 
-    const projectId =
-      this.configService.get<string>('FIREBASE_PROJECT_ID') || process.env.FIREBASE_PROJECT_ID;
-    const clientEmail =
-      this.configService.get<string>('FIREBASE_CLIENT_EMAIL') || process.env.FIREBASE_CLIENT_EMAIL;
-    let privateKey =
-      this.configService.get<string>('FIREBASE_PRIVATE_KEY') || process.env.FIREBASE_PRIVATE_KEY;
+    const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
+    const clientEmail = this.configService.get<string>('FIREBASE_CLIENT_EMAIL');
+    let privateKey = this.configService.get<string>('FIREBASE_PRIVATE_KEY');
 
     if (projectId && clientEmail && privateKey) {
       privateKey = privateKey.trim().replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');

@@ -17,7 +17,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push('/login');
+      router.push('/login?redirect=/profile');
     }
   }, [user, isLoading, router]);
 
@@ -32,6 +32,17 @@ export default function ProfilePage() {
     }
     if (user) {
       loadOrders();
+      const onFocus = () => {
+        if (document.visibilityState === 'visible') {
+          loadOrders();
+        }
+      };
+      window.addEventListener('focus', onFocus);
+      document.addEventListener('visibilitychange', onFocus);
+      return () => {
+        window.removeEventListener('focus', onFocus);
+        document.removeEventListener('visibilitychange', onFocus);
+      };
     }
   }, [user]);
 
@@ -90,33 +101,33 @@ export default function ProfilePage() {
           </div>
 
           {/* Tab Navigation */}
-          <div className="flex border-b border-[#E4E9F2] mb-6 overflow-x-auto bg-white rounded-2xl p-1.5 shadow-sm">
+          <div className="flex border-b border-[#E2E8F0] mb-6 overflow-x-auto bg-white rounded-2xl p-1.5 shadow-xs">
             <button
               onClick={() => setActiveTab('orders')}
-              className={`h-10 px-5 text-xs font-bold rounded-xl transition-all shrink-0 cursor-pointer flex items-center justify-center ${
+              className={`h-10 px-5 text-xs font-semibold rounded-xl transition-all shrink-0 cursor-pointer flex items-center justify-center ${
                 activeTab === 'orders'
-                  ? 'bg-[#1D6FF2] text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#2563EB] text-white shadow-xs'
+                  : 'text-[#475569] hover:text-[#111827]'
               }`}
             >
               📦 My Orders ({orders.length})
             </button>
             <button
               onClick={() => setActiveTab('referral')}
-              className={`h-10 px-5 text-xs font-bold rounded-xl transition-all shrink-0 cursor-pointer flex items-center justify-center ${
+              className={`h-10 px-5 text-xs font-semibold rounded-xl transition-all shrink-0 cursor-pointer flex items-center justify-center ${
                 activeTab === 'referral'
-                  ? 'bg-[#1D6FF2] text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#2563EB] text-white shadow-xs'
+                  : 'text-[#475569] hover:text-[#111827]'
               }`}
             >
               🤝 Mitra Affiliate Program
             </button>
             <button
               onClick={() => setActiveTab('details')}
-              className={`h-10 px-5 text-xs font-bold rounded-xl transition-all shrink-0 cursor-pointer flex items-center justify-center ${
+              className={`h-10 px-5 text-xs font-semibold rounded-xl transition-all shrink-0 cursor-pointer flex items-center justify-center ${
                 activeTab === 'details'
-                  ? 'bg-[#1D6FF2] text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#2563EB] text-white shadow-xs'
+                  : 'text-[#475569] hover:text-[#111827]'
               }`}
             >
               ⚙️ Account Details
@@ -127,17 +138,17 @@ export default function ProfilePage() {
           {activeTab === 'orders' && (
             <div className="space-y-6">
               {orders.length === 0 ? (
-                <div className="p-12 text-center bg-white rounded-3xl border border-[#E4E9F2] shadow-sm space-y-4">
+                <div className="p-12 text-center bg-white rounded-3xl border border-[#E2E8F0] shadow-xs space-y-4">
                   <div className="text-4xl">📦</div>
-                  <h3 className="text-lg font-black text-[#0B1F4B] tracking-tight">
+                  <h3 className="text-lg font-bold text-[#111827] tracking-tight">
                     No Orders Placed Yet
                   </h3>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  <p className="text-xs text-[#475569] max-w-sm mx-auto">
                     When you purchase a certified laptop, you can track its 32-point inspection report, warranty certificate, and doorstep dispatch right here.
                   </p>
                   <Link
                     href="/products"
-                    className="inline-block px-6 py-3 bg-[#1D6FF2] hover:bg-[#1558C0] text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20"
+                    className="inline-block px-6 py-3 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-xl text-xs font-semibold shadow-xs"
                   >
                     Start Shopping Laptops
                   </Link>
@@ -147,21 +158,21 @@ export default function ProfilePage() {
                   {orders.map((order) => (
                     <div
                       key={order.id}
-                      className="p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-4"
+                      className="p-6 rounded-3xl bg-white border border-[#E2E8F0] shadow-xs space-y-4"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-[#E4E9F2] text-xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-[#E2E8F0] text-xs">
                         <div>
                           <span className="text-slate-400">Order ID: </span>
-                          <span className="font-mono font-bold text-[#0B1F4B]">{order.orderNumber}</span>
+                          <span className="font-mono font-bold text-[#111827]">{order.orderNumber}</span>
                           <span className="text-slate-400 ml-3">
                             • Placed on {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-1 rounded-full font-bold text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="px-2.5 py-1 rounded-full font-bold text-[11px] bg-[#F0FDF4] text-[#15803D] border border-[#BBF7D0]">
                             ✓ {order.status}
                           </span>
-                          <span className="px-2.5 py-1 rounded-full font-bold text-[11px] bg-blue-50 text-[#1D6FF2] border border-blue-200">
+                          <span className="px-2.5 py-1 rounded-full font-bold text-[11px] bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE]">
                             {order.paymentStatus}
                           </span>
                         </div>
@@ -192,7 +203,7 @@ export default function ProfilePage() {
                         </div>
                         <div className="flex items-baseline gap-2">
                           <span className="text-slate-500">Total Paid:</span>
-                          <span className="text-lg font-black text-[#1D6FF2] tabular-nums">
+                          <span className="text-lg font-bold text-[#2563EB] tabular-nums">
                             ₹{Number(order.finalAmount).toLocaleString('en-IN')}
                           </span>
                         </div>

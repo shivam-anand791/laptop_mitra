@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useProfile, useSignoutEverywhere, useDeleteAccount, useLinkGuestAccount } from '../../hooks/useApi';
+import { useProfile, useSignoutEverywhere, useDeleteAccount } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { MainStackNavigationProp } from '../../navigation/types';
 import { API_BASE_URL } from '../../config';
@@ -10,17 +10,21 @@ import { API_BASE_URL } from '../../config';
 export default function AccountScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
   const { data: profile, isLoading } = useProfile();
-  const { logout, isGuest } = useAuth();
+  const { logout, isGuest, linkGuestAccount } = useAuth();
 
   const signoutEverywhere = useSignoutEverywhere();
   const deleteAccount = useDeleteAccount();
-  const linkGuest = useLinkGuestAccount();
 
   // Guest linking modal
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [linkEmail, setLinkEmail] = useState('');
   const [linkPassword, setLinkPassword] = useState('');
   const [linkName, setLinkName] = useState('');
+  const [isLinking, setIsLinking] = useState(false);
+
+  // Delete confirmation modal (cross-platform alternative to Alert.prompt)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to log out of this device?', [
@@ -48,7 +52,7 @@ export default function AccountScreen() {
                 Alert.alert('Sessions Revoked', 'You have been signed out from all devices.');
                 logout();
               },
-              onError: (err) => Alert.alert('Error', err.message),
+              onError: (err: any) => Alert.alert('Error', err?.message || 'Failed to revoke sessions'),
             });
           },
         },
@@ -57,71 +61,48 @@ export default function AccountScreen() {
   };
 
   const handleDeleteAccount = () => {
-    Alert.prompt
-      ? Alert.prompt(
-        'Delete Account',
-        'This action is irreversible. Type DELETE to permanently anonymize your account:',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: (text?: string) => {
-              if (text === 'DELETE') {
-                deleteAccount.mutate(undefined, {
-                  onSuccess: () => {
-                    Alert.alert('Account Deleted', 'Your personal data has been erased.');
-                    logout();
-                  },
-                  onError: (err) => Alert.alert('Error', err.message),
-                });
-              } else {
-                Alert.alert('Error', 'You must type DELETE exactly.');
-              }
-            },
-          },
-        ],
-      )
-      : Alert.alert(
-        'Delete Account',
-        'Are you sure you want to permanently anonymize your account? This cannot be undone.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete Permanently',
-            style: 'destructive',
-            onPress: () => {
-              deleteAccount.mutate(undefined, {
-                onSuccess: () => {
-                  Alert.alert('Account Deleted', 'Your personal data has been erased.');
-                  logout();
-                },
-                onError: (err) => Alert.alert('Error', err.message),
-              });
-            },
-          },
-        ],
-      );
+    setDeleteConfirmText('');
+    setIsDeleteModalOpen(true);
   };
 
-  const handleLinkGuestSubmit = () => {
-    if (!linkEmail.trim()) {
-      Alert.alert('Validation Error', 'Email is required to link your guest account.');
+  const handleConfirmDelete = () => {
+    if (deleteConfirmText.trim() !== 'DELETE') {
+      Alert.alert('Validation Error', 'You must type DELETE exactly to confirm.');
       return;
     }
-    const payload: { email: string; password?: string; name?: string } = {
-      email: linkEmail.trim(),
-    };
-    if (linkPassword.trim()) payload.password = linkPassword.trim();
-    if (linkName.trim()) payload.name = linkName.trim();
-
-    linkGuest.mutate(payload, {
+    deleteAccount.mutate(undefined, {
       onSuccess: () => {
-        setIsLinkModalOpen(false);
-        Alert.alert('Account Created & Linked', 'Your guest orders and addresses have been saved!');
+        setIsDeleteModalOpen(false);
+        Alert.alert('Account Deleted', 'Your personal data has been erased.');
+        logout();
       },
-      onError: (err) => Alert.alert('Error', err.message),
+      onError: (err: any) => Alert.alert('Error', err?.message || 'Failed to delete account'),
     });
+  };
+
+  const handleLinkGuestSubmit = async () => {
+    if (!linkEmail.trim() || !linkEmail.includes('@')) {
+      Alert.alert('Validation Error', 'Please enter a valid email address.');
+      return;
+    }
+    if (!linkPassword || linkPassword.length < 6) {
+      Alert.alert('Validation Error', 'Password must be at least 6 characters.');
+      return;
+    }
+    setIsLinking(true);
+    try {
+      await linkGuestAccount({
+        email: linkEmail.trim(),
+        password: linkPassword,
+        name: linkName.trim() || undefined,
+      });
+      setIsLinkModalOpen(false);
+      Alert.alert('Account Linked', 'Your guest account has been successfully linked and saved!');
+    } catch (err: any) {
+      Alert.alert('Linking Failed', err?.message || 'Failed to link account. Please try again.');
+    } finally {
+      setIsLinking(false);
+    }
   };
 
   if (isLoading) {
@@ -258,10 +239,10 @@ export default function AccountScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Save & Link Your Account</Text>
             <Text style={styles.modalSubtitle}>
-              Link your guest session to an email and password to permanently keep your orders, carts, and addresses.
+              Link your guest session to an email and password to permanently save your orders and addresses.
             </Text>
 
-            <Text style={styles.inputLabel}>Full Name</Text>
+            <Text style={styles.inputLabel}>Full Name (Optional)</Text>
             <TextInput
               style={styles.modalInput}
               value={linkName}
@@ -279,12 +260,12 @@ export default function AccountScreen() {
               autoCapitalize="none"
             />
 
-            <Text style={styles.inputLabel}>Set Password (Optional)</Text>
+            <Text style={styles.inputLabel}>Set Password *</Text>
             <TextInput
               style={styles.modalInput}
               value={linkPassword}
               onChangeText={setLinkPassword}
-              placeholder="Create a password"
+              placeholder="Create a password (min 6 characters)"
               secureTextEntry
             />
 
@@ -292,18 +273,69 @@ export default function AccountScreen() {
               <TouchableOpacity
                 style={styles.modalCancelButton}
                 onPress={() => setIsLinkModalOpen(false)}
+                disabled={isLinking}
               >
                 <Text style={styles.modalCancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.modalSubmitButton}
+                style={[styles.modalSubmitButton, isLinking && styles.buttonDisabled]}
                 onPress={handleLinkGuestSubmit}
-                disabled={linkGuest.isPending}
+                disabled={isLinking}
               >
-                {linkGuest.isPending ? (
+                {isLinking ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Text style={styles.modalSubmitButtonText}>Link Account</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Account Confirmation Modal */}
+      <Modal visible={isDeleteModalOpen} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.deleteHeader}>
+              <Ionicons name="warning-outline" size={24} color="#ef4444" />
+              <Text style={styles.deleteModalTitle}>Delete Account Permanently</Text>
+            </View>
+            <Text style={styles.modalSubtitle}>
+              This action is permanent and irreversible. Your personal data will be erased and your account anonymized.
+            </Text>
+            <Text style={styles.deletePromptText}>
+              To confirm, type <Text style={{ fontWeight: '800', color: '#ef4444' }}>DELETE</Text> in the box below:
+            </Text>
+
+            <TextInput
+              style={[styles.modalInput, styles.deleteInput]}
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              placeholder="Type DELETE"
+              autoCapitalize="characters"
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setIsDeleteModalOpen(false)}
+                disabled={deleteAccount.isPending}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalDeleteButton,
+                  (deleteConfirmText.trim() !== 'DELETE' || deleteAccount.isPending) && styles.buttonDisabled,
+                ]}
+                onPress={handleConfirmDelete}
+                disabled={deleteConfirmText.trim() !== 'DELETE' || deleteAccount.isPending}
+              >
+                {deleteAccount.isPending ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalDeleteButtonText}>Delete Permanently</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -507,11 +539,28 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     marginBottom: 6,
   },
+  deleteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  deleteModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#ef4444',
+  },
   modalSubtitle: {
     fontSize: 13,
     color: '#64748b',
-    marginBottom: 16,
+    marginBottom: 12,
     lineHeight: 18,
+  },
+  deletePromptText: {
+    fontSize: 13,
+    color: '#334155',
+    marginBottom: 12,
+    fontWeight: '500',
   },
   inputLabel: {
     fontSize: 12,
@@ -529,6 +578,11 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     backgroundColor: '#f8fafc',
     marginBottom: 12,
+  },
+  deleteInput: {
+    borderColor: '#fca5a5',
+    backgroundColor: '#fff',
+    fontWeight: '700',
   },
   modalActions: {
     flexDirection: 'row',
@@ -561,5 +615,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#fff',
+  },
+  modalDeleteButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#ef4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalDeleteButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
 });

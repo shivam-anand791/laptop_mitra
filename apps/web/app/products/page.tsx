@@ -211,16 +211,16 @@ function ProductsContent() {
       <nav aria-label="Breadcrumb" className="mb-4 sm:mb-6">
         <ol className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
           <li>
-            <a href="/" className="hover:text-[#1D6FF2] transition-colors">Home</a>
+            <a href="/" className="hover:text-[#2563EB] transition-colors">Home</a>
           </li>
           <li>/</li>
-          <li className={filters.category === 'all' ? 'text-[#0B1F4B] font-bold' : ''}>
-            <a href="/products" className="hover:text-[#1D6FF2] transition-colors">Certified Laptops</a>
+          <li className={filters.category === 'all' ? 'text-[#111827] font-bold' : ''}>
+            <a href="/products" className="hover:text-[#2563EB] transition-colors">Certified Laptops</a>
           </li>
           {filters.category !== 'all' && currentCategoryObj && (
             <>
               <li>/</li>
-              <li className="text-[#1D6FF2] font-bold">
+              <li className="text-[#2563EB] font-bold">
                 {currentCategoryObj.name}
               </li>
             </>
@@ -263,11 +263,11 @@ function ProductsContent() {
       <div className="mb-6 lg:mb-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3.5xl font-black text-[#0B1F4B] tracking-tight">
+            <h1 className="text-2xl sm:text-3.5xl font-bold text-[#111827] tracking-tight">
               {filters.category !== 'all' && currentCategoryObj ? `${currentCategoryObj.name} Laptops` : 'Certified Pre-Owned & Refurbished Laptops'}
             </h1>
-            <p className="text-xs sm:text-sm text-slate-600 mt-1">
-              Showing <strong className="text-[#0B1F4B] font-bold tabular-nums">{filteredProducts.length}</strong> certified laptops tested across our 32-point engineering inspection checklist.
+            <p className="text-xs sm:text-sm text-[#475569] mt-1">
+              Showing <strong className="text-[#111827] font-bold tabular-nums">{filteredProducts.length}</strong> certified laptops tested across our 32-point engineering inspection checklist.
             </p>
           </div>
 
@@ -277,63 +277,63 @@ function ProductsContent() {
               <span className="text-slate-400 font-medium">Active:</span>
 
               {filters.category !== 'all' && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-[#1D6FF2] border border-blue-200 text-xs font-semibold">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] text-xs font-semibold">
                   {currentCategoryObj?.name || filters.category}
                   <button onClick={() => removeSingleFilter('category')} className="hover:text-blue-900 cursor-pointer" aria-label="Remove category filter">✕</button>
                 </span>
               )}
 
               {filters.search && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-800 border border-slate-200 text-xs font-semibold">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-[#111827] border border-slate-200 text-xs font-semibold">
                   &ldquo;{filters.search}&rdquo;
                   <button onClick={() => removeSingleFilter('search')} className="hover:text-rose-600 cursor-pointer" aria-label="Remove search filter">✕</button>
                 </span>
               )}
 
               {filters.brands.map((b) => (
-                <span key={b} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
+                <span key={b} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#111827] border border-[#E2E8F0] text-xs font-semibold shadow-xs">
                   {b}
                   <button onClick={() => removeSingleFilter('brands', b)} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label={`Remove brand ${b}`}>✕</button>
                 </span>
               ))}
 
               {filters.processors.map((p) => (
-                <span key={p} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
+                <span key={p} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#111827] border border-[#E2E8F0] text-xs font-semibold shadow-xs">
                   {p}
                   <button onClick={() => removeSingleFilter('processors', p)} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label={`Remove processor ${p}`}>✕</button>
                 </span>
               ))}
 
               {filters.rams.map((r) => (
-                <span key={r} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
+                <span key={r} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#111827] border border-[#E2E8F0] text-xs font-semibold shadow-xs">
                   {r} RAM
                   <button onClick={() => removeSingleFilter('rams', r)} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label={`Remove ram ${r}`}>✕</button>
                 </span>
               ))}
 
               {filters.storages.map((st) => (
-                <span key={st} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#0B1F4B] border border-[#E4E9F2] text-xs font-semibold shadow-sm">
+                <span key={st} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white text-[#111827] border border-[#E2E8F0] text-xs font-semibold shadow-xs">
                   {st}
                   <button onClick={() => removeSingleFilter('storages', st)} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label={`Remove storage ${st}`}>✕</button>
                 </span>
               ))}
 
               {filters.grades.map((g) => (
-                <span key={g} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold">
+                <span key={g} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F0FDF4] text-[#15803D] border border-[#BBF7D0] text-xs font-semibold">
                   Grade {g}
                   <button onClick={() => removeSingleFilter('grades', g)} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label={`Remove grade ${g}`}>✕</button>
                 </span>
               ))}
 
               {filters.priceRange !== 'all' && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A] text-xs font-semibold">
                   {filters.priceRange === 'under-25k' ? 'Under ₹25,000' : filters.priceRange === '25k-50k' ? '₹25,000 - ₹50,000' : filters.priceRange === '50k-75k' ? '₹50,000 - ₹75,000' : 'Above ₹75,000'}
                   <button onClick={() => removeSingleFilter('priceRange')} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label="Remove price range filter">✕</button>
                 </span>
               )}
 
               {filters.stockOnly && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F0FDF4] text-[#15803D] border border-[#BBF7D0] text-xs font-semibold">
                   Ready for Dispatch
                   <button onClick={() => removeSingleFilter('stockOnly')} className="text-slate-400 hover:text-rose-600 cursor-pointer" aria-label="Remove in stock filter">✕</button>
                 </span>
@@ -341,7 +341,7 @@ function ProductsContent() {
 
               <button
                 onClick={resetFilters}
-                className="text-xs font-bold text-[#1D6FF2] hover:underline ml-1 cursor-pointer"
+                className="text-xs font-semibold text-[#2563EB] hover:underline ml-1 cursor-pointer"
               >
                 Clear all
               </button>
@@ -411,16 +411,16 @@ function ProductsContent() {
         {/* Main Product Area */}
         <div className="lg:col-span-3 space-y-6">
           {/* Top Sort & Summary Bar */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm">
-            <div className="text-xs text-slate-500 font-medium">
-              Showing <strong className="text-[#0B1F4B] font-bold tabular-nums">{filteredProducts.length}</strong> available laptops
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs">
+            <div className="text-xs text-[#475569] font-medium">
+              Showing <strong className="text-[#111827] font-bold tabular-nums">{filteredProducts.length}</strong> available laptops
             </div>
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-slate-500 font-medium">Sort by:</span>
+              <span className="text-[#475569] font-medium">Sort by:</span>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="h-10 px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0B1F4B] font-semibold text-xs focus:outline-none focus:border-[#1D6FF2] focus:bg-white cursor-pointer shadow-sm"
+                className="h-10 px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-[#111827] font-semibold text-xs focus:outline-none focus:border-[#2563EB] focus:bg-white cursor-pointer shadow-xs"
               >
                 <option value="featured">Featured First</option>
                 <option value="price-low">Price: Low to High</option>

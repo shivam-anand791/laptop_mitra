@@ -1,96 +1,31 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { Suspense, useState, useEffect, useTransition, useMemo, useCallback } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useAdminUsers, useAdminStats, useUpdateUserStatus } from '../../../lib/admin-queries';
+import { useAuth } from '../../../lib/auth-context';
+import { AdminUser, UserStatus, UserRole, USER_ROLES, USER_STATUSES } from '../../../lib/types';
+import { formatINR, formatDate, toNumber } from '../../../lib/format';
+import { QueryState } from '../../../components/admin/QueryState';
+import { useToast } from '../../../components/ui/Toast';
+import Modal from '../../../components/ui/Modal';
+import Button from '../../../components/ui/Button';
 
-interface User {
-  id: string;
-  name: string | null;
-  email: string;
-  role: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-  referralCode: string;
-  referralEarnings: any;
-  referralTier: string;
-}
+// ---------------------------------------------------------------------------
+// Role & Status Badges
+// ---------------------------------------------------------------------------
 
-interface ApiResponse<T> {
-  data: T;
-  meta?: {
-    total?: number;
-    page?: number;
-    limit?: number;
+export function UserRoleBadge({ role }: { role: string }) {
+  const styles: Record<string, string> = {
+    ADMIN: 'badge-primary',
+    MODERATOR: 'badge-info',
+    CUSTOMER: 'badge-gray',
+    GUEST: 'badge-gray',
   };
+  return <span className={`badge ${styles[role] || 'badge-gray'}`}>{role}</span>;
 }
 
-// Mock API client - in production, use shared @laptopmitra/api-client
-const apiClient = {
-  async get(url: string): Promise<ApiResponse<any>> {
-    const mockUsers: User[] = [
-      {
-        id: '1',
-        name: 'John Doe',
-        email: 'john@example.com',
-        role: 'USER',
-        status: 'ACTIVE',
-        createdAt: '2024-01-15T10:30:00.000Z',
-        updatedAt: '2024-09-20T14:22:00.000Z',
-        referralCode: 'REF1234567',
-        referralEarnings: 5000,
-        referralTier: 'GOLD',
-      },
-      {
-        id: '2',
-        name: 'Jane Smith',
-        email: 'jane@example.com',
-        role: 'ADMIN',
-        status: 'ACTIVE',
-        createdAt: '2024-02-10T08:15:00.000Z',
-        updatedAt: '2024-09-21T09:10:00.000Z',
-        referralCode: 'ADM9876543',
-        referralEarnings: 15000,
-        referralTier: 'PLATINUM',
-      },
-      {
-        id: '3',
-        name: 'Bob Wilson',
-        email: 'bob@example.com',
-        role: 'USER',
-        status: 'SUSPENDED',
-        createdAt: '2024-03-05T16:45:00.000Z',
-        updatedAt: '2024-09-18T11:30:00.000Z',
-        referralCode: 'REF2468013',
-        referralEarnings: 0,
-        referralTier: 'BASIC',
-      },
-      {
-        id: '4',
-        name: null,
-        email: 'alice@example.com',
-        role: 'USER',
-        status: 'ACTIVE',
-        createdAt: '2024-04-12T12:00:00.000Z',
-        updatedAt: '2024-09-22T16:45:00.000Z',
-        referralCode: 'REF1357924',
-        referralEarnings: 2500,
-        referralTier: 'BASIC',
-      },
-    ];
-
-    if (url === '/admin/users') {
-      return { data: mockUsers };
-    }
-    throw new Error('Unknown endpoint');
-  },
-
-  async put(url: string, body: any): Promise<any> {
-    // Mock PUT
-    return { data: { success: true } };
-  },
-};
-
-function UserStatusBadge({ status }: { status: string }) {
+export function UserStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     ACTIVE: 'badge-success',
     SUSPENDED: 'badge-danger',
@@ -99,223 +34,585 @@ function UserStatusBadge({ status }: { status: string }) {
   return <span className={`badge ${styles[status] || 'badge-gray'}`}>{status}</span>;
 }
 
-function UserRoleBadge({ role }: { role: string }) {
-  const styles: Record<string, string> = {
-    ADMIN: 'badge-danger',
-    MODERATOR: 'badge-warning',
-    USER: 'badge-info',
-  };
-  return <span className={`badge ${styles[role] || 'badge-gray'}`}>{role}</span>;
+// ---------------------------------------------------------------------------
+// Skeleton Loading Fallback (avoids layout shift)
+// ---------------------------------------------------------------------------
+
+function UsersLoadingSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse" aria-label="Loading users">
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <div className="h-8 bg-gray-200 dark:bg-gray-800 rounded w-48" />
+          <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-64" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-24 bg-gray-200 dark:bg-gray-800 rounded-2xl" />
+        ))}
+      </div>
+      <div className="h-14 bg-gray-200 dark:bg-gray-800 rounded-xl" />
+      <div className="h-96 bg-gray-200 dark:bg-gray-800 rounded-2xl" />
+    </div>
+  );
 }
 
-export default function UsersPage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [roleFilter, setRoleFilter] = useState('all');
+// ---------------------------------------------------------------------------
+// Main Content Component
+// ---------------------------------------------------------------------------
 
+function UsersPageContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [, startTransition] = useTransition();
+  const { user: currentAdmin } = useAuth();
+  const { addToast } = useToast();
+
+  // 1. URL Query State
+  const currentStatus = searchParams.get('status') || 'all';
+  const currentRole = searchParams.get('role') || 'all';
+  const currentSearch = searchParams.get('search') || '';
+  const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+
+  // Local state for debounced search input
+  const [searchInput, setSearchInput] = useState(currentSearch);
+  const [prevSearchParam, setPrevSearchParam] = useState(currentSearch);
+
+  if (prevSearchParam !== currentSearch) {
+    setPrevSearchParam(currentSearch);
+    setSearchInput(currentSearch);
+  }
+
+  // URL Query String Updater
+  const updateUrlFilters = useCallback(
+    (updates: Record<string, string | null | undefined>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value || value === 'all' || value.trim?.() === '') {
+          params.delete(key);
+        } else {
+          params.set(key, value);
+        }
+      });
+
+      startTransition(() => {
+        const queryString = params.toString();
+        router.push(pathname + (queryString ? `?${queryString}` : ''), { scroll: false });
+      });
+    },
+    [searchParams, pathname, router],
+  );
+
+  // Debounce search (300ms)
   useEffect(() => {
-    async function loadUsers() {
-      try {
-        const response = await apiClient.get('/admin/users');
-        setUsers(response.data as User[]);
-      } catch (error) {
-        console.error('Failed to load users:', error);
-      } finally {
-        setLoading(false);
+    const handler = setTimeout(() => {
+      if (searchInput !== currentSearch) {
+        updateUrlFilters({ search: searchInput, page: '1' });
       }
-    }
-    loadUsers();
-  }, []);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchInput, currentSearch, updateUrlFilters]);
 
-  const filteredUsers = users.filter((user) => {
-    const statusMatch = statusFilter === 'all' || user.status === statusFilter;
-    const roleMatch = roleFilter === 'all' || user.role === roleFilter;
-    return statusMatch && roleMatch;
+  // Handlers for filter controls
+  const handleStatusChange = (status: string) => {
+    updateUrlFilters({ status, page: '1' });
+  };
+
+  const handleRoleChange = (role: string) => {
+    updateUrlFilters({ role, page: '1' });
+  };
+
+  const handlePageChange = (page: number) => {
+    updateUrlFilters({ page: String(page) });
+  };
+
+  const handleClearFilters = () => {
+    setSearchInput('');
+    startTransition(() => {
+      router.push(pathname, { scroll: false });
+    });
+  };
+
+  // 2. Fetch authoritative data
+  const { data: stats } = useAdminStats();
+
+  const queryParams = useMemo(
+    () => ({
+      page: currentPage,
+      pageSize: 20,
+      status: currentStatus !== 'all' ? currentStatus : undefined,
+      role: currentRole !== 'all' ? currentRole : undefined,
+      search: currentSearch || undefined,
+    }),
+    [currentPage, currentStatus, currentRole, currentSearch],
+  );
+
+  const {
+    data: usersData,
+    isLoading: usersLoading,
+    error: usersError,
+    refetch: refetchUsers,
+    isPlaceholderData,
+  } = useAdminUsers(queryParams);
+
+  const usersList: AdminUser[] = usersData?.items ?? [];
+  const totalUsers = usersData?.total ?? 0;
+  const pageSize = usersData?.pageSize ?? 20;
+  const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
+
+  // 3. Status Mutation with Confirmation Modal
+  const updateUserStatusMutation = useUpdateUserStatus();
+  const [modalState, setModalState] = useState<{
+    open: boolean;
+    user: AdminUser | null;
+    targetStatus: UserStatus | null;
+  }>({
+    open: false,
+    user: null,
+    targetStatus: null,
   });
 
-  const updateUserStatus = async (userId: string, newStatus: string) => {
-    const confirmed = window.confirm(`Set user status to ${newStatus}?`);
-    if (!confirmed) return;
+  const openStatusConfirmModal = (user: AdminUser, targetStatus: UserStatus) => {
+    setModalState({
+      open: true,
+      user,
+      targetStatus,
+    });
+  };
+
+  const closeStatusModal = () => {
+    setModalState({ open: false, user: null, targetStatus: null });
+  };
+
+  const handleConfirmStatusChange = async () => {
+    if (!modalState.user || !modalState.targetStatus) return;
+
+    const targetUser = modalState.user;
+    const targetStatus = modalState.targetStatus;
 
     try {
-      await apiClient.put(`/admin/users/${userId}/status`, { status: newStatus });
-      setUsers(users.map((u) =>
-        u.id === userId ? { ...u, status: newStatus } : u
-      ));
-    } catch (error) {
-      console.error('Failed to update user status:', error);
-      alert('Failed to update user status');
+      await updateUserStatusMutation.mutateAsync({
+        id: targetUser.id,
+        status: targetStatus,
+      });
+
+      addToast(
+        'success',
+        `Account ${targetUser.name || targetUser.email || targetUser.id} is now ${targetStatus}.`,
+      );
+      closeStatusModal();
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error ? err.message : 'Failed to update account status. Please try again.';
+      addToast('error', errorMsg);
     }
   };
 
-  const totalReferralEarnings = users.reduce(
-    (sum, user) => sum + (Number(user.referralEarnings) || 0),
-    0
-  );
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
+  const hasActiveFilters =
+    currentStatus !== 'all' ||
+    currentRole !== 'all' ||
+    Boolean(currentSearch);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Users</h1>
-        <div className="text-sm text-gray-500 dark:text-gray-400">
-          {filteredUsers.length} of {users.length} users
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">User Accounts</h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Manage customer accounts, roles, access status, and affiliate tiers
+          </p>
         </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="card">
-          <div className="p-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Users</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{users.length}</p>
-          </div>
-        </div>
-        <div className="card">
-          <div className="p-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Active Users</p>
-            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {users.filter((u) => u.status === 'ACTIVE').length}
-            </p>
-          </div>
-        </div>
-        <div className="card">
-          <div className="p-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Suspended</p>
-            <p className="text-2xl font-bold text-red-600 dark:text-red-400">
-              {users.filter((u) => u.status === 'SUSPENDED').length}
-            </p>
-          </div>
-        </div>
-        <div className="card">
-          <div className="p-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">Referral Earnings</p>
-            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">
-              ₹{(totalReferralEarnings / 100).toFixed(0)}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="input"
-          aria-label="Filter by status"
+        <button
+          onClick={() => refetchUsers()}
+          className="btn btn-secondary text-xs flex items-center space-x-1.5 self-start sm:self-auto"
+          title="Refresh user accounts list"
+          aria-label="Refresh user accounts list"
         >
-          <option value="all">All Statuses</option>
-          <option value="ACTIVE">Active</option>
-          <option value="SUSPENDED">Suspended</option>
-          <option value="DELETED">Deleted</option>
-        </select>
-
-        <select
-          value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
-          className="input"
-          aria-label="Filter by role"
-        >
-          <option value="all">All Roles</option>
-          <option value="USER">User</option>
-          <option value="ADMIN">Admin</option>
-          <option value="MODERATOR">Moderator</option>
-        </select>
+          <span>↻</span>
+          <span>Refresh</span>
+        </button>
       </div>
 
-      {/* Table */}
-      <div className="table-container card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Referral Code</th>
-              <th>Tier</th>
-              <th>Joined</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredUsers.map((user) => (
-              <tr key={user.id}>
-                <td>
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 font-medium">
-                      {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
-                    </div>
-                    <span className="font-medium text-gray-900 dark:text-white">
-                      {user.name || 'Unnamed User'}
-                    </span>
-                  </div>
-                </td>
-                <td className="text-gray-600 dark:text-gray-300">{user.email}</td>
-                <td>
-                  <UserRoleBadge role={user.role} />
-                </td>
-                <td>
-                  <UserStatusBadge status={user.status} />
-                </td>
-                <td className="text-sm text-gray-600 dark:text-gray-300">{user.referralCode}</td>
-                <td>
-                  <span className="text-xs text-gray-600 dark:text-gray-400">
-                    {user.referralTier}
-                  </span>
-                </td>
-                <td className="text-sm text-gray-600 dark:text-gray-300">
-                  {new Date(user.createdAt).toLocaleDateString()}
-                </td>
-                <td>
-                  <div className="flex items-center space-x-2">
-                    {user.status === 'ACTIVE' && (
-                      <button
-                        onClick={() => updateUserStatus(user.id, 'SUSPENDED')}
-                        className="text-sm text-danger hover:text-red-700 dark:text-red-400 hover:dark:text-red-300"
-                        aria-label={`Suspend ${user.email}`}
-                      >
-                        Suspend
-                      </button>
-                    )}
-                    {user.status === 'SUSPENDED' && (
-                      <button
-                        onClick={() => updateUserStatus(user.id, 'ACTIVE')}
-                        className="text-sm text-green-600 hover:text-green-700 dark:text-green-400 hover:dark:text-green-300"
-                        aria-label={`Activate ${user.email}`}
-                      >
-                        Activate
-                      </button>
-                    )}
-                    <button
-                      className="text-sm text-gray-600 hover:text-gray-700 dark:text-gray-400 hover:dark:text-gray-300"
-                      aria-label={`View ${user.email}`}
-                    >
-                      View
-                    </button>
-                  </div>
-                </td>
-              </tr>
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="card p-5">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Total Users
+          </p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+            {stats?.totalUsers ?? totalUsers}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">All registered accounts</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Matching Filter
+          </p>
+          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+            {totalUsers}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Current search results</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Active Status
+          </p>
+          <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
+            {usersList.filter((u) => u.status === 'ACTIVE').length} / {usersList.length}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Active on this page</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Page Earnings
+          </p>
+          <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">
+            {formatINR(
+              usersList.reduce((sum, u) => sum + toNumber(u.referralEarnings), 0),
+            )}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total referral commissions</p>
+        </div>
+      </div>
+
+      {/* Search & Filter Controls */}
+      <div className="card p-4 space-y-4">
+        <div className="flex flex-col md:flex-row gap-3">
+          {/* Search bar */}
+          <div className="relative flex-1">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+              🔍
+            </span>
+            <input
+              type="text"
+              placeholder="Search by user name or email address..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="input pl-9 w-full"
+              aria-label="Search users by name or email"
+            />
+            {searchInput && (
+              <button
+                onClick={() => {
+                  setSearchInput('');
+                  updateUrlFilters({ search: '', page: '1' });
+                }}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                aria-label="Clear search query"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Role Filter */}
+          <select
+            value={currentRole}
+            onChange={(e) => handleRoleChange(e.target.value)}
+            className="input md:w-48 text-sm"
+            aria-label="Filter users by role"
+          >
+            <option value="all">All Roles</option>
+            {USER_ROLES.map((role: UserRole) => (
+              <option key={role} value={role}>
+                {role === 'ADMIN'
+                  ? 'Administrator'
+                  : role === 'MODERATOR'
+                    ? 'Moderator'
+                    : role === 'CUSTOMER'
+                      ? 'Customer'
+                      : 'Guest'}
+              </option>
             ))}
-          </tbody>
-        </table>
+          </select>
 
-        {filteredUsers.length === 0 && (
-          <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-            No users found matching your filters
-          </div>
-        )}
+          {/* Status Filter */}
+          <select
+            value={currentStatus}
+            onChange={(e) => handleStatusChange(e.target.value)}
+            className="input md:w-44 text-sm"
+            aria-label="Filter users by status"
+          >
+            <option value="all">All Statuses</option>
+            {USER_STATUSES.map((status: UserStatus) => (
+              <option key={status} value={status}>
+                {status.charAt(0) + status.slice(1).toLowerCase()}
+              </option>
+            ))}
+          </select>
+
+          {hasActiveFilters && (
+            <button
+              onClick={handleClearFilters}
+              className="btn btn-secondary text-xs px-3 self-center"
+              title="Reset all search and filter fields"
+            >
+              Reset Filters
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Users Table */}
+      <QueryState
+        isLoading={usersLoading}
+        error={usersError}
+        isEmpty={!usersLoading && !usersError && usersList.length === 0}
+        onRetry={refetchUsers}
+        emptyTitle="No users found"
+        emptyMessage={
+          hasActiveFilters
+            ? 'No user accounts match the current filter criteria. Try adjusting your search query or filters.'
+            : 'No user accounts exist in the database yet.'
+        }
+        emptyAction={
+          hasActiveFilters ? (
+            <Button variant="secondary" size="sm" onClick={handleClearFilters}>
+              Reset Filter
+            </Button>
+          ) : undefined
+        }
+      >
+        <div className="table-container card overflow-x-auto">
+          <table className="table min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+            <thead>
+              <tr>
+                <th scope="col">User</th>
+                <th scope="col">Email</th>
+                <th scope="col">Role</th>
+                <th scope="col">Status</th>
+                <th scope="col">Referral Info</th>
+                <th scope="col">Commission</th>
+                <th scope="col">Joined</th>
+                <th scope="col" className="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+              {usersList.map((row) => {
+                const isSelf = currentAdmin?.id === row.id;
+                const isOtherAdmin = row.role === 'ADMIN' && !isSelf;
+                const isModifying = updateUserStatusMutation.isPending && modalState.user?.id === row.id;
+                const initial = (row.name || row.email || 'U').charAt(0).toUpperCase();
+
+                return (
+                  <tr key={row.id} className="hover:bg-gray-50/75 dark:hover:bg-gray-800/40 transition-colors">
+                    <td>
+                      <div className="flex items-center space-x-3">
+                        <div
+                          className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-xs shrink-0"
+                          aria-hidden="true"
+                        >
+                          {initial}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-gray-900 dark:text-white truncate">
+                            {row.name || 'Unnamed Account'}
+                          </p>
+                          {isSelf && (
+                            <span className="inline-block text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.2 rounded">
+                              You
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="text-sm text-gray-600 dark:text-gray-300">
+                      {row.email || '—'}
+                    </td>
+
+                    <td>
+                      <UserRoleBadge role={row.role} />
+                    </td>
+
+                    <td>
+                      <UserStatusBadge status={row.status} />
+                    </td>
+
+                    <td>
+                      <div className="flex flex-col text-xs">
+                        <span className="font-mono text-gray-700 dark:text-gray-300 font-medium">
+                          {row.referralCode || '—'}
+                        </span>
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                          Tier: {row.referralTier || 'BASIC'}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {formatINR(row.referralEarnings)}
+                    </td>
+
+                    <td className="text-sm text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                      {formatDate(row.createdAt)}
+                    </td>
+
+                    <td className="text-right whitespace-nowrap">
+                      {isSelf ? (
+                        <span
+                          className="text-xs text-gray-400 dark:text-gray-500 italic select-none"
+                          title="You cannot modify your own administrator account status"
+                        >
+                          Self (Active)
+                        </span>
+                      ) : isOtherAdmin ? (
+                        <span
+                          className="text-xs text-gray-400 dark:text-gray-500 italic select-none"
+                          title="Admin accounts are protected from suspension"
+                        >
+                          Admin Protected
+                        </span>
+                      ) : row.status === 'ACTIVE' ? (
+                        <button
+                          onClick={() => openStatusConfirmModal(row, 'SUSPENDED')}
+                          disabled={isModifying}
+                          className="text-xs font-semibold text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 px-2.5 py-1 rounded-md border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/20 disabled:opacity-40 transition-colors"
+                          aria-label={`Suspend account for ${row.name || row.email}`}
+                        >
+                          Suspend
+                        </button>
+                      ) : row.status === 'SUSPENDED' ? (
+                        <button
+                          onClick={() => openStatusConfirmModal(row, 'ACTIVE')}
+                          disabled={isModifying}
+                          className="text-xs font-semibold text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 px-2.5 py-1 rounded-md border border-green-200 dark:border-green-900/60 hover:bg-green-50 dark:hover:bg-green-950/20 disabled:opacity-40 transition-colors"
+                          aria-label={`Reactivate account for ${row.name || row.email}`}
+                        >
+                          Reactivate
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-400 dark:text-gray-500 italic">
+                          Deleted
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination Footer */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs">
+          <p className="text-gray-500 dark:text-gray-400">
+            Showing{' '}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {totalUsers === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+            </span>{' '}
+            to{' '}
+            <span className="font-semibold text-gray-900 dark:text-white">
+              {Math.min(currentPage * pageSize, totalUsers)}
+            </span>{' '}
+            of <span className="font-semibold text-gray-900 dark:text-white">{totalUsers}</span> accounts
+          </p>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage <= 1 || isPlaceholderData}
+              className="btn btn-secondary text-xs px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Previous page"
+            >
+              ← Previous
+            </button>
+
+            <span className="px-2 text-gray-600 dark:text-gray-300 font-medium">
+              Page {currentPage} of {totalPages}
+            </span>
+
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage >= totalPages || isPlaceholderData}
+              className="btn btn-secondary text-xs px-3 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Next page"
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      </QueryState>
+
+      {/* Confirmation Modal */}
+      <Modal
+        open={modalState.open}
+        onClose={closeStatusModal}
+        title={
+          modalState.targetStatus === 'SUSPENDED'
+            ? 'Suspend User Account'
+            : 'Reactivate User Account'
+        }
+        description={
+          modalState.targetStatus === 'SUSPENDED'
+            ? 'Are you sure you want to suspend this user? They will be immediately blocked from logging in or placing orders.'
+            : 'Are you sure you want to reactivate this user? Their account access and store privileges will be restored.'
+        }
+        size="md"
+      >
+        <div className="space-y-4 pt-2">
+          {modalState.user && (
+            <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3.5 border border-gray-200 dark:border-gray-700 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Account Name:</span>
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {modalState.user.name || 'Unnamed Account'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Email:</span>
+                <span className="font-mono text-gray-900 dark:text-white">
+                  {modalState.user.email || '—'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Role:</span>
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {modalState.user.role}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Current Status:</span>
+                <UserStatusBadge status={modalState.user.status} />
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-2.5 pt-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={closeStatusModal}
+              disabled={updateUserStatusMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={modalState.targetStatus === 'SUSPENDED' ? 'danger' : 'primary'}
+              size="sm"
+              onClick={handleConfirmStatusChange}
+              loading={updateUserStatusMutation.isPending}
+            >
+              {modalState.targetStatus === 'SUSPENDED' ? 'Confirm Suspend' : 'Confirm Reactivate'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Export with Suspense Wrapper for Next.js App Router useSearchParams
+// ---------------------------------------------------------------------------
+
+export default function AdminUsersPage() {
+  return (
+    <Suspense fallback={<UsersLoadingSkeleton />}>
+      <UsersPageContent />
+    </Suspense>
   );
 }

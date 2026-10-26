@@ -59,7 +59,7 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         findMany: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
-      $transaction: jest.fn().mockImplementation(async (callbackOrPromises, options) => {
+      $transaction: jest.fn().mockImplementation(async (callbackOrPromises, _options) => {
         if (typeof callbackOrPromises === 'function') {
           return callbackOrPromises(prisma);
         }
@@ -414,6 +414,7 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         id: 'pay-db-1',
         razorpayPaymentId: 'pay_already_completed',
         status: 'COMPLETED',
+        order: { id: 'order-1' },
       });
 
       const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
@@ -448,13 +449,205 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         paymentStatus: 'PENDING',
         status: 'PENDING',
       };
-      prisma.payment.findFirst.mockResolvedValue(null);
+      prisma.payment.findFirst.mockResolvedValue({
+        id: 'pay-db-1',
+        amount: 80000,
+        currency: 'INR',
+        order: dbOrder,
+      });
       prisma.order.findFirst.mockResolvedValue(dbOrder);
 
       const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
       expect(result.valid).toBe(false);
       expect(result.event).toBe('amount_mismatch');
       expect(prisma.order.update).not.toHaveBeenCalled();
+      expect(notificationService.dispatchPaymentUpdate).toHaveBeenCalledWith('user-1', 'order-100', 'FAILED');
+    });
+
+    it('rejects webhook with currency mismatch against database order', async () => {
+      const secret = 'webhooksecret1234567890';
+      const payload = {
+        event: 'payment.captured',
+        payload: {
+          payment: {
+            entity: {
+              id: 'pay_wrong_currency',
+              order_id: 'order_rzp_101',
+              amount: 8000000,
+              currency: 'USD', // USD instead of INR
+            },
+          },
+        },
+      };
+      const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
+      const validSig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+
+      const dbOrder = {
+        id: 'order-101',
+        userId: 'user-2',
+        finalAmount: 80000,
+        paymentStatus: 'PENDING',
+        status: 'PENDING',
+      };
+      prisma.payment.findFirst.mockResolvedValue({
+        id: 'pay-db-2',
+        amount: 8000000,
+        currency: 'INR',
+        order: dbOrder,
+      });
+
+      const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
+      expect(result.valid).toBe(false);
+      expect(result.event).toBe('amount_mismatch');
+      expect(prisma.order.update).not.toHaveBeenCalled();
+      expect(notificationService.dispatchPaymentUpdate).toHaveBeenCalledWith('user-2', 'order-101', 'FAILED');
+    });
+
+    it('is idempotent on duplicate payment.failed webhook event', async () => {
+      const secret = 'webhooksecret1234567890';
+      const payload = {
+        event: 'payment.failed',
+        payload: {
+          payment: {
+            entity: {
+              id: 'pay_failed_dup',
+              order_id: 'order_rzp_dup_fail',
+            },
+          },
+        },
+      };
+      const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
+      const validSig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+
+      prisma.payment.findFirst.mockResolvedValue({
+        id: 'pay-db-dup',
+        razorpayPaymentId: 'pay_failed_dup',
+        status: 'FAILED',
+        order: { id: 'order-dup', paymentStatus: 'FAILED' },
+      });
+
+      const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
+      expect(result.valid).toBe(true);
+      expect(result.event).toBe('already_processed');
+      expect(notificationService.dispatchPaymentUpdate).not.toHaveBeenCalled();
+    });
+
+    it('ignores out-of-order payment.failed event if order is already COMPLETED', async () => {
+      const secret = 'webhooksecret1234567890';
+      const payload = {
+        event: 'payment.failed',
+        payload: {
+          payment: {
+            entity: {
+              id: 'pay_old_fail',
+              order_id: 'order_rzp_completed',
+            },
+          },
+        },
+      };
+      const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
+      const validSig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+
+      prisma.payment.findFirst.mockResolvedValue({
+        id: 'pay-db-completed',
+        razorpayPaymentId: 'pay_success_123',
+        status: 'COMPLETED',
+        order: { id: 'order-c1', paymentStatus: 'COMPLETED', status: 'CONFIRMED' },
+      });
+
+      const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
+      expect(result.valid).toBe(true);
+      expect(result.event).toBe('ignored_order_already_completed');
+      expect(notificationService.dispatchPaymentUpdate).not.toHaveBeenCalled();
+    });
+
+    it('safely refunds delayed payment for an expired inventory reservation', async () => {
+      const secret = 'webhooksecret1234567890';
+      const payload = {
+        event: 'payment.captured',
+        payload: {
+          payment: {
+            entity: {
+              id: 'pay_late',
+              order_id: 'order_rzp_expired',
+              amount: 500000,
+              currency: 'INR',
+            },
+          },
+        },
+      };
+      const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
+      const validSig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+
+      const expiredOrder = {
+        id: 'order-expired',
+        userId: 'user-late',
+        finalAmount: 5000,
+        paymentStatus: 'PENDING',
+        status: 'PENDING',
+        inventoryStatus: 'RESERVED',
+        razorpayOrderId: 'order_rzp_expired',
+        reservationExpiresAt: new Date(Date.now() - 3600000), // Expired 1 hour ago
+      };
+
+      prisma.payment.findFirst.mockResolvedValue({
+        id: 'pay-late-db',
+        amount: 500000,
+        currency: 'INR',
+        status: 'PENDING',
+        order: expiredOrder,
+      });
+
+      jest.spyOn(paymentService, 'refundPayment').mockResolvedValue({ status: 'REFUNDED' });
+
+      const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
+      expect(result.valid).toBe(true);
+      expect(result.event).toBe('late_payment_refund');
+      expect(paymentService.refundPayment).toHaveBeenCalledWith('order-expired', 'pay_late');
+      expect(prisma.order.update).not.toHaveBeenCalled();
+    });
+
+    it('captures valid payment, confirms order, and consumes inventory', async () => {
+      const secret = 'webhooksecret1234567890';
+      const payload = {
+        event: 'payment.captured',
+        payload: {
+          payment: {
+            entity: {
+              id: 'pay_legit_100',
+              order_id: 'order_rzp_legit',
+              amount: 500000,
+              currency: 'INR',
+            },
+          },
+        },
+      };
+      const rawBody = Buffer.from(JSON.stringify(payload), 'utf8');
+      const validSig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+
+      const legitOrder = {
+        id: 'order-legit',
+        userId: 'user-legit',
+        finalAmount: 5000,
+        paymentStatus: 'PENDING',
+        status: 'PENDING',
+        inventoryStatus: 'RESERVED',
+        razorpayOrderId: 'order_rzp_legit',
+        reservationExpiresAt: new Date(Date.now() + 600000), // Valid for 10 min
+      };
+
+      prisma.payment.findFirst.mockResolvedValue({
+        id: 'pay-legit-db',
+        amount: 500000,
+        currency: 'INR',
+        status: 'PENDING',
+        order: legitOrder,
+      });
+
+      const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
+      expect(result.valid).toBe(true);
+      expect(result.event).toBe('payment_completed');
+      expect(notificationService.dispatchPaymentUpdate).toHaveBeenCalledWith('user-legit', 'order-legit', 'COMPLETED');
     });
   });
 });

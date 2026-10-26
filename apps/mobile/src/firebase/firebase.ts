@@ -2,9 +2,10 @@ import { FirebaseApp, getApp, getApps, initializeApp } from 'firebase/app';
 import {
   Auth,
   getAuth,
-  getReactNativePersistence,
   initializeAuth,
 } from 'firebase/auth';
+// @ts-expect-error getReactNativePersistence is exported by React Native entrypoint of firebase/auth
+import { getReactNativePersistence } from 'firebase/auth';
 import Constants from 'expo-constants';
 import { securePersistenceStorage } from './securePersistence';
 

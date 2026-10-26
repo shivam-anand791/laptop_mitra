@@ -1,127 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  slug: string;
-  price: any;
-  stock: number;
-  status: string;
-  isFeatured: boolean;
-  isNewArrival: boolean;
-  categoryId: string | null;
-  createdAt: string;
-  updatedAt: string;
-  category?: { name: string };
-  images?: { url: string; altText: string | null; isPrimary: boolean }[];
-}
-
-const apiClient = {
-  async get(url: string) {
-    const mockProducts: Product[] = [
-      {
-        id: '1',
-        name: 'Dell Latitude 5420',
-        sku: 'DELL-LATITUDE-5420',
-        slug: 'dell-latitude-5420',
-        price: 45000.0,
-        stock: 45,
-        status: 'ACTIVE',
-        isFeatured: true,
-        isNewArrival: false,
-        categoryId: 'cat-1',
-        createdAt: '2024-01-15T10:30:00.000Z',
-        updatedAt: '2024-09-20T14:22:00.000Z',
-        category: { name: 'Business Laptops' },
-        images: [{ url: 'https://via.placeholder.com/400x300', altText: 'Dell Latitude 5420', isPrimary: true }],
-      },
-      {
-        id: '2',
-        name: 'HP EliteBook 840 G8',
-        sku: 'HP-ELITEBOOK-840-G8',
-        slug: 'hp-elitebook-840-g8',
-        price: 52000.0,
-        stock: 23,
-        status: 'ACTIVE',
-        isFeatured: false,
-        isNewArrival: true,
-        categoryId: 'cat-1',
-        createdAt: '2024-02-10T08:15:00.000Z',
-        updatedAt: '2024-09-21T09:10:00.000Z',
-        category: { name: 'Business Laptops' },
-        images: [{ url: 'https://via.placeholder.com/400x300', altText: 'HP EliteBook 840 G8', isPrimary: true }],
-      },
-      {
-        id: '3',
-        name: 'Lenovo ThinkPad X1 Carbon',
-        sku: 'LENOVO-THINKPAD-X1-CARBON',
-        slug: 'lenovo-thinkpad-x1-carbon',
-        price: 89000.0,
-        stock: 0,
-        status: 'ACTIVE',
-        isFeatured: true,
-        isNewArrival: false,
-        categoryId: 'cat-2',
-        createdAt: '2024-03-05T16:45:00.000Z',
-        updatedAt: '2024-09-18T11:30:00.000Z',
-        category: { name: 'Ultrabooks' },
-        images: [{ url: 'https://via.placeholder.com/400x300', altText: 'Lenovo ThinkPad X1 Carbon', isPrimary: true }],
-      },
-      {
-        id: '4',
-        name: 'Apple MacBook Pro 16"',
-        sku: 'APPLE-MACBOOK-PRO-16',
-        slug: 'apple-macbook-pro-16',
-        price: 185000.0,
-        stock: 12,
-        status: 'ACTIVE',
-        isFeatured: true,
-        isNewArrival: true,
-        categoryId: 'cat-3',
-        createdAt: '2024-04-12T12:00:00.000Z',
-        updatedAt: '2024-09-22T16:45:00.000Z',
-        category: { name: 'MacBooks' },
-        images: [{ url: 'https://via.placeholder.com/400x300', altText: 'MacBook Pro 16"', isPrimary: true }],
-      },
-      {
-        id: '5',
-        name: 'ASUS VivoBook 15',
-        sku: 'ASUS-VIVOBOOK-15',
-        slug: 'asus-vivobook-15',
-        price: 35000.0,
-        stock: 0,
-        status: 'INACTIVE',
-        isFeatured: false,
-        isNewArrival: false,
-        categoryId: 'cat-1',
-        createdAt: '2024-05-01T09:30:00.000Z',
-        updatedAt: '2024-09-22T10:15:00.000Z',
-        category: { name: 'Business Laptops' },
-        images: [{ url: 'https://via.placeholder.com/400x300', altText: 'ASUS VivoBook 15', isPrimary: true }],
-      },
-    ];
-
-    if (url === '/products') {
-      return { data: { products: mockProducts, total: mockProducts.length } };
-    }
-    throw new Error('Unknown endpoint');
-  },
-
-  async post(url: string, body: any) {
-    return { data: { success: true } };
-  },
-
-  async put(url: string, body: any) {
-    return { data: { success: true } };
-  },
-
-  async delete(url: string) {
-    return { data: { success: true } };
-  },
-};
+import { api } from '../../../lib/api';
+import { Product } from '../../../lib/types';
+import { formatPrice } from '../../../lib/format';
 
 function ProductStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -132,30 +14,150 @@ function ProductStatusBadge({ status }: { status: string }) {
   return <span className={`badge ${styles[status] || 'badge-gray'}`}>{status}</span>;
 }
 
-function formatPrice(price: any) {
-  const numPrice = typeof price === 'object' ? Number(price) : Number(price);
-  return `₹${numPrice.toLocaleString('en-IN')}`;
-}
-
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // New Product Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newProductData, setNewProductData] = useState({
+    name: '',
+    sku: '',
+    price: '',
+    stock: '',
+    shortDescription: '',
+    description: '',
+    status: 'ACTIVE',
+    isFeatured: false,
+    isNewArrival: false,
+  });
+
+  const loadProducts = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.getAdminProducts();
+      setProducts(data);
+    } catch (err: any) {
+      console.error('Failed to load products:', err);
+      setError(err?.message || 'Failed to fetch catalog from backend');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function loadProducts() {
-      try {
-        const response: any = await apiClient.get('/products');
-        setProducts(response.data.products as Product[]);
-      } catch (error) {
-        console.error('Failed to load products:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
     loadProducts();
   }, []);
+
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProductData.name.trim() || !newProductData.sku.trim() || !newProductData.price) {
+      alert('Name, SKU, and Price are required.');
+      return;
+    }
+
+    try {
+      const created = await api.createAdminProduct({
+        ...newProductData,
+        price: parseFloat(newProductData.price),
+        stock: parseInt(newProductData.stock || '0', 10),
+      });
+      setProducts([created, ...products]);
+      setIsAddModalOpen(false);
+      setNewProductData({
+        name: '',
+        sku: '',
+        price: '',
+        stock: '',
+        shortDescription: '',
+        description: '',
+        status: 'ACTIVE',
+        isFeatured: false,
+        isNewArrival: false,
+      });
+      setFeedbackMessage({ text: `Product "${created.name}" created successfully.`, type: 'success' });
+    } catch (err: any) {
+      alert(err?.message || 'Failed to create product');
+    }
+  };
+
+  const toggleFeatured = async (productId: string) => {
+    const product = products.find((p) => p.id === productId);
+    if (!product) return;
+
+    setActionInProgressId(productId);
+    try {
+      const updated = await api.updateAdminProduct(productId, {
+        isFeatured: !product.isFeatured,
+      });
+      setProducts(products.map((p) => (p.id === productId ? { ...p, isFeatured: updated.isFeatured } : p)));
+    } catch (err: any) {
+      alert(err?.message || 'Failed to update featured flag');
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  const toggleNewArrival = async (productId: string) => {
+    const product = products.find((p) => p.id === productId);
+    if (!product) return;
+
+    setActionInProgressId(productId);
+    try {
+      const updated = await api.updateAdminProduct(productId, {
+        isNewArrival: !product.isNewArrival,
+      });
+      setProducts(products.map((p) => (p.id === productId ? { ...p, isNewArrival: updated.isNewArrival } : p)));
+    } catch (err: any) {
+      alert(err?.message || 'Failed to update new arrival flag');
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  const handleUpdateStock = async (productId: string, currentStock: number) => {
+    const input = window.prompt('Enter new stock quantity:', currentStock.toString());
+    if (input === null) return;
+    const newStock = parseInt(input.trim(), 10);
+    if (isNaN(newStock) || newStock < 0) {
+      alert('Please enter a valid non-negative integer.');
+      return;
+    }
+
+    setActionInProgressId(productId);
+    try {
+      const updated = await api.updateAdminProduct(productId, { stock: newStock });
+      setProducts(products.map((p) => (p.id === productId ? { ...p, stock: updated.stock } : p)));
+      setFeedbackMessage({ text: 'Stock updated successfully.', type: 'success' });
+    } catch (err: any) {
+      alert(err?.message || 'Failed to update stock');
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  const handleDeleteProduct = async (product: Product) => {
+    if (!window.confirm(`Are you sure you want to delete or discontinue "${product.name}"?`)) {
+      return;
+    }
+
+    setActionInProgressId(product.id);
+    try {
+      await api.deleteAdminProduct(product.id);
+      setProducts(products.filter((p) => p.id !== product.id));
+      setFeedbackMessage({ text: `Product "${product.name}" was removed or discontinued.`, type: 'success' });
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete product');
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
 
   const filteredProducts = products.filter((product) => {
     const statusMatch = statusFilter === 'all' || product.status === statusFilter;
@@ -166,46 +168,23 @@ export default function ProductsPage() {
     return statusMatch && searchMatch;
   });
 
-  const toggleFeatured = async (productId: string) => {
-    const product = products.find((p) => p.id === productId);
-    if (!product) return;
-
-    try {
-      await apiClient.put(`/admin/products/${productId}`, {
-        isFeatured: !product.isFeatured,
-      });
-      setProducts(
-        products.map((p) =>
-          p.id === productId ? { ...p, isFeatured: !p.isFeatured } : p
-        )
-      );
-    } catch (error) {
-      console.error('Failed to update product:', error);
-    }
-  };
-
-  const toggleNewArrival = async (productId: string) => {
-    const product = products.find((p) => p.id === productId);
-    if (!product) return;
-
-    try {
-      await apiClient.put(`/admin/products/${productId}`, {
-        isNewArrival: !product.isNewArrival,
-      });
-      setProducts(
-        products.map((p) =>
-          p.id === productId ? { ...p, isNewArrival: !p.isNewArrival } : p
-        )
-      );
-    } catch (error) {
-      console.error('Failed to update product:', error);
-    }
-  };
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-3">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <p className="text-sm text-gray-500">Loading catalog items from backend...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12 card p-8 max-w-lg mx-auto">
+        <div className="text-red-500 mb-3 font-semibold text-lg">Unable to load product catalog</div>
+        <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">{error}</p>
+        <button onClick={loadProducts} className="btn btn-primary">
+          Retry
+        </button>
       </div>
     );
   }
@@ -214,41 +193,41 @@ export default function ProductsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Products</h1>
-        <a
-          href="/admin/products/new"
-          className="btn btn-primary"
-        >
-          Add Product
-        </a>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Product Catalog</h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Authoritative database inventory, stock, and pricing</p>
+        </div>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={loadProducts}
+            className="btn btn-secondary text-xs flex items-center space-x-1"
+            title="Refresh catalog from backend"
+          >
+            <span>↻</span>
+            <span>Refresh</span>
+          </button>
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="btn btn-primary text-xs"
+          >
+            + Add Product
+          </button>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <input
-          type="text"
-          placeholder="Search products..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="input"
-          aria-label="Search products"
-        />
-
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="input"
-          aria-label="Filter by status"
+      {feedbackMessage && (
+        <div
+          className={`p-3 rounded-lg text-sm flex items-center justify-between ${
+            feedbackMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+          }`}
         >
-          <option value="all">All Statuses</option>
-          <option value="ACTIVE">Active</option>
-          <option value="INACTIVE">Inactive</option>
-          <option value="DISCONTINUED">Discontinued</option>
-        </select>
-      </div>
+          <span>{feedbackMessage.text}</span>
+          <button onClick={() => setFeedbackMessage(null)} className="font-bold ml-2">×</button>
+        </div>
+      )}
 
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="card">
           <div className="p-4">
             <p className="text-sm text-gray-600 dark:text-gray-400">Total Products</p>
@@ -271,6 +250,30 @@ export default function ProductsPage() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <input
+          type="text"
+          placeholder="Search products by title or SKU..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="input flex-1"
+          aria-label="Search products"
+        />
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="input sm:w-48"
+          aria-label="Filter by status"
+        >
+          <option value="all">All Statuses</option>
+          <option value="ACTIVE">Active</option>
+          <option value="INACTIVE">Inactive</option>
+          <option value="DISCONTINUED">Discontinued</option>
+        </select>
       </div>
 
       {/* Table */}
@@ -296,24 +299,31 @@ export default function ProductsPage() {
                       <img
                         src={product.images[0].url}
                         alt={product.images[0].altText || product.name}
-                        className="w-12 h-12 rounded-lg object-cover"
+                        className="w-12 h-12 rounded-lg object-cover bg-gray-100"
                       />
                     ) : (
                       <div className="w-12 h-12 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                        <span className="text-gray-400">No image</span>
+                        <span className="text-[10px] text-gray-400">No img</span>
                       </div>
                     )}
                     <div>
-                      <span className="font-medium text-gray-900 dark:text-white">{product.name}</span>
-                      <span className="block text-xs text-gray-500 dark:text-gray-400">{product.sku}</span>
+                      <span className="font-medium text-gray-900 dark:text-white block">{product.name}</span>
+                      <span className="block text-xs font-mono text-gray-500 dark:text-gray-400">{product.sku}</span>
                     </div>
                   </div>
                 </td>
-                <td className="text-gray-900 dark:text-white">{formatPrice(product.price)}</td>
+                <td className="text-gray-900 dark:text-white font-medium">{formatPrice(product.price)}</td>
                 <td>
-                  <span className={product.stock === 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}>
-                    {product.stock}
-                  </span>
+                  <button
+                    onClick={() => handleUpdateStock(product.id, product.stock)}
+                    className="hover:underline flex items-center space-x-1"
+                    title="Click to update stock count"
+                  >
+                    <span className={product.stock === 0 ? 'text-red-600 dark:text-red-400 font-bold' : 'text-gray-900 dark:text-white'}>
+                      {product.stock}
+                    </span>
+                    <span className="text-[10px] text-gray-400">✏️</span>
+                  </button>
                 </td>
                 <td>
                   <ProductStatusBadge status={product.status} />
@@ -321,7 +331,8 @@ export default function ProductsPage() {
                 <td>
                   <button
                     onClick={() => toggleFeatured(product.id)}
-                    className={`badge ${product.isFeatured ? 'badge-success' : 'badge-gray'}`}
+                    disabled={actionInProgressId === product.id}
+                    className={`badge cursor-pointer ${product.isFeatured ? 'badge-success' : 'badge-gray'}`}
                     aria-label={`Toggle featured for ${product.name}`}
                   >
                     {product.isFeatured ? 'Yes' : 'No'}
@@ -330,7 +341,8 @@ export default function ProductsPage() {
                 <td>
                   <button
                     onClick={() => toggleNewArrival(product.id)}
-                    className={`badge ${product.isNewArrival ? 'badge-info' : 'badge-gray'}`}
+                    disabled={actionInProgressId === product.id}
+                    className={`badge cursor-pointer ${product.isNewArrival ? 'badge-info' : 'badge-gray'}`}
                     aria-label={`Toggle new arrival for ${product.name}`}
                   >
                     {product.isNewArrival ? 'Yes' : 'No'}
@@ -338,15 +350,10 @@ export default function ProductsPage() {
                 </td>
                 <td>
                   <div className="flex items-center space-x-2">
-                    <a
-                      href={`/admin/products/${product.id}/edit`}
-                      className="text-sm text-gray-600 hover:text-gray-700 dark:text-gray-400 hover:dark:text-gray-300"
-                      aria-label={`Edit ${product.name}`}
-                    >
-                      Edit
-                    </a>
                     <button
-                      className="text-sm text-danger hover:text-red-700 dark:text-red-400 hover:dark:text-red-300"
+                      onClick={() => handleDeleteProduct(product)}
+                      disabled={actionInProgressId === product.id}
+                      className="text-xs font-semibold text-red-600 hover:text-red-800 dark:text-red-400 py-1 px-2 rounded hover:bg-red-50 dark:hover:bg-red-950/20"
                       aria-label={`Delete ${product.name}`}
                     >
                       Delete
@@ -360,10 +367,113 @@ export default function ProductsPage() {
 
         {filteredProducts.length === 0 && (
           <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-            No products found
+            No products found matching your search.
           </div>
         )}
       </div>
+
+      {/* Add Product Modal */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Add Certified Laptop</h2>
+            <form onSubmit={handleCreateProduct} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Product Title *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Dell Latitude 7420 (Core i5 11th Gen, 16GB)"
+                  value={newProductData.name}
+                  onChange={(e) => setNewProductData({ ...newProductData, name: e.target.value })}
+                  className="input w-full"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">SKU *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. LM-DEL-7420-1"
+                    value={newProductData.sku}
+                    onChange={(e) => setNewProductData({ ...newProductData, sku: e.target.value })}
+                    className="input w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Price (₹) *</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    placeholder="38999"
+                    value={newProductData.price}
+                    onChange={(e) => setNewProductData({ ...newProductData, price: e.target.value })}
+                    className="input w-full"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Initial Stock Count</label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="10"
+                  value={newProductData.stock}
+                  onChange={(e) => setNewProductData({ ...newProductData, stock: e.target.value })}
+                  className="input w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Short Specs</label>
+                <input
+                  type="text"
+                  placeholder="Core i5-1145G7, 16GB RAM, 512GB SSD, 14 inch FHD"
+                  value={newProductData.shortDescription}
+                  onChange={(e) => setNewProductData({ ...newProductData, shortDescription: e.target.value })}
+                  className="input w-full"
+                />
+              </div>
+              <div className="flex items-center space-x-6 pt-2">
+                <label className="flex items-center space-x-2 text-xs text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={newProductData.isFeatured}
+                    onChange={(e) => setNewProductData({ ...newProductData, isFeatured: e.target.checked })}
+                    className="rounded text-primary"
+                  />
+                  <span>Featured</span>
+                </label>
+                <label className="flex items-center space-x-2 text-xs text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={newProductData.isNewArrival}
+                    onChange={(e) => setNewProductData({ ...newProductData, isNewArrival: e.target.checked })}
+                    className="rounded text-primary"
+                  />
+                  <span>New Arrival</span>
+                </label>
+              </div>
+              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="btn btn-secondary text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary text-sm"
+                >
+                  Save Product
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

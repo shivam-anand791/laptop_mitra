@@ -2,13 +2,13 @@ import {
   Injectable,
   OnModuleInit,
   OnModuleDestroy,
-  UnauthorizedException,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
   ConflictException,
   ServiceUnavailableException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CartService } from '../cart/cart.service';
@@ -17,6 +17,7 @@ import { NotificationService } from '../notifications/notification.service';
 import { Order, OrderItem } from '../../types';
 import { DiscountService } from '../discount/discount.service';
 import { PaymentService } from '../payments/payment.service';
+import { AdminService } from '../admin/admin.service';
 import { allowInMemoryFallback } from '../../common/fallback';
 
 // In-memory orders for fallback
@@ -35,6 +36,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     private notificationService: NotificationService,
     private discountService: DiscountService,
     private paymentService?: PaymentService,
+    @Optional() private adminService?: AdminService,
   ) {}
 
   onModuleInit() {
@@ -127,6 +129,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     email?: string,
     user?: any,
     paymentMethod = 'razorpay',
+    idempotencyKey?: string,
   ): Promise<Order> {
     const resolvedEmail = (email || shippingAddress?.email || user?.email)?.trim();
     const resolvedPhone = (phone || shippingAddress?.phone || user?.phone)?.trim();
@@ -139,6 +142,40 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     }
     if (!['razorpay', 'cod'].includes(paymentMethod)) {
       throw new BadRequestException('Unsupported payment method');
+    }
+
+    if (idempotencyKey?.trim()) {
+      const cleanKey = idempotencyKey.trim();
+      try {
+        const recentOrders = await this.prisma.order.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          include: {
+            items: { include: { product: true } },
+            deliveries: true,
+            payments: true,
+          },
+        });
+        const existing = recentOrders.find((o: any) => {
+          const addr = o.shippingAddress;
+          return addr && typeof addr === 'object' && addr._idempotencyKey === cleanKey;
+        });
+        if (existing) {
+          return this.normalizeOrder(existing);
+        }
+      } catch {
+        // Proceed with order creation if DB query fails
+      }
+
+      const memOrders = inMemoryOrders.get(userId) || [];
+      const memExisting = memOrders.find((o: any) => {
+        const addr = o.shippingAddress;
+        return addr && typeof addr === 'object' && addr._idempotencyKey === cleanKey;
+      });
+      if (memExisting) {
+        return memExisting;
+      }
     }
 
     let order: any;
@@ -243,7 +280,9 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
               ? `${coupon.type}+referral`
               : coupon?.type || (referralDiscountPaise ? 'referral' : null),
             finalAmount: (finalPaise / 100).toFixed(2),
-            shippingAddress: shippingAddress || undefined,
+            shippingAddress: shippingAddress
+              ? { ...shippingAddress, ...(idempotencyKey ? { _idempotencyKey: idempotencyKey.trim() } : {}) }
+              : (idempotencyKey ? { _idempotencyKey: idempotencyKey.trim() } : undefined),
             phone: resolvedPhone,
             email: resolvedEmail,
             notes: notes || null,
@@ -363,14 +402,19 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
   }
 
   async updateStatus(id: string, status: string, userId: string, userRole: string): Promise<Order> {
-    const order = await this.findOne(id, userId, userRole);
     if (userRole !== 'ADMIN') {
       throw new ForbiddenException('Insufficient permissions');
     }
+    if (this.adminService) {
+      const updated = await this.adminService.updateOrderStatus(id, status, userId);
+      return this.normalizeOrder(updated);
+    }
+    const order = await this.findOne(id, userId, userRole);
     const allowedTransitions: Record<string, string[]> = {
-      PENDING: ['CONFIRMED'],
-      CONFIRMED: ['SHIPPING'],
+      PENDING: ['CONFIRMED', 'CANCELLED'],
+      CONFIRMED: ['SHIPPING', 'CANCELLED'],
       SHIPPING: ['DELIVERED'],
+      DELIVERED: ['REFUNDED'],
     };
     if (!allowedTransitions[order.status]?.includes(status)) {
       throw new BadRequestException('Unsupported order status transition');

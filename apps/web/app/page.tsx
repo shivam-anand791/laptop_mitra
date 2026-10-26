@@ -234,7 +234,7 @@ export default function HomePage() {
               <div className="flex flex-wrap items-center gap-3 pt-2">
                 <Link
                   href="/products"
-                  className="px-6 py-2.5 sm:py-3 bg-[#1D6FF2] hover:bg-[#1558C0] text-white text-xs sm:text-sm font-bold rounded-md shadow-none transition-all flex items-center gap-1.5 active:scale-95"
+                  className="px-6 py-2.5 sm:py-3 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs sm:text-sm font-semibold rounded-lg shadow-xs transition-all flex items-center gap-1.5 active:scale-95"
                 >
                   <span>Explore Laptops</span>
                   <span>→</span>
@@ -334,16 +334,16 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-6 lg:mb-8 gap-3">
             <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#1D6FF2] block mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB] block mb-2">
                 Certified Catalog
               </span>
-              <h2 className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tracking-tight">
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#111827] tracking-tight">
                 Shop by Purpose &amp; Category
               </h2>
             </div>
             <Link
               href="/products"
-              className="text-xs font-bold text-[#1D6FF2] hover:text-[#1558C0] flex items-center gap-1 group"
+              className="text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1 group"
             >
               <span>Explore All Models</span>
               <span className="group-hover:translate-x-1 transition-transform">→</span>
@@ -490,36 +490,36 @@ export default function HomePage() {
       <section className="py-12 sm:py-16 lg:py-20 bg-[#F8FAFC]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 text-center">
-            <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm space-y-1">
-              <div className="text-3xl sm:text-4xl font-black text-[#1D6FF2]">
+            <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-[#2563EB]">
                 <AnimatedCounter target={1500} suffix="+" />
               </div>
-              <p className="text-xs font-bold text-slate-700">Devices Sold &amp; Certified</p>
-              <p className="text-[11px] text-slate-400">Inspected across 32 checkpoints</p>
+              <p className="text-xs font-bold text-[#111827]">Devices Sold &amp; Certified</p>
+              <p className="text-[11px] text-[#475569]">Inspected across 32 checkpoints</p>
             </div>
 
-            <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm space-y-1">
-              <div className="text-3xl sm:text-4xl font-black text-[#1D6FF2]">
+            <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-[#2563EB]">
                 <AnimatedCounter target={27} suffix="+" />
               </div>
-              <p className="text-xs font-bold text-slate-700">Corporate Clients</p>
-              <p className="text-[11px] text-slate-400">Equipped with bulk IT fleets</p>
+              <p className="text-xs font-bold text-[#111827]">Corporate Clients</p>
+              <p className="text-[11px] text-[#475569]">Equipped with bulk IT fleets</p>
             </div>
 
-            <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm space-y-1">
-              <div className="text-3xl sm:text-4xl font-black text-[#1D6FF2]">
+            <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-[#2563EB]">
                 <AnimatedCounter target={95} suffix="%" />
               </div>
-              <p className="text-xs font-bold text-slate-700">Satisfaction Rate</p>
-              <p className="text-[11px] text-slate-400">Backed by 7-day returns</p>
+              <p className="text-xs font-bold text-[#111827]">Satisfaction Rate</p>
+              <p className="text-[11px] text-[#475569]">Backed by 7-day returns</p>
             </div>
 
-            <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm space-y-1">
-              <div className="text-3xl sm:text-4xl font-black text-[#1D6FF2]">
+            <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-[#2563EB]">
                 <AnimatedCounter target={2} suffix="+ Yrs" />
               </div>
-              <p className="text-xs font-bold text-slate-700">Industry Experience</p>
-              <p className="text-[11px] text-slate-400">Dedicated engineer team</p>
+              <p className="text-xs font-bold text-[#111827]">Industry Experience</p>
+              <p className="text-[11px] text-[#475569]">Dedicated engineer team</p>
             </div>
           </div>
         </div>
@@ -590,25 +590,25 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-6 lg:mb-8 gap-4">
             <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#1D6FF2] block mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB] block mb-2">
                 Quality Verified Laptops
               </span>
-              <h2 className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tracking-tight">
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#111827] tracking-tight">
                 Trending Inventory
               </h2>
             </div>
 
-            <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-[#E4E9F2]">
+            <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-[#E2E8F0]">
               <button
                 onClick={() => setActiveTab('featured')}
-                className={`h-9 px-4 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center ${activeTab === 'featured' ? 'bg-[#1D6FF2] text-white' : 'text-slate-600 hover:text-[#0B1F4B]'
+                className={`h-9 px-4 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center justify-center ${activeTab === 'featured' ? 'bg-[#2563EB] text-white shadow-xs' : 'text-slate-600 hover:text-[#111827]'
                   }`}
               >
                 Featured Models
               </button>
               <button
                 onClick={() => setActiveTab('new')}
-                className={`h-9 px-4 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center ${activeTab === 'new' ? 'bg-[#1D6FF2] text-white' : 'text-slate-600 hover:text-[#0B1F4B]'
+                className={`h-9 px-4 text-xs font-semibold rounded-lg transition-colors cursor-pointer flex items-center justify-center ${activeTab === 'new' ? 'bg-[#2563EB] text-white shadow-xs' : 'text-slate-600 hover:text-[#111827]'
                   }`}
               >
                 New Arrivals

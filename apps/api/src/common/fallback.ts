@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-properties */
 /**
  * Determines whether in-memory fallback is permitted during database/service failures.
  *

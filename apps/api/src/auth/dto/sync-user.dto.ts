@@ -10,4 +10,9 @@ export class SyncUserDto {
   @IsString()
   @Matches(/^\+?[0-9\s().-]{7,20}$/)
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  referralCode?: string;
 }

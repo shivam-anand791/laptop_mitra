@@ -414,6 +414,9 @@ export class PaymentService {
       });
       if (!payment) return { valid: true, event: 'refund_payment_not_found' };
       const nextStatus = event === 'refund.processed' ? 'REFUNDED' : 'REFUND_FAILED';
+      if (payment.status === nextStatus) {
+        return { valid: true, event: 'already_processed' };
+      }
       await this.prisma.$transaction([
         this.prisma.payment.updateMany({
           where: { id: payment.id, status: 'REFUND_PENDING' },
@@ -450,13 +453,33 @@ export class PaymentService {
         where: { razorpayOrderId },
         include: { order: true },
       })
-      : null;
+      : (razorpayPaymentId
+        ? await this.prisma.payment.findFirst({
+          where: { razorpayPaymentId },
+          include: { order: true },
+        })
+        : null);
     if (!payment?.order) return { valid: true, event: 'payment_record_not_found' };
     const order: any = payment.order;
 
-    if (payment.razorpayPaymentId === razorpayPaymentId
-      && ['COMPLETED', 'REFUND_PENDING', 'REFUNDED'].includes(payment.status)) {
+    // Idempotency: Duplicate webhooks for already-processed terminal states
+    if (payment.razorpayPaymentId === razorpayPaymentId) {
+      if (event === 'payment.captured' && ['COMPLETED', 'REFUND_PENDING', 'REFUNDED'].includes(payment.status)) {
+        return { valid: true, event: 'already_processed' };
+      }
+      if (event === 'payment.failed' && payment.status === 'FAILED') {
+        return { valid: true, event: 'already_processed' };
+      }
+    }
+
+    // Idempotency: If order was already confirmed with this payment ID
+    if (order.paymentStatus === 'COMPLETED' && order.paymentId === razorpayPaymentId) {
       return { valid: true, event: 'already_processed' };
+    }
+
+    // Out-of-order event protection: Never let an out-of-order or late failure regress a confirmed/completed order
+    if (event === 'payment.failed' && (order.paymentStatus === 'COMPLETED' || order.status === 'CONFIRMED')) {
+      return { valid: true, event: 'ignored_order_already_completed' };
     }
 
     if (event === 'payment.failed') {
@@ -489,19 +512,36 @@ export class PaymentService {
       || String(payment.currency || '').toUpperCase() !== 'INR'
       || paidCurrency !== 'INR'
     ) {
-      this.logger.error(`Payment amount mismatch for order ${order.id}`);
-      await this.prisma.payment.updateMany({
-        where: { id: payment.id, status: { in: ['PENDING', 'FAILED'] } },
-        data: { status: 'FAILED', razorpayPaymentId },
-      });
+      this.logger.error(
+        `Payment amount mismatch for order ${order.id}: expected ${expectedPaise} paise INR, got ${actualPaise} paise ${paidCurrency}`,
+      );
+      await this.prisma.$transaction([
+        this.prisma.payment.updateMany({
+          where: { id: payment.id, status: { in: ['PENDING', 'FAILED'] } },
+          data: { status: 'FAILED', razorpayPaymentId },
+        }),
+        this.prisma.order.updateMany({
+          where: {
+            id: order.id,
+            razorpayOrderId,
+            status: 'PENDING',
+            paymentStatus: { in: ['PENDING', 'FAILED'] },
+          },
+          data: { paymentStatus: 'FAILED', paymentId: razorpayPaymentId },
+        }),
+      ]);
+      await this.notificationService.dispatchPaymentUpdate(order.userId, order.id, 'FAILED');
       return { valid: false, event: 'amount_mismatch' };
     }
+
+    const isReservationActive = order.inventoryStatus === 'RESERVED'
+      && (!order.reservationExpiresAt || new Date(order.reservationExpiresAt).getTime() > Date.now());
 
     const providerOrderStillCurrent = order.razorpayOrderId === razorpayOrderId;
     const orderCanBeConfirmed = providerOrderStillCurrent
       && order.status === 'PENDING'
       && ['PENDING', 'FAILED'].includes(order.paymentStatus)
-      && order.inventoryStatus === 'RESERVED';
+      && isReservationActive;
 
     if (!orderCanBeConfirmed) {
       await this.prisma.$transaction([
@@ -513,7 +553,6 @@ export class PaymentService {
           where: {
             id: order.id,
             paymentStatus: { in: ['PENDING', 'FAILED'] },
-            status: 'CANCELLED',
           },
           data: { paymentStatus: 'REFUND_PENDING', paymentId: razorpayPaymentId },
         }),

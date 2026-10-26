@@ -71,7 +71,7 @@ export class DiscountService {
 
     if (discountType === 'percentage') {
       const uncapped = Number((total * (discountValue / 100)).toFixed(2));
-      const discountAmount = discountCode.maxDiscountValue == null
+      const discountAmount = discountCode.maxDiscountValue === null || discountCode.maxDiscountValue === undefined
         ? uncapped
         : Math.min(uncapped, Number(discountCode.maxDiscountValue));
 
@@ -133,10 +133,10 @@ export class DiscountService {
     if (discount.validUntil && now > new Date(discount.validUntil)) {
       throw new BadRequestException('Discount code expired');
     }
-    if (discount.maxUses != null && discount.uses >= discount.maxUses) {
+    if (discount.maxUses !== null && discount.maxUses !== undefined && discount.uses >= discount.maxUses) {
       throw new BadRequestException('Discount code has reached maximum usage');
     }
-    if (discount.maxUsesPerUser != null) {
+    if (discount.maxUsesPerUser !== null && discount.maxUsesPerUser !== undefined) {
       const userUses = await transaction.discountRedemption.count({
         where: { discountCodeId: discount.id, userId },
       });
@@ -145,7 +145,7 @@ export class DiscountService {
       }
     }
 
-    const minimumPaise = discount.minOrderValue == null
+    const minimumPaise = discount.minOrderValue === null || discount.minOrderValue === undefined
       ? 0
       : Math.round(Number(discount.minOrderValue) * 100);
     if (subtotalPaise < minimumPaise) {
@@ -176,7 +176,7 @@ export class DiscountService {
     let discountAmountPaise = 0;
     if (type === 'percentage') {
       discountAmountPaise = Math.round(eligibleSubtotalPaise * value / 100);
-      if (discount.maxDiscountValue != null) {
+      if (discount.maxDiscountValue !== null && discount.maxDiscountValue !== undefined) {
         discountAmountPaise = Math.min(
           discountAmountPaise,
           Math.round(Number(discount.maxDiscountValue) * 100),
@@ -201,7 +201,7 @@ export class DiscountService {
     }
 
     const updateWhere: any = { id: discountId, isActive: true };
-    if (discount.maxUses != null) updateWhere.uses = { lt: discount.maxUses };
+    if (discount.maxUses !== null && discount.maxUses !== undefined) updateWhere.uses = { lt: discount.maxUses };
     const consumed = await transaction.discountCode.updateMany({
       where: updateWhere,
       data: { uses: { increment: 1 } },

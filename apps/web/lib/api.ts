@@ -11,6 +11,7 @@ import {
   SupportTicket,
   SupportTicketMessage,
   NotificationPreferences,
+  AdminAnalyticsResponse,
 } from './types';
 import { NEXT_PUBLIC_API_URL } from './config';
 import { auth, signOut } from './firebase';
@@ -24,7 +25,11 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(
+  endpoint: string,
+  options: RequestInit = {},
+  isRetry = false
+): Promise<T> {
   let token: string | null = null;
   const url = new URL(endpoint.startsWith('/') ? endpoint : `/${endpoint}`, `${API_BASE_URL}/`);
   if (url.origin === new URL(API_BASE_URL).origin && auth.currentUser) {
@@ -51,6 +56,20 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     });
 
     if (!res.ok) {
+      // 1. On 401: attempt token refresh once, then retry
+      if (res.status === 401 && !isRetry && auth.currentUser) {
+        try {
+          const freshToken = await auth.currentUser.getIdToken(true);
+          const retryHeaders = {
+            ...headers,
+            Authorization: `Bearer ${freshToken}`,
+          };
+          return await request<T>(endpoint, { ...options, headers: retryHeaders }, true);
+        } catch {
+          // Token refresh failed; proceed to signout and redirect
+        }
+      }
+
       const errData = await res.json().catch(() => ({ message: res.statusText }));
       const message =
         errData?.message ||
@@ -61,9 +80,27 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
             : res.status === 500
               ? 'Backend service error. Please try again later.'
               : `Request failed with status ${res.status}`);
-      if (res.status === 401 && auth.currentUser) {
-        await signOut(auth).catch(() => undefined);
+
+      // Global 403 handling: inform AdminGuard to render 403 screen
+      if (res.status === 403 && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('admin:forbidden'));
       }
+
+      // Global 401 handling on admin routes / endpoints: redirect to login
+      if (res.status === 401) {
+        const isAdminContext =
+          endpoint.startsWith('/admin') ||
+          (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin'));
+
+        if (isAdminContext && typeof window !== 'undefined') {
+          window.location.href = '/login?next=/admin';
+        }
+
+        if (auth.currentUser) {
+          await signOut(auth).catch(() => undefined);
+        }
+      }
+
       throw new ApiError(res.status, message, errData);
     }
 
@@ -187,7 +224,7 @@ export const api = {
   // Wishlist
   async getWishlist(): Promise<WishlistItem[]> {
     const res = await request<any>('/wishlist');
-    return res.items || [];
+    return Array.isArray(res) ? res : (res?.items ?? res?.wishlist?.items ?? []);
   },
 
   async addToWishlist(productId: string) {
@@ -237,9 +274,15 @@ export const api = {
     notes?: string;
     email?: string;
     paymentMethod?: 'razorpay' | 'cod';
+    idempotencyKey?: string;
   }): Promise<Order> {
+    const headers: Record<string, string> = {};
+    if (payload.idempotencyKey) {
+      headers['Idempotency-Key'] = payload.idempotencyKey;
+    }
     return await request<Order>('/orders', {
       method: 'POST',
+      headers,
       body: JSON.stringify(payload),
     });
   },
@@ -360,6 +403,88 @@ export const api = {
     return await request<any>('/discount/validate', {
       method: 'POST',
       body: JSON.stringify({ code, cartTotal }),
+    });
+  },
+
+  // Admin Endpoints
+  async getAdminDashboard(): Promise<{
+    totalUsers: number;
+    totalProducts: number;
+    totalOrders: number;
+    pendingOrders: number;
+    deliveredOrders: number;
+    revenueCompleted: number;
+    revenuePending: number;
+    revenue: { completed: number; pending: number };
+  }> {
+    return await request<any>('/admin/dashboard');
+  },
+
+  async getAdminAnalytics(range?: '7d' | '30d' | '90d' | string): Promise<AdminAnalyticsResponse> {
+    const qs = range ? `?range=${range}` : '';
+    return await request<AdminAnalyticsResponse>(`/admin/analytics${qs}`);
+  },
+
+  async getAdminUsers(params?: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    role?: string;
+    search?: string;
+  }): Promise<{ items: any[]; total: number; page: number; pageSize: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    if (params?.status && params.status !== 'all') searchParams.set('status', params.status);
+    if (params?.role && params.role !== 'all') searchParams.set('role', params.role);
+    if (params?.search && params.search.trim()) searchParams.set('search', params.search.trim());
+    const qs = searchParams.toString();
+    return await request<{ items: any[]; total: number; page: number; pageSize: number }>(`/admin/users${qs ? `?${qs}` : ''}`);
+  },
+
+  async updateAdminUserStatus(userId: string, status: string): Promise<any> {
+    return await request<any>(`/admin/users/${userId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  async getAdminProducts(): Promise<Product[]> {
+    return await request<Product[]>('/admin/products');
+  },
+
+  async createAdminProduct(data: any): Promise<Product> {
+    return await request<Product>('/admin/products', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateAdminProduct(productId: string, data: any): Promise<Product> {
+    return await request<Product>(`/admin/products/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteAdminProduct(productId: string): Promise<{ success?: boolean }> {
+    return await request<any>(`/admin/products/${productId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getAdminOrders(): Promise<Order[]> {
+    return await request<Order[]>('/admin/orders');
+  },
+
+  async getAdminOrder(orderId: string): Promise<Order> {
+    return await request<Order>(`/admin/orders/${orderId}`);
+  },
+
+  async updateAdminOrderStatus(orderId: string, status: string): Promise<Order> {
+    return await request<Order>(`/admin/orders/${orderId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
     });
   },
 };

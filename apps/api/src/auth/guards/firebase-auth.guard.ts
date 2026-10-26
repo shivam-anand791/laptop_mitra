@@ -64,7 +64,7 @@ export class FirebaseAuthGuard implements CanActivate {
     }
 
     request.firebaseIdentity = identity;
-    let user = await this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { firebaseUid: identity.uid },
       select: {
         id: true,

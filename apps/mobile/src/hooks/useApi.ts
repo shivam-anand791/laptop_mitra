@@ -46,6 +46,8 @@ export function useCart() {
       };
     },
     enabled: isAuthenticated,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
@@ -132,7 +134,10 @@ export function useWishlist() {
   const { getClient, isAuthenticated } = useAuth();
   return useQuery({
     queryKey: ['wishlist'],
-    queryFn: () => getClient().getWishlist(),
+    queryFn: async () => {
+      const res = await getClient().getWishlist();
+      return Array.isArray(res) ? res : ((res as any)?.items ?? (res as any)?.wishlist?.items ?? []);
+    },
     enabled: isAuthenticated,
   });
 }
@@ -191,6 +196,8 @@ export function useOrders() {
     queryKey: ['orders'],
     queryFn: () => getClient().getOrders(),
     enabled: isAuthenticated,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
@@ -200,6 +207,8 @@ export function useOrder(id: string) {
     queryKey: ['order', id],
     queryFn: () => getClient().getOrder(id),
     enabled: isAuthenticated && !!id,
+    staleTime: 5_000,
+    refetchOnMount: 'always',
   });
 }
 
@@ -213,10 +222,13 @@ export function useCreateOrder() {
       shippingAddress?: any;
       phone?: string;
       notes?: string;
+      paymentMethod?: 'razorpay' | 'cod';
+      idempotencyKey?: string;
     }) => getClient().createOrder(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['cart'] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
     },
   });
 }
@@ -419,6 +431,24 @@ export function useAddTicketMessage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['support-tickets'] });
     },
+  });
+}
+
+export function useTicket(id: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['support-ticket', id],
+    queryFn: () => getClient().getTicket(id),
+    enabled: isAuthenticated && !!id,
+  });
+}
+
+export function useWarrantyStatus(orderItemId: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['warranty-status', orderItemId],
+    queryFn: () => getClient().getWarrantyStatus(orderItemId),
+    enabled: isAuthenticated && !!orderItemId,
   });
 }
 

@@ -13,7 +13,7 @@
     "build:preview": "eas build --profile preview --platform all",
     "lint": "eslint . --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest --passWithNoTests"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

@@ -99,9 +99,9 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
     <div
       className={[
         'group relative flex flex-col rounded-2xl overflow-hidden',
-        'border border-[#E4E9F2] bg-white shadow-xs',
+        'border border-[#E2E8F0] bg-white shadow-xs',
         'transition-all duration-300 ease-out',
-        'hover:-translate-y-1 hover:border-[#1D6FF2]/40 hover:shadow-lg hover:shadow-blue-900/5',
+        'hover:-translate-y-1 hover:border-[#2563EB]/40 hover:shadow-lg hover:shadow-blue-900/5',
         !inStock && 'opacity-75',
       ].join(' ')}
       role="article"
@@ -123,7 +123,7 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
 
         {/* New Arrival badge */}
         {!product.isFeatured && product.isNewArrival && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#1D6FF2] text-white uppercase tracking-wider shadow-xs">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#2563EB] text-white uppercase tracking-wider shadow-xs">
             ⚡ New Arrival
           </span>
         )}
@@ -196,7 +196,7 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
         <div className="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
           <GradeBadge grade={grade} size="sm" />
           <span className="px-2 py-0.5 rounded-md bg-white/95 text-slate-800 text-[10px] font-bold backdrop-blur-sm border border-slate-200/80 flex items-center gap-1 shadow-xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#1D6FF2]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
             1-Yr Warranty
           </span>
         </div>
@@ -223,9 +223,9 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
           {/* Title */}
           <Link
             href={`/products/${product.id}`}
-            className="block group-hover:text-[#1D6FF2] transition-colors cursor-pointer"
+            className="block group-hover:text-[#2563EB] transition-colors cursor-pointer"
           >
-            <h3 className="font-bold text-sm text-[#0B1F4B] line-clamp-2 leading-snug">
+            <h3 className="font-bold text-sm text-[#111827] line-clamp-2 leading-snug">
               {product.name}
             </h3>
           </Link>
@@ -258,12 +258,12 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
             onClick={handleAdd}
             disabled={!inStock}
             className={[
-              'shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer shadow-xs',
+              'shrink-0 px-3.5 py-2 min-h-[36px] rounded-xl text-xs font-semibold cursor-pointer shadow-xs',
               'transition-all duration-200 active:scale-95 flex items-center justify-center gap-1.5',
               added
-                ? 'bg-emerald-600 text-white scale-105'
+                ? 'bg-[#16A34A] text-white scale-105'
                 : inStock
-                  ? 'bg-[#1D6FF2] text-white hover:bg-[#1558C0] shadow-blue-500/20'
+                  ? 'bg-[#2563EB] text-white hover:bg-[#1D4ED8] shadow-blue-500/20'
                   : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200',
             ].join(' ')}
             aria-label={added ? 'Added to cart' : `Add ${product.name} to cart`}

@@ -59,7 +59,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     return (
       <CustomerLayout>
         <div className="max-w-7xl mx-auto px-4 py-24 text-center">
-          <div className="w-12 h-12 border-4 border-[#1D6FF2] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-12 h-12 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-sm font-medium text-slate-500">Loading certified laptop specifications...</p>
         </div>
       </CustomerLayout>
@@ -73,13 +73,13 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
             !
           </div>
-          <h2 className="text-2xl font-black text-[#0B1F4B]">Laptop Listing Not Found</h2>
+          <h2 className="text-2xl font-bold text-[#111827]">Laptop Listing Not Found</h2>
           <p className="text-sm text-slate-600">
             The laptop you are looking for is either out of stock or no longer listed in our inventory.
           </p>
           <Link
             href="/products"
-            className="inline-block px-6 py-3 bg-[#1D6FF2] hover:bg-[#1558C0] text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/20"
+            className="inline-block px-6 py-3 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold rounded-xl text-sm transition-all shadow-xs"
           >
             Browse All Available Laptops
           </Link>
@@ -209,37 +209,37 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 )}
 
                 {/* 32-Point Quality Checklist Card */}
-                <div className="p-5 rounded-2xl bg-[#F8FAFC] border border-[#E4E9F2] space-y-3.5">
+                <div className="p-5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-6 h-6 rounded-full bg-[#10B981] text-white flex items-center justify-center text-xs font-bold">
+                      <div className="w-6 h-6 rounded-full bg-[#16A34A] text-white flex items-center justify-center text-xs font-bold">
                         ✓
                       </div>
-                      <h4 className="text-sm font-black text-[#0B1F4B]">
+                      <h4 className="text-sm font-bold text-[#111827]">
                         32-Point Engineering Certified Quality
                       </h4>
                     </div>
-                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                    <span className="text-[11px] font-bold text-[#15803D] bg-[#F0FDF4] px-2.5 py-0.5 rounded-full border border-[#BBF7D0]">
                       100% Passed
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                    <div className="p-3 rounded-xl bg-white border border-[#E4E9F2]">
+                    <div className="p-3 rounded-xl bg-white border border-[#E2E8F0]">
                       <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Battery Health</span>
-                      <span className="font-bold text-emerald-700">&gt; 85% Guaranteed</span>
+                      <span className="font-bold text-[#15803D]">&gt; 85% Guaranteed</span>
                     </div>
-                    <div className="p-3 rounded-xl bg-white border border-[#E4E9F2]">
+                    <div className="p-3 rounded-xl bg-white border border-[#E2E8F0]">
                       <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Display Panel</span>
                       <span className="font-bold text-slate-800">Zero Bleed / Pixels</span>
                     </div>
-                    <div className="p-3 rounded-xl bg-white border border-[#E4E9F2]">
+                    <div className="p-3 rounded-xl bg-white border border-[#E2E8F0]">
                       <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Thermals</span>
                       <span className="font-bold text-slate-800">Arctic MX-4 Pasted</span>
                     </div>
-                    <div className="p-3 rounded-xl bg-white border border-[#E4E9F2]">
+                    <div className="p-3 rounded-xl bg-white border border-[#E2E8F0]">
                       <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Operating System</span>
-                      <span className="font-bold text-[#1D6FF2]">Genuine Win 11 Pro</span>
+                      <span className="font-bold text-[#2563EB]">Genuine Win 11 Pro</span>
                     </div>
                   </div>
                 </div>
@@ -274,12 +274,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               <div className="lg:col-span-6 xl:col-span-5 space-y-6">
                 <div>
                   <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-                    <span className="uppercase tracking-wider font-bold text-[#1D6FF2]">
+                    <span className="uppercase tracking-wider font-bold text-[#2563EB]">
                       {product.category?.name || 'Enterprise Certified Laptop'}
                     </span>
                     <span className="font-mono text-slate-400">SKU: {product.sku}</span>
                   </div>
-                  <h1 className="text-2xl sm:text-3xl font-black text-[#0B1F4B] leading-tight tracking-tight">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-[#111827] leading-tight tracking-tight">
                     {product.name}
                   </h1>
                   <p className="text-xs text-slate-600 mt-2 leading-relaxed">
@@ -528,10 +528,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     <button
                       onClick={handleBuyNow}
                       disabled={product.stock <= 0}
-                      className={`h-11 px-4 rounded-xl text-xs font-bold shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      className={`h-11 px-4 rounded-xl text-xs font-semibold shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
                         product.stock <= 0
                           ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                          : 'bg-[#1D6FF2] hover:bg-[#1558C0] text-white shadow-blue-500/25 active:scale-95'
+                          : 'bg-[#2563EB] hover:bg-[#1D4ED8] text-white active:scale-95'
                       }`}
                     >
                       <span>⚡ Buy Now</span>

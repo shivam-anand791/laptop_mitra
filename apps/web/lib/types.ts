@@ -238,3 +238,185 @@ export interface PaymentRecord {
   createdAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Admin Domain Types & Prisma String-Literal Unions
+// ---------------------------------------------------------------------------
+
+export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
+export type UserRole = 'CUSTOMER' | 'ADMIN' | 'MODERATOR' | 'GUEST';
+export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED';
+export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
+export type ProductStatus = 'ACTIVE' | 'INACTIVE' | 'DISCONTINUED';
+
+export interface AdminDashboardStats {
+  totalUsers: number;
+  totalProducts: number;
+  totalOrders: number;
+  pendingOrders: number;
+  deliveredOrders: number;
+  revenueCompleted: number;
+  revenuePending: number;
+  lowStockProducts: number;
+  ordersToday: number;
+  revenue?: {
+    completed: number;
+    pending: number;
+  };
+}
+
+export interface AdminUser {
+  id: string;
+  name: string | null;
+  email: string | null;
+  role: UserRole | string;
+  status: UserStatus | string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  referralCode?: string | null;
+  referralEarnings?: string | number;
+  referralTier?: string | null;
+}
+
+export interface AdminOrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  quantity: number;
+  price: string | number;
+  product?: AdminProduct | Product | null;
+  createdAt?: string | Date;
+}
+
+export interface AdminOrder {
+  id: string;
+  orderNumber: string;
+  userId: string;
+  status: OrderStatus | string;
+  paymentStatus: PaymentStatus | string;
+  paymentMethod: string | null;
+  paymentId: string | null;
+  razorpayOrderId: string | null;
+  inventoryStatus?: string;
+  subtotal: string | number;
+  discountAmount: string | number;
+  discountType: string | null;
+  finalAmount: string | number;
+  shippingAddress?: Record<string, unknown> | ShippingAddressData | string | null;
+  phone: string | null;
+  email: string;
+  notes: string | null;
+  referralCode: string | null;
+  referralDiscount: string | number;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  user?: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    phone?: string | null;
+    role?: string | null;
+    status?: string | null;
+  } | null;
+  items?: AdminOrderItem[];
+  deliveries?: DeliveryRecord[];
+  payments?: PaymentTransactionRecord[];
+}
+
+export interface ShippingAddressData {
+  fullName?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  landmark?: string;
+}
+
+export interface DeliveryRecord {
+  id?: string;
+  orderId?: string;
+  status?: string;
+  carrier?: string;
+  trackingNumber?: string;
+  shippedAt?: string | Date;
+  deliveredAt?: string | Date;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+}
+
+export interface PaymentTransactionRecord {
+  id?: string;
+  orderId?: string;
+  amount?: string | number;
+  status?: string;
+  method?: string;
+  transactionId?: string;
+  createdAt?: string | Date;
+}
+
+export function parseShippingAddress(address: unknown): ShippingAddressData {
+  if (!address) return {};
+  if (typeof address === 'string') {
+    try {
+      return JSON.parse(address);
+    } catch {
+      return { address };
+    }
+  }
+  if (typeof address === 'object') {
+    return address as ShippingAddressData;
+  }
+  return {};
+}
+
+export interface AdminProduct {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  shortDescription: string | null;
+  price: string | number;
+  compareAtPrice: string | number | null;
+  sku: string;
+  barcode: string | null;
+  stock: number;
+  allowBackorder?: boolean;
+  status: ProductStatus | string;
+  metadata?: Record<string, unknown> | null;
+  isFeatured: boolean;
+  isNewArrival: boolean;
+  tags: string | null;
+  categoryId: string | null;
+  category?: Category | null;
+  images?: ProductImage[];
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+}
+
+export interface CreateProductDto {
+  name: string;
+  price: string | number;
+  sku: string;
+  stock?: number;
+  description?: string;
+  shortDescription?: string;
+  categoryId?: string;
+  status?: ProductStatus | string;
+  isFeatured?: boolean;
+  isNewArrival?: boolean;
+  imageUrl?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export { toNumber } from './format';
+export {
+  ORDER_TRANSITION_MAP,
+  ORDER_STATUSES,
+  USER_ROLES,
+  USER_STATUSES,
+  type AdminAnalyticsResponse,
+  type AdminSettings,
+  type UpdateAdminSettingsDto,
+} from '@laptopmitra/types';
+
+

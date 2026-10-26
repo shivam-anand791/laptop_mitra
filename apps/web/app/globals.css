@@ -7,35 +7,35 @@
 
 :root {
   /* ── LaptopMitra Core Palette (Light Mode Default) ── */
-  --lm-blue: #1D6FF2;
-  --lm-blue-hover: #1558C0;
-  --lm-blue-light: #EBF2FF;
+  --lm-blue: #2563EB;
+  --lm-blue-hover: #1D4ED8;
+  --lm-blue-light: #EFF6FF;
   --lm-navy: #0B1F4B;
   --lm-navy-light: #132E6B;
-  --lm-page-bg: #F5F7FA;
+  --lm-page-bg: #F8FAFC;
   --lm-card-bg: #FFFFFF;
-  --lm-border: #E4E9F2;
+  --lm-border: #E2E8F0;
   --lm-border-subtle: #F1F5F9;
 
-  --bg-deep: #F5F7FA;
+  --bg-deep: #F8FAFC;
   --bg-surface: #FFFFFF;
-  --bg-elevated: #F8FAFC;
-  --bg-subtle: #F1F5F9;
+  --bg-elevated: #F1F5F9;
+  --bg-subtle: #F8FAFC;
 
-  --border-default: #E4E9F2;
-  --border-subtle: #EEF2F6;
+  --border-default: #E2E8F0;
+  --border-subtle: #F1F5F9;
 
-  --text-primary: #0F172A;
+  --text-primary: #111827;
   --text-secondary: #475569;
-  --text-muted: #64748B;
+  --text-muted: #94A3B8;
 
-  --accent: #1D6FF2;
-  --accent-dim: #1558C0;
-  --accent-bg: rgba(29, 111, 242, 0.08);
+  --accent: #2563EB;
+  --accent-dim: #1D4ED8;
+  --accent-bg: rgba(37, 99, 235, 0.08);
 
-  --warning: #F59E0B;
-  --danger: #EF4444;
-  --info: #3B82F6;
+  --warning: #D97706;
+  --danger: #DC2626;
+  --info: #2563EB;
   --success: #16A34A;
 
   /* ── Type Scale (Major Third 1.25) ── */
