@@ -21,6 +21,10 @@ export class SupabaseStorageService implements IStorageService, OnModuleInit {
   }
 
   onModuleInit() {
+    const driver = process.env.STORAGE_DRIVER?.toLowerCase();
+    if (driver === 'local') {
+      return;
+    }
     this.validateProductionConfig();
   }
 

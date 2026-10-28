@@ -63,6 +63,10 @@ Set the following secret environment variables in the Render dashboard (marked `
 - `RAZORPAY_KEY_ID`
 - `RAZORPAY_KEY_SECRET`
 - `RAZORPAY_WEBHOOK_SECRET`
+- `PAYMENT_ENCRYPTION_KEY` (Required: 64-char hex string for AES-256 financial data encryption. Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
+- `STORAGE_DRIVER` (Optional: defaults to `local`. If using Supabase Storage, set to `supabase` and provide `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`)
+- `SUPABASE_URL` (Required only if `STORAGE_DRIVER=supabase`)
+- `SUPABASE_SERVICE_ROLE_KEY` (Required only if `STORAGE_DRIVER=supabase`)
 
 ---
 
