@@ -343,6 +343,34 @@ export default function CheckoutScreen() {
             <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalValue}>{formatPrice(total)}</Text>
           </View>
+
+          {/* Legal and Buyback Links */}
+          <View style={{ marginTop: 14, paddingHorizontal: 4 }}>
+            <Text style={{ fontSize: 11, color: '#64748b', textAlign: 'center', lineHeight: 16 }}>
+              By placing this order, you agree to LaptopMitra&apos;s{' '}
+              <Text
+                style={{ color: '#2563eb', fontWeight: '700' }}
+                onPress={() => navigation.navigate('Terms')}
+              >
+                Terms
+              </Text>
+              ,{' '}
+              <Text
+                style={{ color: '#2563eb', fontWeight: '700' }}
+                onPress={() => navigation.navigate('Privacy')}
+              >
+                Privacy Policy
+              </Text>
+              , and{' '}
+              <Text
+                style={{ color: '#0284c7', fontWeight: '700' }}
+                onPress={() => navigation.navigate('BuybackGuarantee')}
+              >
+                36-Month Buyback Guarantee
+              </Text>
+              .
+            </Text>
+          </View>
         </View>
       </ScrollView>
 

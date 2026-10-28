@@ -9,7 +9,7 @@ import { useCart } from '../../lib/cart-context';
 import { useAuth } from '../../lib/auth-context';
 import { api } from '../../lib/api';
 import { Order } from '../../lib/types';
-import { config } from '../../lib/config';
+import { config, NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../lib/config';
 
 declare global {
   interface Window {
@@ -280,7 +280,7 @@ export default function CheckoutPage() {
                 Continue Shopping
               </Link>
               <a
-                href={`https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20just%20placed%20Order%20${completedOrder.orderNumber}.%20Please%20send%20tracking%20updates.`}
+                href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra,%20I%20just%20placed%20Order%20${completedOrder.orderNumber}.%20Please%20send%20tracking%20updates.`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all"

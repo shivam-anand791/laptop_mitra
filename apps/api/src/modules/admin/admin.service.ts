@@ -2,17 +2,22 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ServiceUnavailableException,
   Logger,
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FirebaseService } from '../../firebase/firebase.service';
+import { PaymentEncryptionService } from '../../common/encryption/payment-encryption.service';
+import { QrStorageService } from '../../common/storage/qr-storage.service';
 import {
   ORDER_STATUSES,
   OrderStatus,
   USER_STATUSES,
   UserStatus,
+  USER_ROLES,
+  UserRole,
   ORDER_TRANSITION_MAP,
 } from '../../common/constants';
 import { AdminUserQueryDto } from './dto/admin-user-query.dto';
@@ -20,6 +25,7 @@ import { AdminProductQueryDto } from './dto/admin-product-query.dto';
 import { AdminOrderQueryDto } from './dto/admin-order-query.dto';
 import { AdminAnalyticsQueryDto } from './dto/admin-analytics-query.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { NotificationService } from '../notifications/notification.service';
 
 @Injectable()
 export class AdminService {
@@ -28,6 +34,9 @@ export class AdminService {
   constructor(
     private prisma: PrismaService,
     @Optional() private firebaseService?: FirebaseService,
+    @Optional() private encryptionService?: PaymentEncryptionService,
+    @Optional() private qrStorageService?: QrStorageService,
+    @Optional() private notificationService?: NotificationService,
   ) {}
 
   async getAllUsers(query?: AdminUserQueryDto) {
@@ -153,6 +162,59 @@ export class AdminService {
     }
   }
 
+  async updateUserRole(userId: string, role: string, currentAdminId?: string) {
+    if (!USER_ROLES.includes(role as UserRole)) {
+      throw new BadRequestException(`Role must be one of: ${USER_ROLES.join(', ')}`);
+    }
+
+    if (currentAdminId && userId === currentAdminId) {
+      throw new BadRequestException('Administrators cannot modify their own role (self-demotion prohibited)');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role === role) {
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        updatedAt: user.updatedAt,
+      };
+    }
+
+    try {
+      const updatedUser = await this.prisma.user.update({
+        where: { id: userId },
+        data: { role },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          status: true,
+          updatedAt: true,
+        },
+      });
+
+      this.logger.log(
+        `[AUDIT] User role updated: adminId=${currentAdminId || 'system'}, targetUserId=${userId}, oldRole=${user.role}, newRole=${role}, timestamp=${new Date().toISOString()}`
+      );
+
+      return updatedUser;
+    } catch (err: any) {
+      if (err instanceof BadRequestException || err instanceof NotFoundException) {
+        throw err;
+      }
+      this.logger.error(`Database error during updateUserRole: ${err?.message || err}`);
+      throw new ServiceUnavailableException('Database write failed during user role update');
+    }
+  }
+
   async getAllProducts(query?: AdminProductQueryDto) {
     const page = Math.max(1, Number(query?.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(query?.pageSize) || 20));
@@ -210,6 +272,9 @@ export class AdminService {
     isFeatured?: boolean;
     isNewArrival?: boolean;
     imageUrl?: string;
+    leasePriceMonthly?: number | string;
+    bulkSellPrice?: number | string;
+    bulkLeasePrice?: number | string;
     metadata?: any;
   }) {
     if (!data.name || !data.sku || data.price === undefined) {
@@ -238,6 +303,9 @@ export class AdminService {
         sku: data.sku,
         price,
         stock: data.stock !== undefined ? Number(data.stock) : 0,
+        leasePriceMonthly: data.leasePriceMonthly !== undefined && data.leasePriceMonthly !== null && data.leasePriceMonthly !== '' ? Number(data.leasePriceMonthly) : null,
+        bulkSellPrice: data.bulkSellPrice !== undefined && data.bulkSellPrice !== null && data.bulkSellPrice !== '' ? Number(data.bulkSellPrice) : null,
+        bulkLeasePrice: data.bulkLeasePrice !== undefined && data.bulkLeasePrice !== null && data.bulkLeasePrice !== '' ? Number(data.bulkLeasePrice) : null,
         description: data.description || null,
         shortDescription: data.shortDescription || null,
         categoryId: data.categoryId || null,
@@ -290,6 +358,15 @@ export class AdminService {
       const price = typeof data.price === 'string' ? parseFloat(data.price) : Number(data.price);
       if (isNaN(price) || price < 0) throw new BadRequestException('Price must be a positive number');
       updateData.price = price;
+    }
+    if (data.leasePriceMonthly !== undefined) {
+      updateData.leasePriceMonthly = data.leasePriceMonthly !== null && data.leasePriceMonthly !== '' ? Number(data.leasePriceMonthly) : null;
+    }
+    if (data.bulkSellPrice !== undefined) {
+      updateData.bulkSellPrice = data.bulkSellPrice !== null && data.bulkSellPrice !== '' ? Number(data.bulkSellPrice) : null;
+    }
+    if (data.bulkLeasePrice !== undefined) {
+      updateData.bulkLeasePrice = data.bulkLeasePrice !== null && data.bulkLeasePrice !== '' ? Number(data.bulkLeasePrice) : null;
     }
 
     return this.prisma.product.update({
@@ -464,12 +541,27 @@ export class AdminService {
     return order;
   }
 
-  async updateOrderStatus(orderId: string, status: string, adminId?: string) {
+  async updateOrderStatus(
+    orderId: string,
+    status: string,
+    adminId?: string,
+    courierData?: { courierName?: string; trackingNumber?: string },
+  ) {
     if (!ORDER_STATUSES.includes(status as OrderStatus)) {
       throw new BadRequestException(`Status must be one of: ${ORDER_STATUSES.join(', ')}`);
     }
 
     const targetStatus = status as OrderStatus;
+
+    if (targetStatus === 'SHIPPING') {
+      const courierName = courierData?.courierName?.trim();
+      const trackingNumber = courierData?.trackingNumber?.trim();
+      if (!courierName || !trackingNumber) {
+        throw new BadRequestException(
+          'Courier name and tracking number are required when moving order to SHIPPING',
+        );
+      }
+    }
 
     const initialOrder = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -493,7 +585,7 @@ export class AdminService {
     }
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const updatedOrder = await this.prisma.$transaction(async (tx) => {
         const currentOrder = await tx.order.findUnique({
           where: { id: orderId },
           include: {
@@ -540,12 +632,17 @@ export class AdminService {
 
         // 3. Update matching Delivery record when relevant
         const existingDelivery = currentOrder.deliveries?.[0];
+        const trimmedCourier = courierData?.courierName?.trim();
+        const trimmedTracking = courierData?.trackingNumber?.trim();
+
         if (targetStatus === 'SHIPPING') {
           if (existingDelivery) {
             await tx.delivery.update({
               where: { id: existingDelivery.id },
               data: {
                 status: 'SHIPPED',
+                carrier: trimmedCourier,
+                trackingNumber: trimmedTracking,
                 shippedAt: existingDelivery.shippedAt || new Date(),
               },
             });
@@ -554,7 +651,19 @@ export class AdminService {
               data: {
                 orderId,
                 status: 'SHIPPED',
+                carrier: trimmedCourier,
+                trackingNumber: trimmedTracking,
                 shippedAt: new Date(),
+              },
+            });
+          }
+        } else if (trimmedCourier || trimmedTracking) {
+          if (existingDelivery) {
+            await tx.delivery.update({
+              where: { id: existingDelivery.id },
+              data: {
+                ...(trimmedCourier ? { carrier: trimmedCourier } : {}),
+                ...(trimmedTracking ? { trackingNumber: trimmedTracking } : {}),
               },
             });
           }
@@ -594,7 +703,7 @@ export class AdminService {
           updatedAt: new Date(),
         };
 
-        const updatedOrder = await tx.order.update({
+        const orderResult = await tx.order.update({
           where: { id: orderId },
           data: updateData,
           include: {
@@ -616,11 +725,22 @@ export class AdminService {
 
         // 5. Audit trail log
         this.logger.log(
-          `[AUDIT] Order status updated: adminId=${adminId || 'system'}, orderId=${orderId}, oldStatus=${currentOrder.status}, newStatus=${targetStatus}, oldPaymentStatus=${currentOrder.paymentStatus}, newPaymentStatus=${updatedOrder.paymentStatus}, timestamp=${new Date().toISOString()}`
+          `[AUDIT] Order status updated: adminId=${adminId || 'system'}, orderId=${orderId}, oldStatus=${currentOrder.status}, newStatus=${targetStatus}, oldPaymentStatus=${currentOrder.paymentStatus}, newPaymentStatus=${orderResult.paymentStatus}, timestamp=${new Date().toISOString()}`
         );
 
-        return updatedOrder;
+        return orderResult;
       });
+
+      // 6. Trigger branded status email notification (non-blocking for DB consistency)
+      if (['CONFIRMED', 'SHIPPING', 'DELIVERED', 'CANCELLED'].includes(targetStatus)) {
+        try {
+          await this.notificationService?.dispatchOrderStatusEmail(updatedOrder, targetStatus, courierData);
+        } catch (emailErr: any) {
+          this.logger.warn(`Failed to dispatch status email for order ${orderId}: ${emailErr?.message || emailErr}`);
+        }
+      }
+
+      return updatedOrder;
     } catch (err: any) {
       if (err instanceof BadRequestException || err instanceof NotFoundException) {
         throw err;
@@ -629,6 +749,7 @@ export class AdminService {
       throw new ServiceUnavailableException('Database write failed during order status update');
     }
   }
+
 
   async getDashboardStats() {
     const startOfToday = new Date();
@@ -916,4 +1037,465 @@ export class AdminService {
       throw new ServiceUnavailableException('Database error saving administrative settings');
     }
   }
+
+  async getCorporateInquiries(params?: { status?: string; page?: number; pageSize?: number }) {
+    const page = Math.max(1, params?.page || 1);
+    const pageSize = Math.max(1, Math.min(100, params?.pageSize || 20));
+    const skip = (page - 1) * pageSize;
+
+    const where: any = {};
+    if (params?.status && params.status !== 'all') {
+      where.status = params.status;
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.corporateInquiry.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.corporateInquiry.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  async updateCorporateInquiryStatus(
+    id: string,
+    status: 'PENDING' | 'CONTACTED' | 'QUOTED' | 'CLOSED',
+    adminId?: string,
+    adminNotes?: string,
+  ) {
+    const allowed = ['PENDING', 'CONTACTED', 'QUOTED', 'CLOSED'];
+    if (!allowed.includes(status)) {
+      throw new BadRequestException(`Status must be one of: ${allowed.join(', ')}`);
+    }
+
+    const existing = await this.prisma.corporateInquiry.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`Corporate inquiry with id ${id} not found`);
+    }
+
+    const updated = await this.prisma.corporateInquiry.update({
+      where: { id },
+      data: {
+        status,
+        ...(adminNotes ? { notes: existing.notes ? `${existing.notes}\n[Admin]: ${adminNotes}` : `[Admin]: ${adminNotes}` } : {}),
+      },
+    });
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          actorUserId: adminId || null,
+          action: 'UPDATE_INQUIRY_STATUS',
+          entityType: 'CORPORATE_INQUIRY',
+          entityId: id,
+          metadata: {
+            previousStatus: existing.status,
+            newStatus: status,
+            adminNotes: adminNotes || null,
+          },
+        },
+      });
+    } catch (auditErr: any) {
+      this.logger.warn(`Failed to create audit log for inquiry update: ${auditErr?.message || auditErr}`);
+    }
+
+    return updated;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Affiliate & Payout Management (Section 5.1)
+  // ---------------------------------------------------------------------------
+
+  async getAffiliates(query?: { page?: number; pageSize?: number; search?: string }) {
+    const page = Math.max(1, Number(query?.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query?.pageSize) || 20));
+    const skip = (page - 1) * pageSize;
+
+    const where: any = {
+      role: 'CUSTOMER',
+    };
+
+    if (query?.search && query.search.trim()) {
+      const search = query.search.trim();
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { referralCode: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: [{ referralEarnings: 'desc' }, { createdAt: 'desc' }],
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          referralCode: true,
+          referralTier: true,
+          referralEarnings: true,
+          referralReserved: true,
+          referralWithdrawn: true,
+          referralLinkClickedCount: true,
+          createdAt: true,
+          _count: {
+            select: {
+              withdrawalRequests: true,
+            },
+          },
+          withdrawalRequests: {
+            where: { status: 'PENDING' },
+            select: { id: true },
+          },
+        },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    const items = users.map((u) => {
+      const earnings = Number(u.referralEarnings || 0);
+      const reserved = Number(u.referralReserved || 0);
+      const withdrawn = Number(u.referralWithdrawn || 0);
+      const availableBalance = Math.max(0, earnings - reserved - withdrawn);
+
+      return {
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        referralCode: u.referralCode,
+        referralTier: u.referralTier,
+        referralEarnings: earnings,
+        referralReserved: reserved,
+        referralWithdrawn: withdrawn,
+        availableBalance,
+        clicksCount: u.referralLinkClickedCount,
+        pendingWithdrawalsCount: u.withdrawalRequests.length,
+        totalWithdrawalsCount: u._count.withdrawalRequests,
+        createdAt: u.createdAt,
+      };
+    });
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  async getAffiliateDetail(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        status: true,
+        role: true,
+        referralCode: true,
+        referralTier: true,
+        referralEarnings: true,
+        referralReserved: true,
+        referralWithdrawn: true,
+        referralLinkClickedCount: true,
+        createdAt: true,
+        affiliatePaymentDetails: {
+          select: {
+            id: true,
+            bankName: true,
+            accountHolderName: true,
+            accountNumberMasked: true,
+            ifscCode: true,
+            upiIdMasked: true,
+            qrCodeKey: true,
+            updatedAt: true,
+          },
+        },
+        withdrawalRequests: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            amount: true,
+            status: true,
+            adminNotes: true,
+            processedAt: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`Affiliate user with ID ${userId} not found`);
+    }
+
+    const earnings = Number(user.referralEarnings || 0);
+    const reserved = Number(user.referralReserved || 0);
+    const withdrawn = Number(user.referralWithdrawn || 0);
+    const availableBalance = Math.max(0, earnings - reserved - withdrawn);
+
+    let ifscCodeMasked: string | null = null;
+    if (user.affiliatePaymentDetails?.ifscCode && this.encryptionService) {
+      try {
+        const decryptedIfsc = this.encryptionService.decrypt(user.affiliatePaymentDetails.ifscCode);
+        ifscCodeMasked = this.encryptionService.maskIfsc(decryptedIfsc);
+      } catch {
+        ifscCodeMasked = '••••••••';
+      }
+    }
+
+    const payoutDetails = user.affiliatePaymentDetails
+      ? {
+          bankName: user.affiliatePaymentDetails.bankName,
+          accountHolderName: user.affiliatePaymentDetails.accountHolderName,
+          accountNumberMasked: user.affiliatePaymentDetails.accountNumberMasked,
+          ifscCodeMasked,
+          upiIdMasked: user.affiliatePaymentDetails.upiIdMasked,
+          hasQrCode: Boolean(user.affiliatePaymentDetails.qrCodeKey),
+          updatedAt: user.affiliatePaymentDetails.updatedAt,
+        }
+      : null;
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      status: user.status,
+      role: user.role,
+      referralCode: user.referralCode,
+      referralTier: user.referralTier,
+      referralEarnings: earnings,
+      referralReserved: reserved,
+      referralWithdrawn: withdrawn,
+      availableBalance,
+      referralLinkClickedCount: user.referralLinkClickedCount,
+      payoutDetails,
+      ledger: user.withdrawalRequests.map((w) => ({
+        id: w.id,
+        amount: Number(w.amount),
+        status: w.status,
+        adminNotes: w.adminNotes,
+        processedAt: w.processedAt,
+        createdAt: w.createdAt,
+      })),
+      createdAt: user.createdAt,
+    };
+  }
+
+  async getWithdrawalPaymentDetails(withdrawalId: string, adminId?: string) {
+    const withdrawal = await this.prisma.withdrawalRequest.findUnique({
+      where: { id: withdrawalId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!withdrawal) {
+      throw new NotFoundException(`Withdrawal request with ID ${withdrawalId} not found`);
+    }
+
+    if (!this.encryptionService) {
+      throw new ServiceUnavailableException('Payment encryption service is unavailable');
+    }
+
+    const decryptedSnapshot = this.encryptionService.decrypt(withdrawal.paymentMethodSnapshot);
+    let parsedSnapshot: any;
+    try {
+      parsedSnapshot = JSON.parse(decryptedSnapshot);
+    } catch {
+      throw new BadRequestException('Corrupted payment snapshot data');
+    }
+
+    // Write audit log entry (NO plain decrypted secrets in metadata!)
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          actorUserId: adminId || null,
+          action: 'VIEW_PAYMENT_SNAPSHOT',
+          entityType: 'WITHDRAWAL_REQUEST',
+          entityId: withdrawalId,
+          metadata: {
+            withdrawalAmount: Number(withdrawal.amount),
+            recipientUserId: withdrawal.userId,
+            viewedAt: new Date().toISOString(),
+          },
+        },
+      });
+    } catch (auditErr: any) {
+      this.logger.warn(`Could not create audit log for snapshot view: ${auditErr?.message || auditErr}`);
+    }
+
+    return {
+      withdrawalId: withdrawal.id,
+      userId: withdrawal.userId,
+      user: withdrawal.user,
+      amount: Number(withdrawal.amount),
+      status: withdrawal.status,
+      adminNotes: withdrawal.adminNotes,
+      processedAt: withdrawal.processedAt,
+      createdAt: withdrawal.createdAt,
+      paymentDetails: parsedSnapshot,
+    };
+  }
+
+  async getWithdrawalQrFile(withdrawalId: string, adminId?: string) {
+    const withdrawal = await this.prisma.withdrawalRequest.findUnique({
+      where: { id: withdrawalId },
+    });
+
+    if (!withdrawal) {
+      throw new NotFoundException(`Withdrawal request with ID ${withdrawalId} not found`);
+    }
+
+    if (!this.encryptionService || !this.qrStorageService) {
+      throw new ServiceUnavailableException('Encryption or storage service is unavailable');
+    }
+
+    const decryptedSnapshot = this.encryptionService.decrypt(withdrawal.paymentMethodSnapshot);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(decryptedSnapshot);
+    } catch {
+      throw new BadRequestException('Corrupted payment snapshot data');
+    }
+
+    if (!parsed.qrCodeKey) {
+      throw new NotFoundException('No QR code attached to this withdrawal request');
+    }
+
+    // Write audit log entry
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          actorUserId: adminId || null,
+          action: 'VIEW_PAYMENT_QR',
+          entityType: 'WITHDRAWAL_REQUEST',
+          entityId: withdrawalId,
+          metadata: {
+            qrCodeKey: parsed.qrCodeKey,
+            viewedAt: new Date().toISOString(),
+          },
+        },
+      });
+    } catch (auditErr: any) {
+      this.logger.warn(`Could not create audit log for QR view: ${auditErr?.message || auditErr}`);
+    }
+
+    return this.qrStorageService.getQrFile(parsed.qrCodeKey);
+  }
+
+  async updateWithdrawalStatus(
+    withdrawalId: string,
+    status: 'APPROVED' | 'REJECTED',
+    adminId?: string,
+    adminNotes?: string,
+  ) {
+    if (status !== 'APPROVED' && status !== 'REJECTED') {
+      throw new BadRequestException("Status must be either 'APPROVED' or 'REJECTED'");
+    }
+
+    if (status === 'REJECTED' && (!adminNotes || !adminNotes.trim())) {
+      throw new BadRequestException('Rejection notes (adminNotes) are mandatory when rejecting a withdrawal request');
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      // Row lock on WithdrawalRequest to prevent race conditions & double processing
+      const rows = await tx.$queryRaw<any[]>`
+        SELECT id, "userId", amount, status
+        FROM "WithdrawalRequest"
+        WHERE id = ${withdrawalId}
+        FOR UPDATE
+      `;
+
+      if (!rows || rows.length === 0) {
+        throw new NotFoundException(`Withdrawal request with ID ${withdrawalId} not found`);
+      }
+
+      const withdrawal = rows[0];
+
+      if (withdrawal.status !== 'PENDING') {
+        throw new ConflictException(
+          `Withdrawal request has already been processed with status "${withdrawal.status}"`
+        );
+      }
+
+      const amount = Number(withdrawal.amount);
+      const userId = withdrawal.userId;
+
+      if (status === 'APPROVED') {
+        // Move amount from reserved to withdrawn
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            referralReserved: { decrement: amount },
+            referralWithdrawn: { increment: amount },
+          },
+        });
+      } else {
+        // REJECTED: return reserved funds back to available balance
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            referralReserved: { decrement: amount },
+          },
+        });
+      }
+
+      const updated = await tx.withdrawalRequest.update({
+        where: { id: withdrawalId },
+        data: {
+          status,
+          adminNotes: adminNotes?.trim() || null,
+          processedAt: new Date(),
+        },
+      });
+
+      // Write audit log entry
+      await tx.auditLog.create({
+        data: {
+          actorUserId: adminId || null,
+          action: status === 'APPROVED' ? 'APPROVE_WITHDRAWAL' : 'REJECT_WITHDRAWAL',
+          entityType: 'WITHDRAWAL_REQUEST',
+          entityId: withdrawalId,
+          metadata: {
+            amount,
+            previousStatus: withdrawal.status,
+            newStatus: status,
+            adminNotes: adminNotes?.trim() || null,
+          },
+        },
+      });
+
+      return {
+        id: updated.id,
+        userId: updated.userId,
+        amount: Number(updated.amount),
+        status: updated.status,
+        adminNotes: updated.adminNotes,
+        processedAt: updated.processedAt,
+        updatedAt: updated.updatedAt,
+      };
+    });
+  }
 }
+

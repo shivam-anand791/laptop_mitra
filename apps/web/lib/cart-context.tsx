@@ -9,13 +9,40 @@ interface CartContextType {
   items: CartItem[];
   itemCount: number;
   subtotal: number;
-  addItem: (product: Product, quantity?: number) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
-  removeItem: (productId: string) => void;
+  oneTimeTotal: number;
+  monthlyTotal: number;
+  addItem: (
+    product: Product,
+    quantity?: number,
+    options?: {
+      purchaseMode?: 'sell' | 'lease';
+      configuration?: 'default' | 'ram-16gb' | string;
+      hasWarranty?: boolean;
+    }
+  ) => void;
+  updateQuantity: (itemIdOrProductId: string, quantity: number) => void;
+  updateWarranty: (itemIdOrProductId: string, hasWarranty: boolean) => void;
+  removeItem: (itemIdOrProductId: string) => void;
   clearCart: () => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
+
+function resolveUnitPrice(product: Product, mode: 'sell' | 'lease', config: string): number {
+  let basePrice: number;
+  if (mode === 'lease') {
+    if (product.leasePriceMonthly !== null && product.leasePriceMonthly !== undefined) {
+      basePrice = Number(product.leasePriceMonthly);
+    } else {
+      throw new Error('This product does not have a fixed monthly lease price. Please request a quote.');
+    }
+  } else {
+    basePrice = Number(product.price);
+  }
+
+  const upgradeDelta = config === 'ram-16gb' ? (mode === 'sell' ? 4000 : 500) : 0;
+  return basePrice + upgradeDelta;
+}
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const { firebaseUser, isLoading } = useAuth();
@@ -53,7 +80,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             if (Array.isArray(parsed?.items) && parsed.items.length > 0) {
               for (const gItem of parsed.items) {
                 if (gItem?.productId) {
-                  await api.addToCart(gItem.productId, gItem.quantity || 1).catch(() => {});
+                  await api.addToCart(
+                    gItem.productId,
+                    gItem.quantity || 1,
+                    gItem.purchaseMode || 'sell',
+                    gItem.configuration || 'default',
+                    gItem.hasWarranty || false
+                  ).catch(() => {});
                 }
               }
               localStorage.removeItem('lm_cart:guest');
@@ -69,11 +102,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           const serverCart = res?.cart ?? res;
           const serverItems = Array.isArray(serverCart?.items) ? serverCart.items : [];
           setCartState({ key: storageKey, items: serverItems });
-          const subtotal = serverItems.reduce((acc: number, item: any) => acc + Number(item.priceAtAdd) * item.quantity, 0);
           const count = serverItems.reduce((acc: number, item: any) => acc + item.quantity, 0);
           localStorage.setItem(storageKey, JSON.stringify({
             items: serverItems,
-            total: subtotal,
             itemCount: count,
           }));
         } catch {
@@ -91,38 +122,67 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const saveCart = (newItems: CartItem[]) => {
     setCartState({ key: storageKey, items: newItems });
-    const subtotal = newItems.reduce((acc, item) => acc + Number(item.priceAtAdd) * item.quantity, 0);
     const count = newItems.reduce((acc, item) => acc + item.quantity, 0);
     localStorage.setItem(storageKey, JSON.stringify({
       items: newItems,
-      total: subtotal,
       itemCount: count,
     }));
   };
 
-  const addItem = (product: Product, quantity = 1) => {
-    const existingIndex = items.findIndex(item => item.productId === product.id);
+  const addItem = (
+    product: Product,
+    quantity = 1,
+    options?: {
+      purchaseMode?: 'sell' | 'lease';
+      configuration?: 'default' | 'ram-16gb' | string;
+      hasWarranty?: boolean;
+    }
+  ) => {
+    const mode = options?.purchaseMode === 'lease' ? 'lease' : 'sell';
+    const config = options?.configuration === 'ram-16gb' ? 'ram-16gb' : 'default';
+    const warranty = (options?.hasWarranty && mode === 'sell') ? true : false;
+    const warrantyPrice = warranty ? 1999 : 0;
+    const unitPrice = resolveUnitPrice(product, mode, config);
+
+    const existingIndex = items.findIndex(
+      item => item.productId === product.id &&
+              (item.purchaseMode || 'sell') === mode &&
+              (item.configuration || 'default') === config
+    );
+
     let updated: CartItem[];
 
     if (existingIndex > -1) {
       updated = items.map((item, idx) =>
-        idx === existingIndex ? { ...item, quantity: item.quantity + quantity } : item
+        idx === existingIndex
+          ? {
+              ...item,
+              quantity: item.quantity + quantity,
+              hasWarranty: warranty || item.hasWarranty,
+              warrantyPrice: warranty ? 1999 : (item.warrantyPrice || 0),
+            }
+          : item
       );
     } else {
       const newItem: CartItem = {
         id: `ci-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         productId: product.id,
         quantity,
-        priceAtAdd: Number(product.price),
+        priceAtAdd: unitPrice,
+        purchaseMode: mode,
+        configuration: config,
+        hasWarranty: warranty,
+        warrantyPrice,
         product,
       };
       updated = [...items, newItem];
     }
 
     saveCart(updated);
+
     // Asynchronously notify backend API and synchronize server cart state
     if (firebaseUser) {
-      api.addToCart(product.id, quantity)
+      api.addToCart(product.id, quantity, mode, config, warranty)
         .then(() => api.getCart())
         .then((res: any) => {
           const serverCart = res?.cart ?? res;
@@ -135,27 +195,48 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateQuantity = (productId: string, quantity: number) => {
+  const updateQuantity = (itemIdOrProductId: string, quantity: number) => {
     if (quantity <= 0) {
-      removeItem(productId);
+      removeItem(itemIdOrProductId);
       return;
     }
-    const item = items.find(i => i.productId === productId);
-    const updated = items.map(item =>
-      item.productId === productId ? { ...item, quantity } : item
+    const item = items.find(i => i.id === itemIdOrProductId || i.productId === itemIdOrProductId);
+    const updated = items.map(i =>
+      (i.id === itemIdOrProductId || i.productId === itemIdOrProductId) ? { ...i, quantity } : i
     );
     saveCart(updated);
-    if (firebaseUser) {
-      api.updateCartQuantity(item?.id || productId, quantity).catch(() => {});
+    if (firebaseUser && item) {
+      api.updateCartQuantity(item.id, quantity).catch(() => {});
     }
   };
 
-  const removeItem = (productId: string) => {
-    const item = items.find(i => i.productId === productId);
-    const updated = items.filter(item => item.productId !== productId);
+  const updateWarranty = (itemIdOrProductId: string, hasWarranty: boolean) => {
+    const item = items.find(i => i.id === itemIdOrProductId || i.productId === itemIdOrProductId);
+    if (!item || item.purchaseMode === 'lease') return; // Warranty is sell-only
+
+    const updated = items.map(i => {
+      if (i.id === itemIdOrProductId || i.productId === itemIdOrProductId) {
+        return {
+          ...i,
+          hasWarranty,
+          warrantyPrice: hasWarranty ? 1999 : 0,
+        };
+      }
+      return i;
+    });
+
     saveCart(updated);
-    if (firebaseUser) {
-      api.removeCartItem(item?.id || productId).catch(() => {});
+    if (firebaseUser && item) {
+      api.updateCartItem(item.id, { hasWarranty }).catch(() => {});
+    }
+  };
+
+  const removeItem = (itemIdOrProductId: string) => {
+    const item = items.find(i => i.id === itemIdOrProductId || i.productId === itemIdOrProductId);
+    const updated = items.filter(i => !(i.id === itemIdOrProductId || i.productId === itemIdOrProductId));
+    saveCart(updated);
+    if (firebaseUser && item) {
+      api.removeCartItem(item.id).catch(() => {});
     }
   };
 
@@ -166,11 +247,31 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const subtotal = items.reduce((acc, item) => acc + Number(item.priceAtAdd) * item.quantity, 0);
+  const oneTimeTotal = items
+    .filter(i => (i.purchaseMode || 'sell') === 'sell')
+    .reduce((acc, item) => acc + (Number(item.priceAtAdd) + (item.hasWarranty ? (item.warrantyPrice || 1999) : 0)) * item.quantity, 0);
+
+  const monthlyTotal = items
+    .filter(i => i.purchaseMode === 'lease')
+    .reduce((acc, item) => acc + Number(item.priceAtAdd) * item.quantity, 0);
+
+  // Month 1 Advance (Option A): All one-time purchases + Month 1 advance on all lease items
+  const subtotal = oneTimeTotal + monthlyTotal;
   const itemCount = items.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items, itemCount, subtotal, addItem, updateQuantity, removeItem, clearCart }}>
+    <CartContext.Provider value={{
+      items,
+      itemCount,
+      subtotal,
+      oneTimeTotal,
+      monthlyTotal,
+      addItem,
+      updateQuantity,
+      updateWarranty,
+      removeItem,
+      clearCart,
+    }}>
       {children}
     </CartContext.Provider>
   );

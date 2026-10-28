@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../../lib/auth-context';
 import { api } from '../../lib/api';
 
@@ -12,6 +12,7 @@ export interface AdminGuardProps {
 
 export function AdminGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, isLoading: authLoading, isAuthenticated, logout } = useAuth();
   const [isVerifying, setIsVerifying] = useState(true);
   const [verifiedRole, setVerifiedRole] = useState<string | null>(null);
@@ -35,8 +36,8 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
         const profile = await api.getProfile();
         if (!active) return;
 
-        if (profile?.role === 'ADMIN' && profile?.status === 'ACTIVE') {
-          setVerifiedRole('ADMIN');
+        if ((profile?.role === 'ADMIN' || profile?.role === 'SUPPORT') && profile?.status === 'ACTIVE') {
+          setVerifiedRole(profile.role);
           setIsForbidden(false);
         } else {
           setVerifiedRole(profile?.role || 'CUSTOMER');
@@ -116,7 +117,12 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   }
 
   // 403 Forbidden State: styled consistently with the storefront EmptyState
-  if (isForbidden || verifiedRole !== 'ADMIN') {
+  const effectiveRole = verifiedRole || user?.role || 'CUSTOMER';
+  const isSupportRole = effectiveRole === 'SUPPORT';
+  const isSupportPath = pathname.startsWith('/admin/support') || pathname.startsWith('/admin/returns');
+  const isSupportRestricted = isSupportRole && !isSupportPath;
+
+  if (isForbidden || (effectiveRole !== 'ADMIN' && effectiveRole !== 'SUPPORT') || isSupportRestricted) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
         <div className="flex flex-col items-center justify-center py-12 sm:py-16 px-6 text-center rounded-2xl bg-white dark:bg-gray-800 border border-[#E2E8F0] dark:border-gray-700 shadow-xs max-w-md w-full">
@@ -134,16 +140,38 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
 
           {/* Description */}
           <p className="text-xs sm:text-sm text-[#475569] dark:text-gray-400 max-w-sm mb-6 leading-relaxed">
-            Your authenticated account ({user?.email || 'user'}) is registered with the role{' '}
-            <span className="font-semibold text-gray-800 dark:text-gray-200">{verifiedRole || user?.role || 'CUSTOMER'}</span>{' '}
-            and does not have administrator privileges.
+            {isSupportRestricted ? (
+              <>
+                Your authenticated account ({user?.email || 'user'}) is registered with role{' '}
+                <span className="font-semibold text-gray-800 dark:text-gray-200">SUPPORT</span>.
+                Access to general administrator modules is restricted.
+              </>
+            ) : (
+              <>
+                Your authenticated account ({user?.email || 'user'}) is registered with the role{' '}
+                <span className="font-semibold text-gray-800 dark:text-gray-200">{effectiveRole}</span>{' '}
+                and does not have administrator privileges.
+              </>
+            )}
           </p>
 
           {/* Actions */}
           <div className="space-y-3 w-full">
+            {isSupportRestricted && (
+              <Link
+                href="/admin/support"
+                className="inline-flex items-center justify-center w-full min-h-[44px] px-6 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-semibold shadow-xs active:scale-98 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                Go to Support Tickets →
+              </Link>
+            )}
             <Link
               href="/"
-              className="inline-flex items-center justify-center w-full min-h-[44px] px-6 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-semibold shadow-xs active:scale-98 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              className={`inline-flex items-center justify-center w-full min-h-[44px] px-6 rounded-xl ${
+                isSupportRestricted
+                  ? 'border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                  : 'bg-[#2563EB] hover:bg-[#1D4ED8] text-white'
+              } text-sm font-semibold shadow-xs active:scale-98 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
             >
               ← Back to Store
             </Link>

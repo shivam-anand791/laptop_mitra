@@ -11,6 +11,7 @@ import {
   AdminAnalyticsResponse,
   AdminSettings,
   UpdateAdminSettingsDto,
+  CorporateInquiry,
 } from './types';
 
 /**
@@ -27,6 +28,7 @@ export const adminQueryKeys = {
   product: (id: string) => [...adminQueryKeys.products(), id] as const,
   analytics: () => [...adminQueryKeys.all, 'analytics'] as const,
   settings: () => [...adminQueryKeys.all, 'settings'] as const,
+  inquiries: () => [...adminQueryKeys.all, 'inquiries'] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -116,8 +118,18 @@ export function useUpdateOrderStatus() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: OrderStatus | string }) =>
-      adminApi.updateOrderStatus(id, status),
+    mutationFn: ({
+      id,
+      status,
+      courierName,
+      trackingNumber,
+    }: {
+      id: string;
+      status: OrderStatus | string;
+      courierName?: string;
+      trackingNumber?: string;
+    }) =>
+      adminApi.updateOrderStatus(id, status, { courierName, trackingNumber }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.orders() });
       if (variables?.id) {
@@ -128,6 +140,7 @@ export function useUpdateOrderStatus() {
     },
   });
 }
+
 
 export function useUpdateUserStatus() {
   const queryClient = useQueryClient();
@@ -190,3 +203,36 @@ export function useUpdateAdminSettings() {
     },
   });
 }
+
+export function useAdminInquiries(params?: {
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  return useQuery<{ items: CorporateInquiry[]; total: number; page: number; pageSize: number }, Error>({
+    queryKey: [...adminQueryKeys.inquiries(), params],
+    queryFn: () => adminApi.getCorporateInquiries(params),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useUpdateInquiryStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      id,
+      status,
+      adminNotes,
+    }: {
+      id: string;
+      status: string;
+      adminNotes?: string;
+    }) => adminApi.updateCorporateInquiryStatus(id, status, adminNotes),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.inquiries() });
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.stats() });
+    },
+  });
+}
+

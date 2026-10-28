@@ -7,7 +7,7 @@ import WishlistScreen from '../screens/main/WishlistScreen';
 import CartScreen from '../screens/main/CartScreen';
 import AccountScreen from '../screens/main/AccountScreen';
 import { Ionicons } from '@expo/vector-icons';
-import { useCart } from '../hooks/useApi';
+import { useCart, useTickets } from '../hooks/useApi';
 import { colors, shadows } from '../theme/tokens';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -25,6 +25,20 @@ function CartIcon({ focused, color, size }: { focused: boolean; color: string; s
           <Text style={styles.badgeText}>{itemCount > 99 ? '99+' : itemCount}</Text>
         </View>
       )}
+    </View>
+  );
+}
+
+function AccountIcon({ focused, color, size }: { focused: boolean; color: string; size: number }) {
+  const { data: tickets } = useTickets();
+  const unreadCount = Array.isArray(tickets)
+    ? tickets.filter((t: any) => t.status === 'WAITING_FOR_CUSTOMER').length
+    : 0;
+
+  return (
+    <View>
+      <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
+      {unreadCount > 0 && <View style={styles.unreadDot} />}
     </View>
   );
 }
@@ -96,7 +110,7 @@ export default function MainTabs() {
         component={AccountScreen}
         options={{
           tabBarIcon: ({ focused, color, size }) => (
-            <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
+            <AccountIcon focused={focused} color={color} size={size} />
           ),
           tabBarLabel: 'Account',
         }}
@@ -122,5 +136,14 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: colors.textWhite,
+  },
+  unreadDot: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.danger,
   },
 });

@@ -11,12 +11,17 @@ import { Product } from '../../../lib/types';
 import { api } from '../../../lib/api';
 import { useCart } from '../../../lib/cart-context';
 import { useWishlist } from '../../../lib/wishlist-context';
+import { useAuth } from '../../../lib/auth-context';
+import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../../lib/config';
+import CorporateQuoteModal from '../../../components/CorporateQuoteModal';
+import { BUYBACK_POLICY } from '@laptopmitra/types';
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const router = useRouter();
   const { addItem } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
+  const { user } = useAuth();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [similarProducts, setSimilarProducts] = useState<Product[]>([]);
@@ -26,8 +31,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [added, setAdded] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'specs' | 'inspection' | 'box' | 'warranty' | 'faq'>('specs');
   const [procurementModel, setProcurementModel] = useState<'buy' | 'lease'>('buy');
+  const [configuration, setConfiguration] = useState<'default' | 'ram-16gb'>('default');
+  const [hasWarranty, setHasWarranty] = useState<boolean>(false);
   const [pincode, setPincode] = useState<string>('');
   const [pincodeChecked, setPincodeChecked] = useState<boolean>(false);
+  const [corporateModalOpen, setCorporateModalOpen] = useState<boolean>(false);
+  const [buybackModalOpen, setBuybackModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     async function loadProduct() {
@@ -89,22 +98,50 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   }
 
   const isWish = isInWishlist(product.id);
+  const isLease = procurementModel === 'lease';
   const priceNum = Number(product.price);
   const compareNum = product.compareAtPrice ? Number(product.compareAtPrice) : null;
   const savings = compareNum && compareNum > priceNum ? compareNum - priceNum : 0;
   const discountPercent = compareNum && compareNum > priceNum ? Math.round((savings / compareNum) * 100) : 0;
-  const leaseMonthlyPrice = Math.round(priceNum * 0.08); // Approx 8% monthly lease rate
-  const bulkTier1Price = Math.round(priceNum * 0.93); // 5-9 units (7% off)
-  const bulkTier2Price = Math.round(priceNum * 0.85); // 10+ units (15% off)
+
+  // Lease pricing: explicit database column only (no formula estimates)
+  const hasLeasePrice = product.leasePriceMonthly !== null && product.leasePriceMonthly !== undefined;
+  const baseLeasePrice = hasLeasePrice ? Number(product.leasePriceMonthly) : null;
+
+  // Configuration upgrades: sell +4000, lease +500/mo
+  const configUpgradeDelta = configuration === 'ram-16gb' ? (isLease ? 500 : 4000) : 0;
+  const currentUnitPrice = isLease
+    ? (baseLeasePrice !== null ? baseLeasePrice + configUpgradeDelta : null)
+    : priceNum + configUpgradeDelta;
+
+  const bulkPrice = isLease
+    ? (product.bulkLeasePrice ? Number(product.bulkLeasePrice) : null)
+    : (product.bulkSellPrice ? Number(product.bulkSellPrice) : null);
 
   const handleAddToCart = () => {
-    addItem(product, quantity);
+    if (isLease && !hasLeasePrice) {
+      setCorporateModalOpen(true);
+      return;
+    }
+    addItem(product, quantity, {
+      purchaseMode: isLease ? 'lease' : 'sell',
+      configuration,
+      hasWarranty: !isLease && hasWarranty,
+    });
     setAdded(true);
     setTimeout(() => setAdded(false), 2200);
   };
 
   const handleBuyNow = () => {
-    addItem(product, quantity);
+    if (isLease && !hasLeasePrice) {
+      setCorporateModalOpen(true);
+      return;
+    }
+    addItem(product, quantity, {
+      purchaseMode: isLease ? 'lease' : 'sell',
+      configuration,
+      hasWarranty: !isLease && hasWarranty,
+    });
     router.push('/checkout');
   };
 
@@ -317,7 +354,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                           : 'text-slate-500 hover:text-slate-800'
                       }`}
                     >
-                      Outright Purchase
+                      Buy Outright
                     </button>
                     <button
                       type="button"
@@ -328,20 +365,20 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                           : 'text-slate-500 hover:text-slate-800'
                       }`}
                     >
-                      Corporate Lease
+                      Rent / Lease
                     </button>
                   </div>
                 </div>
 
                 {/* Pricing Box */}
                 <div className="p-4 sm:p-5 rounded-2xl bg-blue-50/50 border border-blue-100 space-y-3">
-                  {procurementModel === 'buy' ? (
+                  {!isLease ? (
                     <>
                       <div className="flex flex-wrap items-baseline gap-2 sm:gap-3">
                         <span className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tabular-nums">
-                          ₹{priceNum.toLocaleString('en-IN')}
+                          ₹{currentUnitPrice?.toLocaleString('en-IN')}
                         </span>
-                        {compareNum && compareNum > priceNum && (
+                        {compareNum && currentUnitPrice && compareNum > currentUnitPrice && (
                           <span className="text-sm sm:text-base line-through text-slate-400 font-medium tabular-nums">
                             ₹{compareNum.toLocaleString('en-IN')}
                           </span>
@@ -361,51 +398,160 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
                       <div className="pt-2 border-t border-blue-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-slate-700">
                         <div>
-                          💳 EMI from <strong className="text-[#0B1F4B] tabular-nums">₹{Math.round(priceNum / 12).toLocaleString('en-IN')}/mo</strong>
+                          💳 EMI from <strong className="text-[#0B1F4B] tabular-nums">₹{Math.round((currentUnitPrice || priceNum) / 12).toLocaleString('en-IN')}/mo</strong>
                         </div>
                         <div className="text-[11px] text-slate-500">
                           GST 18% Input Tax Credit Eligible
                         </div>
                       </div>
                     </>
-                  ) : (
+                  ) : hasLeasePrice ? (
                     <>
                       <div className="flex flex-wrap items-baseline gap-2 sm:gap-3">
                         <span className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tabular-nums">
-                          ₹{leaseMonthlyPrice.toLocaleString('en-IN')}
+                          ₹{currentUnitPrice?.toLocaleString('en-IN')}
                         </span>
                         <span className="text-xs font-bold text-slate-500">/ month + GST</span>
                       </div>
                       <p className="text-xs text-slate-600">
-                        Zero upfront capital expenditure. Includes quarterly maintenance, free upgrades, and instant swap replacement for corporate teams.
+                        Month 1 advance, then ₹{currentUnitPrice?.toLocaleString('en-IN')}/month; later months invoiced separately. Zero upfront capex.
                       </p>
                     </>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xl sm:text-2xl font-black text-[#0B1F4B]">
+                          Price on request
+                        </span>
+                        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                          Quote Required
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600">
+                        Monthly rental terms for this configuration are provided via custom quote. Submit a quote request below.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setCorporateModalOpen(true)}
+                        className="mt-2 w-full py-2 px-3 bg-[#0B1F4B] hover:bg-[#162D66] text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        Request a Quote →
+                      </button>
+                    </div>
                   )}
                 </div>
 
-                {/* Bulk Order Pricing Tier Table */}
+                {/* Hardware Specification / Configuration Upgrade Selector */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Configuration Upgrade</span>
+                    <span className="text-[11px] text-[#1D6FF2] font-semibold">Factory Certified</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setConfiguration('default')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        configuration === 'default'
+                          ? 'bg-blue-50/70 border-[#2563EB] ring-2 ring-blue-500/15'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-[#0B1F4B]">Standard Spec</span>
+                        {configuration === 'default' && <span className="text-[#2563EB] text-xs font-bold">✓</span>}
+                      </div>
+                      <p className="text-[11px] text-slate-500">8GB RAM • 256GB SSD</p>
+                      <span className="text-[10px] font-bold text-slate-400 mt-1 block">Included</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setConfiguration('ram-16gb')}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                        configuration === 'ram-16gb'
+                          ? 'bg-blue-50/70 border-[#2563EB] ring-2 ring-blue-500/15'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-[#0B1F4B]">16GB Pro Upgrade</span>
+                        {configuration === 'ram-16gb' && <span className="text-[#2563EB] text-xs font-bold">✓</span>}
+                      </div>
+                      <p className="text-[11px] text-slate-500">16GB RAM • 512GB SSD</p>
+                      <span className="text-[10px] font-bold text-[#1D6FF2] mt-1 block">
+                        {isLease ? '+₹500 / month' : '+₹4,000 one-time'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Extended Warranty Selector */}
+                <div className="p-3.5 rounded-2xl bg-white border border-[#E4E9F2] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">Warranty Protection</span>
+                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      {isLease ? 'Included in Lease' : 'Optional Add-on'}
+                    </span>
+                  </div>
+
+                  {isLease ? (
+                    <div className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-start gap-2">
+                      <span className="text-emerald-600 font-bold">✓</span>
+                      <span>Quarterly preventative maintenance, thermal servicing, and free hardware replacement are included on all active corporate leases. (Extended warranty addon is sell-only).</span>
+                    </div>
+                  ) : (
+                    <label className="flex items-start gap-3 cursor-pointer p-2 rounded-xl hover:bg-slate-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={hasWarranty}
+                        onChange={(e) => setHasWarranty(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-[#2563EB] focus:ring-[#2563EB]"
+                      />
+                      <div className="text-xs flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[#0B1F4B]">Add 1-Year Extended Warranty</span>
+                          <span className="font-bold text-[#2563EB]">+₹1,999</span>
+                        </div>
+                        <p className="text-slate-500 text-[11px] mt-0.5">
+                          Extends standard 1-year coverage to 2 full years with door-step motherboard and panel protection.
+                        </p>
+                      </div>
+                    </label>
+                  )}
+                </div>
+
+                {/* Bulk Order Pricing Callout (PHP-faithful: 5+ units via quote) */}
                 <div className="p-4 rounded-2xl bg-white border border-[#E4E9F2] space-y-2">
                   <div className="flex items-center justify-between text-xs font-bold text-[#0B1F4B]">
-                    <span>Tiered Wholesale Pricing</span>
-                    <span className="text-[10px] text-[#1D6FF2] font-semibold">Volume Discounts</span>
+                    <span>Wholesale &amp; Bulk Procurement (5+ Units)</span>
+                    <span className="text-[10px] text-[#1D6FF2] font-semibold">Via Quote</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                    <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2]">
-                      <span className="text-[10px] text-slate-400 block font-medium">1 - 4 Units</span>
-                      <span className="font-bold text-slate-800 block tabular-nums">₹{priceNum.toLocaleString('en-IN')}</span>
-                      <span className="text-[9px] text-slate-400">Standard</span>
+                  {bulkPrice ? (
+                    <div className="p-3 rounded-xl bg-blue-50/50 border border-blue-200 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="text-[11px] text-slate-500 block">Unit Rate on 5+ orders:</span>
+                        <span className="font-bold text-[#0B1F4B] text-sm tabular-nums">
+                          ₹{bulkPrice.toLocaleString('en-IN')} {isLease ? '/ month' : ''}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                        Bulk Rate
+                      </span>
                     </div>
-                    <div className="p-2.5 rounded-xl bg-blue-50/50 border border-blue-200">
-                      <span className="text-[10px] text-[#1D6FF2] block font-bold">5 - 9 Units</span>
-                      <span className="font-bold text-[#0B1F4B] block tabular-nums">₹{bulkTier1Price.toLocaleString('en-IN')}</span>
-                      <span className="text-[9px] text-emerald-600 font-bold">7% OFF</span>
-                    </div>
-                    <div className="p-2.5 rounded-xl bg-emerald-50/50 border border-emerald-200">
-                      <span className="text-[10px] text-emerald-700 block font-bold">10+ Units</span>
-                      <span className="font-bold text-[#0B1F4B] block tabular-nums">₹{bulkTier2Price.toLocaleString('en-IN')}</span>
-                      <span className="text-[9px] text-emerald-600 font-bold">15% OFF + GST</span>
-                    </div>
-                  </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      Looking to procure 5 or more machines for your company, school, or institution? Custom bulk discounts available.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setCorporateModalOpen(true)}
+                    className="w-full mt-2 py-2 px-3 bg-blue-50 hover:bg-blue-100/80 text-[#1D6FF2] font-bold text-xs rounded-xl border border-blue-200 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>Request Bulk / Fleet Quote</span>
+                    <span>→</span>
+                  </button>
                 </div>
 
                 {/* Quick Hardware Specs Grid */}
@@ -507,40 +653,67 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
                 {/* Action CTAs */}
                 <div className="space-y-3 pt-2">
-                  <div className="grid grid-cols-2 gap-3">
+                  {isLease && !hasLeasePrice ? (
                     <button
-                      onClick={handleAddToCart}
-                      disabled={product.stock <= 0}
-                      className={`h-11 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                        product.stock <= 0
-                          ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                          : added
-                          ? 'bg-emerald-600 text-white shadow-md'
-                          : 'bg-[#0B1F4B] hover:bg-[#162D66] text-white shadow-md shadow-slate-900/10 active:scale-95'
-                      }`}
+                      type="button"
+                      onClick={() => setCorporateModalOpen(true)}
+                      className="w-full h-11 px-4 rounded-xl text-xs font-bold bg-[#0B1F4B] hover:bg-[#162D66] text-white shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                      </svg>
-                      <span>{added ? 'Added to Cart ✓' : 'Add to Cart'}</span>
+                      <span>Request a Quote for Rent / Lease →</span>
                     </button>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={handleAddToCart}
+                        disabled={product.stock <= 0}
+                        className={`h-11 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                          product.stock <= 0
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                            : added
+                            ? 'bg-emerald-600 text-white shadow-md'
+                            : 'bg-[#0B1F4B] hover:bg-[#162D66] text-white shadow-md shadow-slate-900/10 active:scale-95'
+                        }`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                        </svg>
+                        <span>{added ? 'Added to Cart ✓' : 'Add to Cart'}</span>
+                      </button>
 
-                    <button
-                      onClick={handleBuyNow}
-                      disabled={product.stock <= 0}
-                      className={`h-11 px-4 rounded-xl text-xs font-semibold shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                        product.stock <= 0
-                          ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                          : 'bg-[#2563EB] hover:bg-[#1D4ED8] text-white active:scale-95'
-                      }`}
-                    >
-                      <span>⚡ Buy Now</span>
-                    </button>
-                  </div>
+                      <button
+                        onClick={handleBuyNow}
+                        disabled={product.stock <= 0}
+                        className={`h-11 px-4 rounded-xl text-xs font-semibold shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          product.stock <= 0
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                            : 'bg-[#2563EB] hover:bg-[#1D4ED8] text-white active:scale-95'
+                        }`}
+                      >
+                        <span>⚡ {isLease ? 'Rent Now' : 'Buy Now'}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Mitra Affiliate WhatsApp Share Button */}
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `Hey! Check out this certified enterprise laptop on LaptopMitra: ${product.name} (${currentUnitPrice ? `₹${currentUnitPrice.toLocaleString('en-IN')}${isLease ? '/mo' : ''}` : 'Price on request'}). Grade A+ inspected! View & buy with my Mitra referral link: https://laptopmitra.com/products/${product.id}${user?.referralCode ? `?ref=${user.referralCode}` : ''}`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs border border-emerald-200 transition-all flex items-center justify-center gap-2"
+                  >
+                    <span>💬 Share & Earn ₹500 on WhatsApp</span>
+                    {user?.referralCode && (
+                      <span className="text-[10px] bg-emerald-200/60 text-emerald-900 px-2 py-0.5 rounded-full font-mono">
+                        {user.referralCode}
+                      </span>
+                    )}
+                  </a>
 
                   <div className="grid grid-cols-2 gap-3">
                     <a
-                      href={`https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20am%20interested%20in%20buying%20${encodeURIComponent(product.name)}%20(SKU:%20${product.sku}).%20Please%20share%20details.`}
+                      href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra,%20I%20am%20interested%20in%20buying%20${encodeURIComponent(product.name)}%20(SKU:%20${product.sku}).%20Please%20share%20details.`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="h-10 px-4 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer"
@@ -565,6 +738,37 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       </svg>
                       <span>{isWish ? 'Saved' : 'Wishlist'}</span>
                     </button>
+                  </div>
+                </div>
+
+                {/* 36-Month Buyback Guarantee Trust Block (PHP-faithful) */}
+                <div
+                  onClick={() => setBuybackModalOpen(true)}
+                  className="cursor-pointer bg-gradient-to-br from-white to-sky-50 rounded-2xl border border-sky-200 p-4 sm:p-5 shadow-sm hover:shadow-md hover:border-sky-300 transition-all flex items-center justify-between group relative overflow-hidden"
+                >
+                  <div className="flex items-center gap-3.5 relative z-10">
+                    <div className="w-11 h-11 bg-sky-600 rounded-2xl flex items-center justify-center text-white text-lg shadow-md ring-4 ring-sky-100 shrink-0">
+                      🛡️
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-extrabold text-sky-700 uppercase tracking-widest">
+                          Lifetime
+                        </span>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded">
+                          Up to 70% Value
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 leading-snug mt-0.5">
+                        Buyback Assurance
+                      </h3>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        Guaranteed value up to <strong className="text-emerald-600 font-bold">70%</strong> (0–6m: 70%, 6–12m: 60%, 12–18m: 50%, 18–24m: 40%)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-white border border-sky-200 flex items-center justify-center text-sky-600 group-hover:bg-sky-600 group-hover:text-white transition-all shadow-xs shrink-0 font-bold">
+                    →
                   </div>
                 </div>
 
@@ -753,6 +957,17 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                         If your laptop has any functional defects or does not meet your expectations upon delivery, we will arrange a doorstep reverse pickup and provide a hassle-free replacement or refund within 7 days.
                       </p>
                     </div>
+                    <div className="p-5 rounded-2xl bg-sky-50/60 border border-sky-200 space-y-2.5 md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-sky-800 text-sm">💰 36-Month Buyback Guarantee:</h4>
+                        <Link href="/buyback-guarantee" className="text-xs font-bold text-sky-700 hover:underline">
+                          View Policy T&amp;C →
+                        </Link>
+                      </div>
+                      <p className="text-slate-600">
+                        Sell your device back to LaptopMitra anytime within 36 months for an assured valuation (0–6m: 70%, 6–12m: 60%, 12–18m: 50%, 18–24m: 40%, 24–30m: 30%, 30–36m: 20%). Calculated on base invoice value.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -801,6 +1016,96 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       </div>
+
+      {product && (
+        <CorporateQuoteModal
+          open={corporateModalOpen}
+          onClose={() => setCorporateModalOpen(false)}
+          prefill={{
+            productId: product.id,
+            laptopModel: product.name,
+            mode: procurementModel === 'lease' ? 'lease' : 'sell',
+            quantity: 5,
+          }}
+        />
+      )}
+
+      {/* Buyback Modal (PHP-faithful) */}
+      {buybackModalOpen && product && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100 flex flex-col">
+            <div className="bg-gradient-to-r from-sky-600 to-blue-700 p-6 text-white text-center relative">
+              <button
+                type="button"
+                onClick={() => setBuybackModalOpen(false)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-sm transition cursor-pointer"
+              >
+                ✕
+              </button>
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl mx-auto mb-2 text-yellow-300">
+                🛡️
+              </div>
+              <h3 className="text-xl font-extrabold">{BUYBACK_POLICY.title}</h3>
+              <p className="text-sky-100 text-xs mt-1">{BUYBACK_POLICY.subtitle}</p>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div className="text-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                  Assured Buyback Schedule
+                </span>
+                <div className="text-4xl font-black text-emerald-600 my-1">Up to 70%</div>
+                <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded">
+                  of Base Invoice Value
+                </span>
+              </div>
+
+              <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold">
+                    <tr>
+                      <th className="p-2.5">Period</th>
+                      <th className="p-2.5 text-sky-700">Value %</th>
+                      <th className="p-2.5 text-right">Estimated</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {BUYBACK_POLICY.tiers.map((tier) => {
+                      const calculatedVal = Math.round(Number(product.price) * (tier.percentage / 100));
+                      return (
+                        <tr key={tier.period} className="hover:bg-slate-50/50">
+                          <td className="p-2.5 font-medium text-slate-900">{tier.period}</td>
+                          <td className="p-2.5 font-bold text-sky-700">{tier.percentage}%</td>
+                          <td className="p-2.5 text-right font-semibold text-slate-700 tabular-nums">
+                            ₹{calculatedVal.toLocaleString('en-IN')}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-1">
+                <span className="font-bold text-slate-800 block">Eligibility &amp; Verification:</span>
+                <p>• Device must power on and boot into OS with original invoice.</p>
+                <p>• Raised within 36 months of purchase with doorstep verification.</p>
+              </div>
+
+              <div className="text-center pt-2">
+                <Link
+                  href="/buyback-guarantee"
+                  onClick={() => setBuybackModalOpen(false)}
+                  className="text-xs font-bold text-[#1D6FF2] hover:underline inline-flex items-center gap-1"
+                >
+                  <span>Read Full Buyback Policy &amp; Terms</span>
+                  <span>→</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </CustomerLayout>
   );
 }

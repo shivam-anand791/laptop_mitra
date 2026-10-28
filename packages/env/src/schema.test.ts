@@ -133,6 +133,33 @@ describe('hard stop: sending real email (rules/07 #8)', () => {
   it('requires SMTP settings when the smtp driver is selected', () => {
     expectIssue({ ...baseEnv, MAIL_DRIVER: 'smtp', ALLOW_REAL_EMAILS: 'true' }, 'SMTP_HOST');
   });
+
+  it('rejects resend in development without ALLOW_REAL_EMAILS=true', () => {
+    const msg = expectIssue(
+      {
+        ...baseEnv,
+        MAIL_DRIVER: 'resend',
+        RESEND_API_KEY: 're_test_key_12345',
+      },
+      'MAIL_DRIVER',
+    );
+    assert.match(msg, /real email/i);
+  });
+
+  it('allows resend in development with ALLOW_REAL_EMAILS=true', () => {
+    const result = envSchema.safeParse({
+      ...baseEnv,
+      MAIL_DRIVER: 'resend',
+      ALLOW_REAL_EMAILS: 'true',
+      RESEND_API_KEY: 're_test_key_12345',
+      MAIL_FROM: 'onboarding@resend.dev',
+    });
+    assert.equal(result.success, true, JSON.stringify(result.error?.issues));
+  });
+
+  it('requires RESEND_API_KEY when resend driver is selected', () => {
+    expectIssue({ ...baseEnv, MAIL_DRIVER: 'resend', ALLOW_REAL_EMAILS: 'true' }, 'RESEND_API_KEY');
+  });
 });
 
 describe('secrets hygiene', () => {

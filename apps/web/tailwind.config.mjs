@@ -5,7 +5,7 @@ const config = {
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
-  darkMode: "media",
+  darkMode: "selector",
   theme: {
     extend: {
       colors: {
@@ -79,11 +79,12 @@ const config = {
       },
 
       borderRadius: {
+        xs: "4px",
         sm: "6px",
-        md: "10px",
-        lg: "14px",
-        xl: "20px",
-        "2xl": "28px",
+        md: "8px",
+        lg: "12px",
+        xl: "16px",
+        "2xl": "24px",
       },
 
       boxShadow: {

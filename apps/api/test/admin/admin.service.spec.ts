@@ -178,9 +178,13 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
         prismaMock.order.findUnique.mockResolvedValue(order);
         prismaMock.order.update.mockResolvedValue({ ...order, status: 'SHIPPING' });
 
-        const result = await adminService.updateOrderStatus('ord-1', 'SHIPPING', 'admin-1');
+        const result = await adminService.updateOrderStatus('ord-1', 'SHIPPING', 'admin-1', {
+          courierName: 'BlueDart',
+          trackingNumber: 'BD123',
+        });
         expect(result.status).toBe('SHIPPING');
       });
+
 
       it('allows CONFIRMED -> CANCELLED', async () => {
         const order = { id: 'ord-1', status: 'CONFIRMED', paymentMethod: 'cod', paymentStatus: 'PENDING', items: [], deliveries: [] };
@@ -377,15 +381,23 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
         prismaMock.order.findUnique.mockResolvedValue(order);
         prismaMock.order.update.mockResolvedValue({ ...order, status: 'SHIPPING' });
 
-        await adminService.updateOrderStatus('ord-deliv', 'SHIPPING', 'admin-1');
+        await adminService.updateOrderStatus('ord-deliv', 'SHIPPING', 'admin-1', {
+          courierName: 'Delhivery',
+          trackingNumber: 'DEL123',
+        });
 
         expect(prismaMock.delivery.update).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { id: 'del-1' },
-            data: expect.objectContaining({ status: 'SHIPPED' }),
+            data: expect.objectContaining({
+              status: 'SHIPPED',
+              carrier: 'Delhivery',
+              trackingNumber: 'DEL123',
+            }),
           }),
         );
       });
+
     });
 
     describe('Database Failure Resilience (Task 5)', () => {

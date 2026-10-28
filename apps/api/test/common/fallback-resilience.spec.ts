@@ -360,7 +360,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
           undefined,
           undefined,
           { address: 'Local test address' },
-          '+919999999999',
+          '+917701993300',
           undefined,
           'dev@example.com',
         ),

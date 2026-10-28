@@ -37,6 +37,9 @@ export interface Product {
   metadata?: Record<string, any> | null;
   isFeatured: boolean;
   isNewArrival: boolean;
+  leasePriceMonthly?: number | null;
+  bulkSellPrice?: number | null;
+  bulkLeasePrice?: number | null;
   tags?: string | null;
   categoryId?: string | null;
   category?: Category | null;
@@ -63,12 +66,35 @@ export interface ProductFilterParams {
   offset?: number;
 }
 
+export interface ProductFilterFacets {
+  brands: string[];
+  processors: string[];
+  ramOptions: string[];
+  storageOptions: string[];
+  grades: string[];
+  categories: Array<{ id: string; name: string; slug: string; count: number }>;
+  priceRange: { min: number; max: number };
+  counts: {
+    brands: Record<string, number>;
+    processors: Record<string, number>;
+    ram: Record<string, number>;
+    storage: Record<string, number>;
+    grades: Record<string, number>;
+  };
+  totalCount: number;
+}
+
+
 export interface CartItem {
   id: string;
   cartId?: string;
   productId: string;
   quantity: number;
   priceAtAdd: number;
+  purchaseMode?: 'sell' | 'lease';
+  configuration?: 'default' | 'ram-16gb' | string;
+  hasWarranty?: boolean;
+  warrantyPrice?: number;
   product?: Product;
 }
 
@@ -103,6 +129,8 @@ export interface User {
   dob?: string | null;
   referralCode: string;
   referralEarnings?: number;
+  referralReserved?: number;
+  referralWithdrawn?: number;
   referralTier?: string;
   referralLinkClickedCount?: number;
   createdAt?: Date | string;
@@ -144,6 +172,10 @@ export interface OrderItem {
   productId: string;
   quantity: number;
   price: number;
+  purchaseMode?: 'sell' | 'lease';
+  configuration?: 'default' | 'ram-16gb' | string;
+  hasWarranty?: boolean;
+  warrantyPrice?: number;
   product?: Product;
   warrantyStatus?: string | null;
   warrantyValidUntil?: string | null;
@@ -171,6 +203,7 @@ export interface Order {
   carrier?: string | null;
   returnStatus?: 'NONE' | 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | string;
   returnReason?: string | null;
+  deliveries?: any[];
   items?: OrderItem[];
   createdAt: string;
   updatedAt?: string;
@@ -242,4 +275,73 @@ export interface DiscountCode {
   isActive: boolean;
   validFrom?: Date | string | null;
   validUntil?: Date | string | null;
+}
+
+export interface CorporateInquiry {
+  id: string;
+  companyName: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  laptopModel?: string | null;
+  productId?: string | null;
+  mode: 'sell' | 'lease';
+  quantity: number;
+  city: string;
+  expectedTenure?: string | null;
+  notes?: string | null;
+  status: 'PENDING' | 'CONTACTED' | 'QUOTED' | 'CLOSED';
+  source: 'web' | 'mobile';
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface CreateCorporateInquiryDto {
+  companyName: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  laptopModel?: string;
+  productId?: string;
+  mode?: 'sell' | 'lease';
+  quantity?: number;
+  city: string;
+  expectedTenure?: string;
+  notes?: string;
+  source?: 'web' | 'mobile';
+}
+
+export interface AffiliatePaymentDetails {
+  id: string;
+  userId: string;
+  bankName?: string | null;
+  accountHolderName?: string | null;
+  accountNumberMasked?: string | null;
+  ifscCode?: string | null;
+  upiIdMasked?: string | null;
+  qrCodeKey?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  userId: string;
+  amount: number;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  paymentMethodSnapshot: string;
+  adminNotes?: string | null;
+  processedAt?: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface AuditLog {
+  id: string;
+  actorUserId?: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  metadata?: Record<string, any> | null;
+  createdAt: Date | string;
 }

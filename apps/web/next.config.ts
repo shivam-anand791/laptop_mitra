@@ -18,6 +18,10 @@ const nextConfig: NextConfig = {
       hostname,
     })),
   },
+  // Relocate Next.js dev indicator so it does not overlap sidebar footer
+  devIndicators: {
+    position: 'bottom-right',
+  },
   // Monorepo package transpilation
   transpilePackages: [
     "@laptopmitra/tokens",

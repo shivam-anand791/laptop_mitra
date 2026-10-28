@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { NEXT_PUBLIC_SUPPORT_PHONE, NEXT_PUBLIC_WHATSAPP_NUMBER } from '../lib/config';
 
 interface FloatingContactButtonsProps {
   phone?: string;
@@ -8,8 +9,8 @@ interface FloatingContactButtonsProps {
 }
 
 export default function FloatingContactButtons({
-  phone = '+919999999999',
-  whatsappNumber = '919999999999',
+  phone = NEXT_PUBLIC_SUPPORT_PHONE,
+  whatsappNumber = NEXT_PUBLIC_WHATSAPP_NUMBER,
 }: FloatingContactButtonsProps) {
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(
     'Hi LaptopMitra team, I would like to inquire about certified laptops.'

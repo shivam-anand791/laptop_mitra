@@ -74,22 +74,34 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
 
     const items: OrderItem[] = (o.items || []).map((it: any) => {
       const itPrice = typeof it.price === 'number' ? it.price : parseFloat(it.price?.toString() || '0') || 0;
+      const itWarrantyPrice = typeof it.warrantyPrice === 'number' ? it.warrantyPrice : parseFloat(it.warrantyPrice?.toString() || '0') || 0;
       return {
         id: it.id,
         orderId: o.id,
         productId: it.productId,
         quantity: it.quantity,
         price: itPrice,
+        purchaseMode: it.purchaseMode || 'sell',
+        configuration: it.configuration || 'default',
+        hasWarranty: !!it.hasWarranty,
+        warrantyPrice: itWarrantyPrice,
         product: it.product ? {
           ...it.product,
           price: typeof it.product.price === 'number' ? it.product.price : parseFloat(it.product.price?.toString() || '0') || 0,
         } : undefined,
-        warrantyStatus: 'ACTIVE',
-        warrantyValidUntil: new Date(new Date(o.createdAt || Date.now()).setFullYear(new Date(o.createdAt || Date.now()).getFullYear() + 1)).toISOString().split('T')[0],
+        warrantyStatus: it.hasWarranty ? 'EXTENDED_ACTIVE' : 'ACTIVE',
+        warrantyValidUntil: new Date(new Date(o.createdAt || Date.now()).setFullYear(new Date(o.createdAt || Date.now()).getFullYear() + (it.hasWarranty ? 2 : 1))).toISOString().split('T')[0],
       };
     });
 
     const delivery = Array.isArray(o.deliveries) && o.deliveries.length > 0 ? o.deliveries[0] : null;
+
+    const parsedShipping = typeof o.shippingAddress === 'string'
+      ? (() => { try { return JSON.parse(o.shippingAddress); } catch { return null; } })()
+      : (o.shippingAddress && typeof o.shippingAddress === 'object' ? o.shippingAddress : null);
+
+    const returnStatus = o.returnStatus || parsedShipping?.returnStatus || 'NONE';
+    const returnReason = o.returnReason || parsedShipping?.returnReason || null;
 
     return {
       id: o.id,
@@ -105,14 +117,15 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
       referralCode: o.referralCode || null,
       referralDiscount: o.referralDiscount ? Number(o.referralDiscount) : 0,
       finalAmount,
-      shippingAddress: typeof o.shippingAddress === 'string' ? JSON.parse(o.shippingAddress) : o.shippingAddress || null,
+      shippingAddress: parsedShipping,
       phone: o.phone || null,
       email: o.email || '',
       notes: o.notes || null,
       trackingNumber: delivery?.trackingNumber || o.trackingNumber || null,
       carrier: delivery?.carrier || o.carrier || null,
-      returnStatus: o.returnStatus || 'NONE',
-      returnReason: o.returnReason || null,
+      returnStatus,
+      returnReason,
+      deliveries: Array.isArray(o.deliveries) ? o.deliveries : [],
       items,
       createdAt: o.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString(),
       updatedAt: o.updatedAt ? new Date(o.updatedAt).toISOString() : new Date().toISOString(),
@@ -190,23 +203,50 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
         let subtotalPaise = 0;
         const pricedItems = cart.items.map((item: any) => {
           const quantity = Number(item.quantity);
-          const currentPrice = Number(item.product?.price);
           if (!Number.isSafeInteger(quantity) || quantity <= 0) {
             throw new BadRequestException('Cart contains an invalid quantity');
           }
           if (!item.product || item.product.status !== 'ACTIVE') {
             throw new BadRequestException('A product in your cart is no longer available');
           }
-          if (!Number.isFinite(currentPrice) || currentPrice < 0) {
+
+          const mode = item.purchaseMode === 'lease' ? 'lease' : 'sell';
+          const config = item.configuration === 'ram-16gb' || item.configuration === '16gb-pro' ? 'ram-16gb' : 'default';
+
+          if (item.hasWarranty && mode === 'lease') {
+            throw new BadRequestException('Extended warranty cannot be applied to leased products');
+          }
+
+          let basePrice = Number(item.product.price);
+          if (mode === 'lease') {
+            if (item.product.leasePriceMonthly === null || item.product.leasePriceMonthly === undefined) {
+              throw new BadRequestException(`Product "${item.product.name}" does not have a fixed monthly lease price. Please request a quote.`);
+            }
+            basePrice = Number(item.product.leasePriceMonthly);
+          }
+          let upgradeDelta = 0;
+          if (config === 'ram-16gb') {
+            upgradeDelta = mode === 'sell' ? 4000 : 500;
+          }
+          const unitPrice = basePrice + upgradeDelta;
+          if (!Number.isFinite(unitPrice) || unitPrice < 0) {
             throw new BadRequestException('A product in your cart has invalid pricing');
           }
-          const unitPricePaise = Math.round(currentPrice * 100);
-          subtotalPaise += unitPricePaise * quantity;
+
+          const warrantyUnitPrice = (item.hasWarranty && mode === 'sell') ? 1999 : 0;
+          const unitPricePaise = Math.round(unitPrice * 100);
+          const warrantyUnitPricePaise = Math.round(warrantyUnitPrice * 100);
+
+          subtotalPaise += (unitPricePaise + warrantyUnitPricePaise) * quantity;
           return {
             productId: item.productId,
             categoryId: item.product.categoryId,
             quantity,
             unitPricePaise,
+            warrantyUnitPricePaise,
+            purchaseMode: mode,
+            configuration: config,
+            hasWarranty: !!item.hasWarranty && mode === 'sell',
             product: item.product,
           };
         });
@@ -295,6 +335,10 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
                 productId: item.productId,
                 quantity: item.quantity,
                 price: (item.unitPricePaise / 100).toFixed(2),
+                purchaseMode: item.purchaseMode,
+                configuration: item.configuration,
+                hasWarranty: item.hasWarranty,
+                warrantyPrice: (item.warrantyUnitPricePaise / 100).toFixed(2),
               })),
             },
           },
@@ -518,49 +562,54 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
   }
 
   async expireAbandonedReservations(now = new Date()): Promise<number> {
-    const expired = await (this.prisma as any).order.findMany({
-      where: {
-        status: 'PENDING',
-        paymentMethod: 'razorpay',
-        paymentStatus: { in: ['PENDING', 'FAILED'] },
-        inventoryStatus: 'RESERVED',
-        reservationExpiresAt: { lte: now },
-      },
-      include: { items: true },
-    });
-    let releasedCount = 0;
-
-    for (const candidate of expired) {
-      const released = await this.prisma.$transaction(async (transaction: any) => {
-        const order = await transaction.order.findUnique({
-          where: { id: candidate.id },
-          include: { items: true },
-        });
-        if (!order || order.status !== 'PENDING' || order.inventoryStatus !== 'RESERVED') return false;
-        const updated = await transaction.order.updateMany({
-          where: {
-            id: order.id,
-            status: 'PENDING',
-            inventoryStatus: 'RESERVED',
-            reservationExpiresAt: { lte: now },
-            paymentStatus: { in: ['PENDING', 'FAILED'] },
-          },
-          data: { status: 'CANCELLED', inventoryStatus: 'RELEASED', reservationExpiresAt: null },
-        });
-        if (updated.count !== 1) return false;
-
-        for (const item of order.items) {
-          await transaction.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
-          });
-        }
-        await this.releaseOrderPromotions(transaction, order.id);
-        return true;
+    try {
+      const expired = await (this.prisma as any).order.findMany({
+        where: {
+          status: 'PENDING',
+          paymentMethod: 'razorpay',
+          paymentStatus: { in: ['PENDING', 'FAILED'] },
+          inventoryStatus: 'RESERVED',
+          reservationExpiresAt: { lte: now },
+        },
+        include: { items: true },
       });
-      if (released) releasedCount += 1;
+      let releasedCount = 0;
+
+      for (const candidate of expired) {
+        const released = await this.prisma.$transaction(async (transaction: any) => {
+          const order = await transaction.order.findUnique({
+            where: { id: candidate.id },
+            include: { items: true },
+          });
+          if (!order || order.status !== 'PENDING' || order.inventoryStatus !== 'RESERVED') return false;
+          const updated = await transaction.order.updateMany({
+            where: {
+              id: order.id,
+              status: 'PENDING',
+              inventoryStatus: 'RESERVED',
+              reservationExpiresAt: { lte: now },
+              paymentStatus: { in: ['PENDING', 'FAILED'] },
+            },
+            data: { status: 'CANCELLED', inventoryStatus: 'RELEASED', reservationExpiresAt: null },
+          });
+          if (updated.count !== 1) return false;
+
+          for (const item of order.items) {
+            await transaction.product.update({
+              where: { id: item.productId },
+              data: { stock: { increment: item.quantity } },
+            });
+          }
+          await this.releaseOrderPromotions(transaction, order.id);
+          return true;
+        });
+        if (released) releasedCount += 1;
+      }
+      return releasedCount;
+    } catch (err: any) {
+      this.logger.warn(`Checkout reservation expiry check skipped: ${err?.message || err}`);
+      return 0;
     }
-    return releasedCount;
   }
 
   async requestReturn(id: string, userId: string, reason: string): Promise<{ message: string; returnStatus: string }> {
@@ -568,6 +617,53 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
 
     if (order.status !== 'DELIVERED') {
       throw new BadRequestException('Returns are only available for delivered orders within the 7-day replacement window.');
+    }
+
+    // Idempotent: if return was already requested, return current status without error
+    if (order.returnStatus === 'REQUESTED') {
+      return {
+        message: 'Return / Replacement request already submitted. Our courier executive will arrange inspection within 24-48 hours.',
+        returnStatus: 'REQUESTED',
+      };
+    }
+
+    // 7-day window enforcement from delivered timestamp
+    const deliveries = (order as any).deliveries || [];
+    const delivery = deliveries.length > 0 ? deliveries[0] : null;
+    const deliveredTime = delivery?.deliveredAt
+      ? new Date(delivery.deliveredAt).getTime()
+      : (order.updatedAt ? new Date(order.updatedAt).getTime() : new Date(order.createdAt).getTime());
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+    if (now - deliveredTime > sevenDaysMs) {
+      throw new BadRequestException('Return window has expired. Returns and replacements are only allowed within 7 days of delivery.');
+    }
+
+    const currentShipping = (order.shippingAddress && typeof order.shippingAddress === 'object') ? order.shippingAddress : {};
+    const updatedShipping = {
+      ...currentShipping,
+      returnStatus: 'REQUESTED',
+      returnReason: reason,
+      returnRequestedAt: new Date().toISOString(),
+    };
+
+    try {
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: {
+          shippingAddress: updatedShipping,
+          notes: order.notes
+            ? `${order.notes}\n[Return Requested: ${new Date().toISOString()}] Reason: ${reason}`
+            : `[Return Requested: ${new Date().toISOString()}] Reason: ${reason}`,
+          updatedAt: new Date(),
+        },
+      });
+    } catch (err: any) {
+      this.logger.error(`Failed to persist return request for order ${id}: ${err?.message || err}`);
+      if (!allowInMemoryFallback()) {
+        throw new ServiceUnavailableException('Failed to submit return request');
+      }
     }
 
     order.returnStatus = 'REQUESTED';

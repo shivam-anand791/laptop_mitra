@@ -9,6 +9,8 @@ import AnimatedCounter from '../components/AnimatedCounter';
 import { ProductCardSkeleton } from '../components/ui/Skeleton';
 import { Product } from '../lib/types';
 import { api } from '../lib/api';
+import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../lib/config';
+import CorporateQuoteModal from '../components/CorporateQuoteModal';
 
 /* ── 5 Verified Categories matching data & Image 1 ── */
 const categories = [
@@ -114,6 +116,7 @@ export default function HomePage() {
 
   // Real countdown timer state
   const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
+  const [corporateModalOpen, setCorporateModalOpen] = useState(false);
 
   useEffect(() => {
     async function loadProducts() {
@@ -240,14 +243,13 @@ export default function HomePage() {
                   <span>→</span>
                 </Link>
 
-                <a
-                  href="https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20would%20like%20to%20request%20a%20quote%20for%20enterprise%20laptops."
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-6 py-2.5 sm:py-3 border border-white/30 bg-transparent hover:bg-white/10 text-white text-xs sm:text-sm font-bold rounded-md transition-all active:scale-95"
+                <button
+                  type="button"
+                  onClick={() => setCorporateModalOpen(true)}
+                  className="px-6 py-2.5 sm:py-3 border border-white/30 bg-transparent hover:bg-white/10 text-white text-xs sm:text-sm font-bold rounded-md transition-all active:scale-95 cursor-pointer"
                 >
                   Get a Quote
-                </a>
+                </button>
               </div>
             </div>
 
@@ -459,7 +461,7 @@ export default function HomePage() {
                     Claim Flash Deal →
                   </Link>
                   <a
-                    href="https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20want%20to%20order%20the%20Deal%20of%20the%20Day%20laptop."
+                    href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra,%20I%20want%20to%20order%20the%20Deal%20of%20the%20Day%20laptop.`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="h-11 px-5 bg-[#25D366] hover:bg-[#20BD5A] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
@@ -521,6 +523,28 @@ export default function HomePage() {
               <p className="text-xs font-bold text-[#111827]">Industry Experience</p>
               <p className="text-[11px] text-[#475569]">Dedicated engineer team</p>
             </div>
+          </div>
+
+          {/* Bulk Procurement & Enterprise Leasing Banner */}
+          <div className="mt-8 p-6 rounded-2xl bg-gradient-to-r from-[#0B1F4B] to-[#1D6FF2] text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-md">
+            <div>
+              <span className="text-[10px] uppercase font-bold tracking-widest text-[#38BDF8] bg-white/10 px-2.5 py-1 rounded-md">
+                B2B &amp; Fleet Solutions
+              </span>
+              <h3 className="text-lg sm:text-xl font-bold mt-2">
+                Equipping 5+ Laptops for Your Growing Team?
+              </h3>
+              <p className="text-xs sm:text-sm text-blue-100 max-w-xl mt-1">
+                Unlock tiered wholesale pricing up to 25% OFF, customized OS imaging, 18% GST input tax credit, and flexible zero-CapEx monthly leasing.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCorporateModalOpen(true)}
+              className="px-6 py-3 bg-white text-[#0B1F4B] hover:bg-blue-50 font-bold text-xs sm:text-sm rounded-xl transition-all shadow-sm shrink-0 cursor-pointer active:scale-95"
+            >
+              Request Corporate Quote →
+            </button>
           </div>
         </div>
       </section>
@@ -707,6 +731,12 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Corporate Procurement Modal */}
+      <CorporateQuoteModal
+        open={corporateModalOpen}
+        onClose={() => setCorporateModalOpen(false)}
+      />
     </CustomerLayout>
   );
 }

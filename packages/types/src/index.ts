@@ -37,6 +37,9 @@ export interface Product {
   metadata?: Record<string, any> | null;
   isFeatured: boolean;
   isNewArrival: boolean;
+  leasePriceMonthly?: number | null;
+  bulkSellPrice?: number | null;
+  bulkLeasePrice?: number | null;
   tags?: string | null;
   categoryId?: string | null;
   category?: Category | null;
@@ -69,6 +72,10 @@ export interface CartItem {
   productId: string;
   quantity: number;
   priceAtAdd: number;
+  purchaseMode?: 'sell' | 'lease';
+  configuration?: 'default' | 'ram-16gb' | string;
+  hasWarranty?: boolean;
+  warrantyPrice?: number;
   product?: Product;
 }
 
@@ -103,6 +110,8 @@ export interface User {
   dob?: string | null;
   referralCode: string;
   referralEarnings?: number;
+  referralReserved?: number;
+  referralWithdrawn?: number;
   referralTier?: string;
   referralLinkClickedCount?: number;
   createdAt?: Date | string;
@@ -144,6 +153,10 @@ export interface OrderItem {
   productId: string;
   quantity: number;
   price: number;
+  purchaseMode?: 'sell' | 'lease';
+  configuration?: 'default' | 'ram-16gb' | string;
+  hasWarranty?: boolean;
+  warrantyPrice?: number;
   product?: Product;
   warrantyStatus?: string | null;
   warrantyValidUntil?: string | null;
@@ -162,7 +175,7 @@ export type OrderStatus = typeof ORDER_STATUSES[number];
 export const USER_STATUSES = ['ACTIVE', 'SUSPENDED', 'DELETED'] as const;
 export type UserStatus = typeof USER_STATUSES[number];
 
-export const USER_ROLES = ['CUSTOMER', 'ADMIN', 'MODERATOR', 'GUEST'] as const;
+export const USER_ROLES = ['CUSTOMER', 'ADMIN', 'MODERATOR', 'SUPPORT', 'GUEST'] as const;
 export type UserRole = typeof USER_ROLES[number];
 
 export const ORDER_TRANSITION_MAP: Record<OrderStatus, readonly OrderStatus[]> = {
@@ -256,6 +269,7 @@ export interface Order {
   carrier?: string | null;
   returnStatus?: 'NONE' | 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | string;
   returnReason?: string | null;
+  deliveries?: any[];
   items?: OrderItem[];
   createdAt: string;
   updatedAt?: string;
@@ -265,6 +279,32 @@ export interface OrderListResponse {
   orders: Order[];
   total: number;
 }
+
+export interface UpdateOrderStatusPayload {
+  status: OrderStatus | string;
+  courierName?: string;
+  trackingNumber?: string;
+}
+
+export interface ProductFilterFacets {
+  brands: string[];
+  processors: string[];
+  ramOptions: string[];
+  storageOptions: string[];
+  grades: string[];
+  categories: Array<{ id: string; name: string; slug: string; count: number }>;
+  priceRange: { min: number; max: number };
+  counts: {
+    brands: Record<string, number>;
+    processors: Record<string, number>;
+    ram: Record<string, number>;
+    storage: Record<string, number>;
+    grades: Record<string, number>;
+  };
+  totalCount: number;
+}
+
+
 
 export interface CreateOrderPayload {
   referralCode?: string;
@@ -277,29 +317,7 @@ export interface CreateOrderPayload {
   idempotencyKey?: string;
 }
 
-export interface SupportTicketMessage {
-  id: string;
-  ticketId: string;
-  sender: 'USER' | 'SUPPORT' | 'SYSTEM';
-  message: string;
-  attachments?: string[];
-  createdAt: string;
-}
 
-export interface SupportTicket {
-  id: string;
-  ticketNumber: string;
-  userId: string;
-  orderId?: string | null;
-  orderNumber?: string | null;
-  subject: string;
-  category: 'WARRANTY' | 'ORDER' | 'PAYMENT' | 'GENERAL' | string;
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
-  priority: 'LOW' | 'MEDIUM' | 'HIGH';
-  messages: SupportTicketMessage[];
-  createdAt: string;
-  updatedAt: string;
-}
 
 export interface NotificationPreferences {
   emailOrderUpdates: boolean;
@@ -352,5 +370,448 @@ export interface AdminSettings {
 }
 
 export type UpdateAdminSettingsDto = Partial<AdminSettings>;
+
+export interface CorporateInquiry {
+  id: string;
+  companyName: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  laptopModel?: string | null;
+  productId?: string | null;
+  mode: 'sell' | 'lease';
+  quantity: number;
+  city: string;
+  expectedTenure?: string | null;
+  notes?: string | null;
+  status: 'PENDING' | 'CONTACTED' | 'QUOTED' | 'CLOSED';
+  source: 'web' | 'mobile';
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface CreateCorporateInquiryDto {
+  companyName: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  laptopModel?: string | undefined;
+  productId?: string | undefined;
+  mode?: 'sell' | 'lease' | undefined;
+  quantity?: number | undefined;
+  city: string;
+  expectedTenure?: string | undefined;
+  notes?: string | undefined;
+  source?: 'web' | 'mobile' | undefined;
+  website?: string | undefined;
+}
+
+export interface AffiliatePaymentDetails {
+  id: string;
+  userId: string;
+  bankName?: string | null;
+  accountHolderName?: string | null;
+  accountNumberMasked?: string | null;
+  ifscCode?: string | null;
+  upiIdMasked?: string | null;
+  qrCodeKey?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  userId: string;
+  amount: number;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  paymentMethodSnapshot: string;
+  adminNotes?: string | null;
+  processedAt?: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface AuditLog {
+  id: string;
+  actorUserId?: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  metadata?: Record<string, any> | null;
+  createdAt: Date | string;
+}
+
+export interface SavePayoutDetailsDto {
+  bankName?: string;
+  accountHolderName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  upiId?: string;
+}
+
+export interface MaskedPayoutDetails {
+  configured: boolean;
+  bankName?: string | null;
+  accountHolderName?: string | null;
+  accountNumberMasked?: string | null;
+  ifscCodeMasked?: string | null;
+  upiIdMasked?: string | null;
+  hasQrCode: boolean;
+  updatedAt?: Date | string | null;
+}
+
+export interface WithdrawRequestDto {
+  amount: number;
+}
+
+export interface AffiliateSummary {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  referralCode: string;
+  referralTier: string;
+  referralEarnings: number;
+  referralReserved: number;
+  referralWithdrawn: number;
+  availableBalance: number;
+  clicksCount: number;
+  pendingWithdrawalsCount: number;
+  totalWithdrawalsCount: number;
+  createdAt: Date | string;
+}
+
+export interface AffiliateDetailResponse {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  status: string;
+  role: string;
+  referralCode: string;
+  referralTier: string;
+  referralEarnings: number;
+  referralReserved: number;
+  referralWithdrawn: number;
+  availableBalance: number;
+  referralLinkClickedCount: number;
+  payoutDetails?: MaskedPayoutDetails | null;
+  ledger: Array<{
+    id: string;
+    amount: number;
+    status: string;
+    adminNotes?: string | null;
+    processedAt?: Date | string | null;
+    createdAt: Date | string;
+  }>;
+  createdAt: Date | string;
+}
+
+export * from './legal-content';
+
+// ==========================================
+// Support & Help Center Types
+// ==========================================
+
+export const TICKET_STATUSES = [
+  'OPEN',
+  'PENDING_CUSTOMER',
+  'PENDING_STAFF',
+  'WAITING_PARTS',
+  'SCHEDULED_CALLBACK',
+  'RESOLVED',
+  'CLOSED',
+  'MERGED',
+] as const;
+export type TicketStatus = typeof TICKET_STATUSES[number];
+
+export const TICKET_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+export type TicketPriority = typeof TICKET_PRIORITIES[number];
+
+export const TICKET_CATEGORIES = [
+  'ORDER_INQUIRY',
+  'PAYMENT_ISSUE',
+  'HARDWARE_DEFECT',
+  'SOFTWARE_ISSUE',
+  'BATTERY_ISSUE',
+  'RETURN_REFUND',
+  'WARRANTY_CLAIM',
+  'GENERAL_INQUIRY',
+] as const;
+export type TicketCategory = typeof TICKET_CATEGORIES[number] | string;
+
+export const TICKET_EVENT_TYPES = [
+  'CREATED',
+  'MESSAGE',
+  'AUTO_CLOSE',
+  'CATEGORY_CHANGE',
+  'ATTACHMENT',
+  'RETURN_LINKED',
+  'FIRST_RESPONSE',
+  'STATUS_CHANGE',
+  'ASSIGNED',
+  'PRIORITY_CHANGE',
+  'NOTE_ADDED',
+  'ESCALATED',
+  'REOPENED',
+  'RESOLVED',
+  'CLOSED',
+] as const;
+export type TicketEventType = typeof TICKET_EVENT_TYPES[number];
+
+export interface SupportTicket {
+  id: string;
+  ticketNumber: string;
+  userId: string;
+  orderId?: string | null;
+  orderItemId?: string | null;
+  subject: string;
+  category: TicketCategory;
+  priority: TicketPriority;
+  status: TicketStatus;
+  firstResponseDueAt?: Date | string | null;
+  resolutionDueAt?: Date | string | null;
+  firstResponseAt?: Date | string | null;
+  resolvedAt?: Date | string | null;
+  closedAt?: Date | string | null;
+  slaBreached: boolean;
+  slaBreachReason?: string | null;
+  assigneeId?: string | null;
+  mergedIntoId?: string | null;
+  customerLastReadAt?: Date | string | null;
+  staffLastReadAt?: Date | string | null;
+  csatScore?: number | null;
+  csatComment?: string | null;
+  callbackSlot?: Date | string | null;
+  user?: Partial<User>;
+  order?: Partial<Order> | null;
+  rating?: { score: number; comment?: string } | null;
+  assignee?: Partial<User> | null;
+  messages?: TicketMessage[];
+  attachments?: TicketAttachment[];
+  events?: TicketEvent[];
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface TicketMessage {
+  id: string;
+  ticketId: string;
+  authorUserId: string;
+  isStaff: boolean;
+  isInternal: boolean;
+  body: string;
+  sender?: 'USER' | 'SUPPORT' | 'SYSTEM';
+  senderRole?: 'CUSTOMER' | 'STAFF' | 'SYSTEM';
+  message?: string;
+  metadata?: Record<string, any> | null;
+  author?: Partial<User>;
+  attachments?: TicketAttachment[];
+  createdAt: Date | string;
+}
+
+export type SupportTicketMessage = TicketMessage;
+
+export interface TicketAttachment {
+  id: string;
+  ticketId: string;
+  messageId?: string | null;
+  uploadedBy: string;
+  storageKey: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  confirmed: boolean;
+  downloadUrl?: string;
+  createdAt: Date | string;
+}
+
+export interface TicketEvent {
+  id: string;
+  ticketId: string;
+  actorUserId?: string | null;
+  eventType: TicketEventType;
+  oldValue?: string | null;
+  newValue?: string | null;
+  metadata?: Record<string, any> | null;
+  actor?: Partial<User> | null;
+  createdAt: Date | string;
+}
+
+export interface CreateTicketDto {
+  subject: string;
+  category: TicketCategory;
+  priority?: TicketPriority;
+  orderId?: string;
+  orderItemId?: string;
+  message: string;
+  issueType?: string;
+  callbackPhone?: string;
+  callbackSlot?: string;
+  attachments?: string[];
+}
+
+export interface AddTicketMessageDto {
+  body?: string;
+  content?: string;
+  message?: string;
+  isInternal?: boolean;
+  attachmentIds?: string[];
+  attachments?: string[];
+}
+
+export interface UpdateTicketDto {
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  category?: TicketCategory;
+  assigneeId?: string | null;
+  mergedIntoId?: string;
+  csatScore?: number;
+  csatComment?: string;
+}
+
+// Returns & Refunds
+export const RETURN_TYPES = ['REFUND', 'REPLACEMENT'] as const;
+export type ReturnType = typeof RETURN_TYPES[number];
+
+export const RETURN_STATUSES = [
+  'REQUESTED',
+  'APPROVED',
+  'REJECTED',
+  'INSPECTION_PASSED',
+  'INSPECTION_FAILED',
+  'REFUNDED',
+  'REPLACED',
+  'CANCELLED',
+] as const;
+export type ReturnStatus = typeof RETURN_STATUSES[number];
+
+export interface ReturnItem {
+  id: string;
+  returnRequestId: string;
+  orderItemId: string;
+  quantity: number;
+  reason?: string | null;
+  condition?: string | null;
+  restocked: boolean;
+  orderItem?: Partial<OrderItem>;
+  createdAt: Date | string;
+}
+
+export interface ReturnRequest {
+  id: string;
+  returnNumber: string;
+  orderId: string;
+  userId: string;
+  ticketId?: string | null;
+  type: ReturnType;
+  reason: string;
+  status: ReturnStatus;
+  refundAmount?: number | null;
+  hasRefundDetails?: boolean;
+  refundDetailsUpdatedAt?: Date | string | null;
+  pickupTrackingNumber?: string | null;
+  pickupAwb?: string | null;
+  pickupCourier?: string | null;
+  refundStatus?: string | null;
+  refundUtr?: string | null;
+  refundMethod?: string | null;
+  upiId?: string | null;
+  bankDetails?: {
+    accountNumber?: string;
+    ifscCode?: string;
+    accountHolderName?: string;
+  } | null;
+  adminNotes?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: Date | string | null;
+  processedBy?: string | null;
+  processedAt?: Date | string | null;
+  user?: Partial<User>;
+  order?: Partial<Order>;
+  items: ReturnItem[];
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface CreateReturnRequestDto {
+  orderId: string;
+  ticketId?: string;
+  type?: ReturnType;
+  reason: string;
+  items: Array<{
+    orderItemId: string;
+    quantity: number;
+    reason?: string;
+  }>;
+  refundDetails?: {
+    accountNumber?: string;
+    ifscCode?: string;
+    accountHolderName?: string;
+    upiId?: string;
+  };
+}
+
+export interface ProcessReturnDto {
+  status: ReturnStatus;
+  adminNotes?: string;
+  pickupTrackingNumber?: string;
+  refundAmount?: number;
+}
+
+// Help Center & Knowledge Base
+export interface HelpCategory {
+  id: string;
+  slug: string;
+  title: string;
+  name?: string;
+  icon?: string | null;
+  order: number;
+  isActive: boolean;
+  articles?: HelpArticle[];
+  _count?: { articles: number };
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface HelpArticle {
+  id: string;
+  categoryId: string;
+  slug: string;
+  title: string;
+  content: string;
+  summary?: string | null;
+  order: number;
+  isPublished: boolean;
+  helpfulCount: number;
+  notHelpfulCount: number;
+  locale: string;
+  category?: HelpCategory;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface SavedReply {
+  id: string;
+  shortcut: string;
+  title: string;
+  content: string;
+  category?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface SupportSettings {
+  id: string;
+  autoCloseDays: number;
+  firstResponseSlaMinutes: number;
+  resolutionSlaMinutes: number;
+  urgentFirstResponseSlaMinutes: number;
+  supportHoursText: string;
+  standardWarrantyDays: number;
+  returnWindowDays: number;
+  updatedAt: Date | string;
+}
+
+
 
 

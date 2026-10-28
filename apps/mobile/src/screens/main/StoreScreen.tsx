@@ -13,8 +13,9 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useProducts, useAddToCart } from '../../hooks/useApi';
+import { useProducts, useAddToCart, useProductFilters } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
+
 import { Product } from '@laptopmitra/types';
 import { MainStackNavigationProp } from '../../navigation/types';
 import ProductCard from '../../components/ProductCard';
@@ -132,8 +133,10 @@ export default function StoreScreen() {
   }
 
   const { data, isLoading, isRefetching, refetch } = useProducts(params);
+  const { data: filterFacets } = useProductFilters();
 
   const total = data?.total ?? 0;
+
   const rawProducts = data?.products ?? [];
   const hasMore = allProducts.length < total;
 
@@ -491,8 +494,10 @@ export default function StoreScreen() {
         brandCounts={brandCounts}
         ramCounts={ramCounts}
         storageCounts={storageCounts}
+        dynamicFacets={filterFacets}
       />
     </View>
+
   );
 }
 

@@ -16,26 +16,37 @@ export class CartController {
   }
 
   @Post('items')
-  @ApiOperation({ summary: 'Add item to cart' })
+  @ApiOperation({ summary: 'Add item to cart with purchaseMode, configuration, and warranty' })
   @ApiResponse({ status: 201 })
   async addItem(
     @GetUser() user: any,
     @Body('productId') productId: string,
     @Body('quantity') quantity?: number,
+    @Body('purchaseMode') purchaseMode?: 'sell' | 'lease',
+    @Body('configuration') configuration?: string,
+    @Body('hasWarranty') hasWarranty?: boolean,
   ) {
-    const result = await this.cartService.addItem(user.id, productId, quantity ?? 1);
+    const result = await this.cartService.addItem(
+      user.id,
+      productId,
+      quantity ?? 1,
+      purchaseMode,
+      configuration,
+      hasWarranty,
+    );
     return { cartItem: result, message: 'Item added to cart' };
   }
 
   @Put('items/:itemId')
-  @ApiOperation({ summary: 'Update cart item quantity' })
+  @ApiOperation({ summary: 'Update cart item quantity and warranty' })
   @ApiResponse({ status: 200 })
   async updateQuantity(
     @GetUser() user: any,
     @Param('itemId') itemId: string,
-    @Body('quantity') quantity: number,
+    @Body('quantity') quantity?: number,
+    @Body('hasWarranty') hasWarranty?: boolean,
   ) {
-    const result = await this.cartService.updateQuantity(user.id, itemId, quantity);
+    const result = await this.cartService.updateItem(user.id, itemId, { quantity, hasWarranty });
     return { cartItem: result, message: 'Cart item updated' };
   }
 

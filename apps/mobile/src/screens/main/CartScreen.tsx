@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   useCart,
   useUpdateCartItemQuantity,
+  useUpdateCartItem,
   useRemoveCartItem,
   useClearCart,
   useValidateDiscount,
@@ -32,6 +33,7 @@ export default function CartScreen() {
   const { isAuthenticated } = useAuth();
   const { data: cart, isLoading } = useCart();
   const updateQuantity = useUpdateCartItemQuantity();
+  const updateCartItem = useUpdateCartItem();
   const removeItem = useRemoveCartItem();
   const clearCart = useClearCart();
 
@@ -59,6 +61,20 @@ export default function CartScreen() {
     setUpdatingItemId(item.id);
     updateQuantity.mutate(
       { itemId: item.id, quantity: newQuantity },
+      {
+        onSettled: () => setUpdatingItemId(null),
+      },
+    );
+  };
+
+  const handleToggleWarranty = (item: CartItem) => {
+    if (item.purchaseMode === 'lease') return;
+    setUpdatingItemId(item.id);
+    updateCartItem.mutate(
+      {
+        itemId: item.id,
+        hasWarranty: !item.hasWarranty,
+      },
       {
         onSettled: () => setUpdatingItemId(null),
       },
@@ -122,19 +138,29 @@ export default function CartScreen() {
     setDiscountCode('');
   };
 
-  // Calculate totals
-  const subtotal =
-    cart?.total ??
-    cart?.items?.reduce((sum: number, item: CartItem) => {
-      const price = typeof item.priceAtAdd === 'string' ? parseFloat(item.priceAtAdd) : item.priceAtAdd;
-      return sum + (price || 0) * (item.quantity || 1);
-    }, 0) ??
-    0;
+  const items = cart?.items ?? [];
+
+  // Calculate Option A Commercial Totals
+  const oneTimeTotal = items
+    .filter((it: CartItem) => it.purchaseMode !== 'lease')
+    .reduce((sum: number, it: CartItem) => {
+      const p = typeof it.priceAtAdd === 'string' ? parseFloat(it.priceAtAdd) : (it.priceAtAdd || 0);
+      const w = it.hasWarranty ? (typeof it.warrantyPrice === 'string' ? parseFloat(it.warrantyPrice) : (it.warrantyPrice || 1999)) : 0;
+      return sum + (p + w) * (it.quantity || 1);
+    }, 0);
+
+  const monthlyTotal = items
+    .filter((it: CartItem) => it.purchaseMode === 'lease')
+    .reduce((sum: number, it: CartItem) => {
+      const p = typeof it.priceAtAdd === 'string' ? parseFloat(it.priceAtAdd) : (it.priceAtAdd || 0);
+      return sum + p * (it.quantity || 1);
+    }, 0);
+
+  const subtotal = oneTimeTotal + monthlyTotal;
 
   const itemCount =
     cart?.itemCount ??
-    cart?.items?.reduce((sum: number, item: CartItem) => sum + (item.quantity || 1), 0) ??
-    0;
+    items.reduce((sum: number, item: CartItem) => sum + (item.quantity || 1), 0);
 
   const finalAmount = appliedDiscount ? Math.max(0, subtotal - appliedDiscount.discountAmount) : subtotal;
 
@@ -168,8 +194,6 @@ export default function CartScreen() {
     );
   }
 
-  const items = cart?.items ?? [];
-
   if (items.length === 0) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
@@ -197,6 +221,10 @@ export default function CartScreen() {
     const isUpdating = updatingItemId === item.id;
     const meta = product?.metadata || {};
     const specs = [meta.ram, meta.storage].filter(Boolean).join(' • ');
+    const isLease = item.purchaseMode === 'lease';
+    const itemUnitPrice = typeof item.priceAtAdd === 'string' ? parseFloat(item.priceAtAdd) : (item.priceAtAdd || 0);
+    const warrantyCost = item.hasWarranty && !isLease ? (typeof item.warrantyPrice === 'string' ? parseFloat(item.warrantyPrice) : (item.warrantyPrice || 1999)) : 0;
+    const totalLinePrice = (itemUnitPrice + warrantyCost) * item.quantity;
 
     return (
       <View style={styles.cartCard}>
@@ -218,6 +246,20 @@ export default function CartScreen() {
 
         {/* Info */}
         <View style={styles.cardInfo}>
+          {/* Mode & Config Badges */}
+          <View style={styles.itemBadgeRow}>
+            <View style={[styles.modeBadge, isLease ? styles.modeBadgeLease : styles.modeBadgeBuy]}>
+              <Text style={[styles.modeBadgeText, isLease ? styles.modeBadgeTextLease : styles.modeBadgeTextBuy]}>
+                {isLease ? 'Rent / mo' : 'Buy'}
+              </Text>
+            </View>
+            {item.configuration === 'ram-16gb' && (
+              <View style={styles.configBadge}>
+                <Text style={styles.configBadgeText}>16GB RAM</Text>
+              </View>
+            )}
+          </View>
+
           <Text style={styles.itemName} numberOfLines={2}>
             {product?.name ?? 'Laptop Item'}
           </Text>
@@ -228,14 +270,41 @@ export default function CartScreen() {
             </Text>
           ) : null}
 
+          {/* Pricing */}
           <View style={styles.cardPriceRow}>
-            <Text style={styles.itemPrice}>{formatPrice(item.priceAtAdd)}</Text>
+            <Text style={styles.itemPrice}>
+              {formatPrice(itemUnitPrice)}
+              {isLease && <Text style={styles.perMoNote}> / mo</Text>}
+            </Text>
             {item.quantity > 1 && (
               <Text style={styles.subtotalText}>
-                Total: {formatPrice((typeof item.priceAtAdd === 'string' ? parseFloat(item.priceAtAdd) : item.priceAtAdd) * item.quantity)}
+                Total: {formatPrice(totalLinePrice)}
               </Text>
             )}
           </View>
+
+          {/* Lease Option A Notice */}
+          {isLease ? (
+            <Text style={styles.leaseNoticeText}>
+              Month 1 advance, {formatPrice(itemUnitPrice)}/mo thereafter. Later months are invoiced separately.
+            </Text>
+          ) : (
+            /* Warranty Toggle for Buy */
+            <TouchableOpacity
+              style={styles.warrantyToggleRow}
+              onPress={() => handleToggleWarranty(item)}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={item.hasWarranty ? 'checkbox' : 'square-outline'}
+                size={16}
+                color={item.hasWarranty ? colors.primary : colors.textMuted}
+              />
+              <Text style={styles.warrantyToggleText}>
+                +1-Year Warranty ({formatPrice(item.warrantyPrice || 1999)})
+              </Text>
+            </TouchableOpacity>
+          )}
 
           {/* Stepper and Delete */}
           <View style={styles.cardActionsRow}>
@@ -341,8 +410,26 @@ export default function CartScreen() {
             {/* Price Breakdown Card */}
             <View style={styles.breakdownCard}>
               <Text style={styles.breakdownTitle}>Order Summary</Text>
+
+              {oneTimeTotal > 0 && (
+                <View style={styles.breakdownRow}>
+                  <Text style={styles.breakdownLabel}>Direct Purchases</Text>
+                  <Text style={styles.breakdownValue}>{formatPrice(oneTimeTotal)}</Text>
+                </View>
+              )}
+
+              {monthlyTotal > 0 && (
+                <View style={styles.breakdownRow}>
+                  <View>
+                    <Text style={styles.breakdownLabel}>Month 1 Advance Rentals</Text>
+                    <Text style={styles.breakdownSubLabel}>(Later months billed separately)</Text>
+                  </View>
+                  <Text style={styles.breakdownValue}>{formatPrice(monthlyTotal)}</Text>
+                </View>
+              )}
+
               <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Subtotal ({itemCount} items)</Text>
+                <Text style={styles.breakdownLabel}>Subtotal Due Now</Text>
                 <Text style={styles.breakdownValue}>{formatPrice(subtotal)}</Text>
               </View>
 
@@ -366,7 +453,7 @@ export default function CartScreen() {
               <View style={styles.divider} />
 
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Amount</Text>
+                <Text style={styles.totalLabel}>Total Due Now</Text>
                 <Text style={styles.totalValue}>{formatPrice(finalAmount)}</Text>
               </View>
             </View>
@@ -723,5 +810,75 @@ const styles = StyleSheet.create({
   },
   checkoutBtn: {
     flex: 1.5,
+  },
+  itemBadgeRow: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  modeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: radius.xs,
+  },
+  modeBadgeBuy: {
+    backgroundColor: '#DCFCE7',
+  },
+  modeBadgeLease: {
+    backgroundColor: '#FEF3C7',
+  },
+  modeBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  modeBadgeTextBuy: {
+    color: '#15803D',
+  },
+  modeBadgeTextLease: {
+    color: '#92400E',
+  },
+  configBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: radius.xs,
+  },
+  configBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#1D4ED8',
+  },
+  perMoNote: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  leaseNoticeText: {
+    fontSize: 10,
+    color: '#92400E',
+    fontWeight: '600',
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: radius.xs,
+    marginTop: 2,
+  },
+  warrantyToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  warrantyToggleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  breakdownSubLabel: {
+    fontSize: 10,
+    color: '#92400E',
+    fontWeight: '500',
   },
 });

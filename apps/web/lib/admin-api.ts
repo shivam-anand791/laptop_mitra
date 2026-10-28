@@ -10,6 +10,7 @@ import {
   AdminAnalyticsResponse,
   AdminSettings,
   UpdateAdminSettingsDto,
+  CorporateInquiry,
 } from './types';
 
 /**
@@ -91,12 +92,21 @@ export const adminApi = {
    * PUT /admin/orders/:id/status
    * Updates an order status (PENDING, CONFIRMED, SHIPPING, DELIVERED, CANCELLED, REFUNDED).
    */
-  async updateOrderStatus(id: string, status: OrderStatus | string): Promise<AdminOrder> {
+  async updateOrderStatus(
+    id: string,
+    status: OrderStatus | string,
+    trackingInfo?: { courierName?: string; trackingNumber?: string },
+  ): Promise<AdminOrder> {
     return await request<AdminOrder>(`/admin/orders/${id}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({
+        status,
+        ...(trackingInfo?.courierName ? { courierName: trackingInfo.courierName } : {}),
+        ...(trackingInfo?.trackingNumber ? { trackingNumber: trackingInfo.trackingNumber } : {}),
+      }),
     });
   },
+
 
   /**
    * GET /admin/products
@@ -183,4 +193,253 @@ export const adminApi = {
       body: JSON.stringify(data),
     });
   },
+
+  /**
+   * GET /admin/inquiries
+   * Retrieves corporate procurement inquiries with status filtering and pagination.
+   */
+  async getCorporateInquiries(params?: {
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ items: CorporateInquiry[]; total: number; page: number; pageSize: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status && params.status !== 'all') searchParams.set('status', params.status);
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    const qs = searchParams.toString();
+    return await request<{ items: CorporateInquiry[]; total: number; page: number; pageSize: number }>(
+      `/admin/inquiries${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  /**
+   * PUT /admin/inquiries/:id/status
+   * Updates the workflow status of a corporate procurement inquiry.
+   */
+  async updateCorporateInquiryStatus(
+    id: string,
+    status: 'PENDING' | 'CONTACTED' | 'QUOTED' | 'CLOSED' | string,
+    adminNotes?: string,
+  ): Promise<CorporateInquiry> {
+    return await request<CorporateInquiry>(`/admin/inquiries/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, adminNotes }),
+    });
+  },
+
+  // ---------------------------------------------------------------------------
+  // Support & Ticketing Workspace (Phase S5)
+  // ---------------------------------------------------------------------------
+
+  async getAdminTickets(params?: {
+    status?: string;
+    category?: string;
+    priority?: string;
+    assigneeId?: string;
+    slaBreached?: boolean;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ items: any[]; total: number; page: number; pageSize: number; openCount: number; breachedCount: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status && params.status !== 'all') searchParams.set('status', params.status);
+    if (params?.category && params.category !== 'all') searchParams.set('category', params.category);
+    if (params?.priority && params.priority !== 'all') searchParams.set('priority', params.priority);
+    if (params?.assigneeId && params.assigneeId !== 'all') searchParams.set('assigneeId', params.assigneeId);
+    if (params?.slaBreached) searchParams.set('slaBreached', 'true');
+    if (params?.search && params.search.trim()) searchParams.set('search', params.search.trim());
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    const qs = searchParams.toString();
+    return await request<any>(`/support/admin/tickets${qs ? `?${qs}` : ''}`);
+  },
+
+  async getAdminTicket(id: string): Promise<any> {
+    return await request<any>(`/support/admin/tickets/${id}`);
+  },
+
+  async updateAdminTicket(id: string, data: {
+    status?: string;
+    priority?: string;
+    assigneeId?: string | null;
+    category?: string;
+    adminNotes?: string;
+  }): Promise<any> {
+    return await request<any>(`/support/admin/tickets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async addTicketInternalNote(ticketId: string, note: string): Promise<any> {
+    return await request<any>(`/support/admin/tickets/${ticketId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  },
+
+  async mergeTickets(sourceTicketId: string, targetTicketId: string): Promise<any> {
+    return await request<any>(`/support/admin/tickets/${sourceTicketId}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ targetTicketId }),
+    });
+  },
+
+  async getStaffUsers(): Promise<Array<{ id: string; name: string; email: string; role: string }>> {
+    return await request<any[]>('/support/admin/staff');
+  },
+
+  // ---------------------------------------------------------------------------
+  // Returns & Refunds Workspace (Phase S5)
+  // ---------------------------------------------------------------------------
+
+  async getAdminReturns(params?: {
+    status?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ items: any[]; total: number; page: number; pageSize: number; requestedCount: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status && params.status !== 'all') searchParams.set('status', params.status);
+    if (params?.search && params.search.trim()) searchParams.set('search', params.search.trim());
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    const qs = searchParams.toString();
+    return await request<any>(`/support/admin/returns${qs ? `?${qs}` : ''}`);
+  },
+
+  async getAdminReturn(id: string): Promise<any> {
+    return await request<any>(`/support/admin/returns/${id}`);
+  },
+
+  async processAdminReturn(id: string, data: {
+    status: string;
+    adminNotes?: string;
+    rejectionReason?: string;
+    pickupCourier?: string;
+    pickupTrackingNumber?: string;
+    inspectionNotes?: string;
+    inspectionPassed?: boolean;
+  }): Promise<any> {
+    return await request<any>(`/support/admin/returns/${id}/process`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async processAdminRefund(id: string, data: {
+    refundAmount?: number;
+    manualRefundReference?: string;
+  }): Promise<any> {
+    return await request<any>(`/support/admin/returns/${id}/refund`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async decryptRefundDetails(id: string): Promise<{ success: boolean; details: any }> {
+    return await request<{ success: boolean; details: any }>(`/support/admin/returns/${id}/refund-details/decrypt`);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Saved Replies CRUD
+  // ---------------------------------------------------------------------------
+
+  async getSavedReplies(category?: string): Promise<any[]> {
+    const qs = category && category !== 'all' ? `?category=${encodeURIComponent(category)}` : '';
+    return await request<any[]>(`/support/admin/saved-replies${qs}`);
+  },
+
+  async createSavedReply(data: { shortcut: string; title: string; content: string; category?: string }): Promise<any> {
+    return await request<any>('/support/admin/saved-replies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateSavedReply(id: string, data: Partial<{ shortcut: string; title: string; content: string; category?: string }>): Promise<any> {
+    return await request<any>(`/support/admin/saved-replies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteSavedReply(id: string): Promise<{ success: boolean }> {
+    return await request<any>(`/support/admin/saved-replies/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // ---------------------------------------------------------------------------
+  // Help Center Categories & Articles
+  // ---------------------------------------------------------------------------
+
+  async getAdminHelpCategories(): Promise<any[]> {
+    return await request<any[]>('/support/admin/help/categories');
+  },
+
+  async createAdminHelpCategory(data: { title: string; slug: string; icon?: string; order?: number }): Promise<any> {
+    return await request<any>('/support/admin/help/categories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateAdminHelpCategory(id: string, data: any): Promise<any> {
+    return await request<any>(`/support/admin/help/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteAdminHelpCategory(id: string): Promise<{ success: boolean }> {
+    return await request<any>(`/support/admin/help/categories/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getAdminHelpArticles(): Promise<any[]> {
+    return await request<any[]>('/support/admin/help/articles');
+  },
+
+  async createAdminHelpArticle(data: { categoryId: string; title: string; slug: string; content: string; summary?: string; isPublished?: boolean; order?: number }): Promise<any> {
+    return await request<any>('/support/admin/help/articles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateAdminHelpArticle(id: string, data: any): Promise<any> {
+    return await request<any>(`/support/admin/help/articles/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteAdminHelpArticle(id: string): Promise<{ success: boolean }> {
+    return await request<any>(`/support/admin/help/articles/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // ---------------------------------------------------------------------------
+  // Support Settings & Reports
+  // ---------------------------------------------------------------------------
+
+  async getSupportSettings(): Promise<any> {
+    return await request<any>('/support/admin/settings');
+  },
+
+  async updateSupportSettings(data: any): Promise<any> {
+    return await request<any>('/support/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getSupportReports(): Promise<any> {
+    return await request<any>('/support/admin/reports');
+  },
 };
+

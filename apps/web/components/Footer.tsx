@@ -1,6 +1,11 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import {
+  NEXT_PUBLIC_SUPPORT_PHONE,
+  NEXT_PUBLIC_SUPPORT_PHONE_DISPLAY,
+  NEXT_PUBLIC_WHATSAPP_NUMBER,
+} from '../lib/config';
 
 export default function Footer() {
   return (
@@ -120,7 +125,22 @@ export default function Footer() {
             </h3>
             <ul className="space-y-2 text-xs text-slate-400">
               <li>
-                <Link href="/products" className="hover:text-white transition-colors">
+                <Link href="/help" className="text-blue-400 hover:text-white font-bold transition-colors">
+                  Help &amp; Support Hub
+                </Link>
+              </li>
+              <li>
+                <Link href="/help/guided-flow" className="hover:text-white transition-colors">
+                  Raise a Support Ticket
+                </Link>
+              </li>
+              <li>
+                <Link href="/buyback-guarantee" className="hover:text-white transition-colors">
+                  Guaranteed Buyback (Up to 70%)
+                </Link>
+              </li>
+              <li>
+                <Link href="/terms" className="hover:text-white transition-colors">
                   Warranty &amp; Returns Policy
                 </Link>
               </li>
@@ -135,12 +155,12 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <a href="tel:+919999999999" className="hover:text-white transition-colors">
-                  Direct Call: +91 99999 99999
+                <a href={`tel:${NEXT_PUBLIC_SUPPORT_PHONE}`} className="hover:text-white transition-colors">
+                  Direct Call: {NEXT_PUBLIC_SUPPORT_PHONE_DISPLAY}
                 </a>
               </li>
               <li>
-                <a href="https://wa.me/919999999999" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
+                <a href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
                   WhatsApp Support
                 </a>
               </li>
@@ -154,12 +174,12 @@ export default function Footer() {
             </h3>
             <ul className="space-y-2 text-xs text-slate-400">
               <li>
-                <Link href="/" className="hover:text-white transition-colors">
+                <Link href="/about" className="hover:text-white transition-colors">
                   About LaptopMitra
                 </Link>
               </li>
               <li>
-                <Link href="/" className="hover:text-white transition-colors">
+                <Link href="/about" className="hover:text-white transition-colors">
                   32-Point Quality Process
                 </Link>
               </li>
@@ -181,13 +201,13 @@ export default function Footer() {
         <div className="mt-12 pt-6 border-t border-[#132E6B]/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
           <p>© {new Date().getFullYear()} LaptopMitra. All rights reserved. Certified Refurbished Hardware.</p>
           <div className="flex items-center space-x-6">
-            <Link href="/" className="hover:text-slate-200 transition-colors">
+            <Link href="/privacy" className="hover:text-slate-200 transition-colors">
               Privacy Policy
             </Link>
-            <Link href="/" className="hover:text-slate-200 transition-colors">
+            <Link href="/terms" className="hover:text-slate-200 transition-colors">
               Terms of Service
             </Link>
-            <Link href="/" className="hover:text-slate-200 transition-colors">
+            <Link href="/terms" className="hover:text-slate-200 transition-colors">
               Security &amp; Warranty
             </Link>
           </div>

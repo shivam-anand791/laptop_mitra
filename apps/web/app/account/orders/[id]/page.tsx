@@ -20,6 +20,7 @@ import {
   X,
   Printer,
   ShoppingBag,
+  HelpCircle,
 } from 'lucide-react';
 
 export default function OrderDetailPage() {
@@ -176,6 +177,14 @@ export default function OrderDetailPage() {
             Tax Invoice (GST)
           </button>
 
+          <Link
+            href={`/help/guided-flow?orderId=${order.id}`}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 rounded-xl text-xs font-bold transition shadow-sm"
+          >
+            <HelpCircle className="w-4 h-4 text-amber-600" />
+            Need help with this order?
+          </Link>
+
           <button
             onClick={handleReorder}
             disabled={reordering}
@@ -213,10 +222,11 @@ export default function OrderDetailPage() {
               Delivery Tracking
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Carrier: <span className="font-semibold text-slate-800">{order.carrier || 'BlueDart Express'}</span> • AWB Tracking Number:{' '}
-              <span className="font-mono font-bold text-blue-600">{order.trackingNumber || `BD-${order.orderNumber}`}</span>
+              Carrier: <span className="font-semibold text-slate-800">{order.carrier || (order.status === 'SHIPPING' || order.status === 'DELIVERED' ? 'Express Courier' : 'Awaiting Dispatch')}</span> • AWB Tracking Number:{' '}
+              <span className="font-mono font-bold text-blue-600">{order.trackingNumber || (order.status === 'SHIPPING' || order.status === 'DELIVERED' ? 'In Dispatch Processing' : 'Pending Assignment')}</span>
             </p>
           </div>
+
           <div>
             <span
               className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -263,38 +273,76 @@ export default function OrderDetailPage() {
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-4">
         <h3 className="text-base font-bold text-slate-900">Items Ordered</h3>
         <div className="divide-y divide-slate-100">
-          {order.items?.map((item) => (
-            <div key={item.id} className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-200 overflow-hidden flex items-center justify-center p-1.5 flex-shrink-0">
-                  <img
-                    src={item.product?.images?.[0]?.url || 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=200'}
-                    alt="Product"
-                    className="object-contain w-full h-full"
-                  />
-                </div>
-                <div>
-                  <h4 className="font-bold text-sm text-slate-900">{item.product?.name || 'Enterprise Certified Laptop'}</h4>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    SKU: {item.product?.sku || 'LM-SKU-992'} • Qty: {item.quantity}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                      <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                      1-Year Assured Warranty (Active)
-                    </span>
+          {order.items?.map((item) => {
+            const isLease = item.purchaseMode === 'lease';
+            const unitPrice = Number(item.price);
+            const warrantyAmount = (!isLease && item.hasWarranty) ? (item.warrantyPrice || 1999) : 0;
+            const lineTotal = (unitPrice + warrantyAmount) * item.quantity;
+
+            return (
+              <div key={item.id} className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-200 overflow-hidden flex items-center justify-center p-1.5 flex-shrink-0">
+                    <img
+                      src={item.product?.images?.[0]?.url || 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=200'}
+                      alt="Product"
+                      className="object-contain w-full h-full"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                      {isLease ? (
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-200">
+                          RENT / mo
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-[#1D6FF2] px-2 py-0.5 rounded border border-blue-200">
+                          BUY
+                        </span>
+                      )}
+                      {item.configuration === 'ram-16gb' && (
+                        <span className="text-[10px] font-bold bg-amber-50 text-amber-800 px-2 py-0.5 rounded border border-amber-200">
+                          16GB Pro Upgrade
+                        </span>
+                      )}
+                    </div>
+
+                    <h4 className="font-bold text-sm text-slate-900">{item.product?.name || 'Enterprise Certified Laptop'}</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      SKU: {item.product?.sku || 'LM-SKU-992'} • Qty: {item.quantity}
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
+                      {isLease ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                            Quarterly Enterprise Servicing Included
+                          </span>
+                          <p className="text-[11px] text-purple-700 font-medium">
+                            Charged as Month 1 advance, ₹{unitPrice.toLocaleString('en-IN')}/month thereafter. Later months are invoiced separately.
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          {item.hasWarranty ? '2-Year Extended Assured Warranty (Active)' : '1-Year Standard Assured Warranty (Active)'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="text-right">
-                <p className="text-base font-black text-slate-900">
-                  ₹{Number(item.price).toLocaleString('en-IN')}
-                </p>
-                <span className="text-[11px] text-slate-400">Incl. 18% GST</span>
+                <div className="text-right">
+                  <p className="text-base font-black text-slate-900">
+                    ₹{lineTotal.toLocaleString('en-IN')}
+                  </p>
+                  <span className="text-[11px] text-slate-400">
+                    {isLease ? 'Month 1 advance • Incl. GST' : 'Incl. 18% GST'}
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -505,14 +553,46 @@ export default function OrderDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {invoiceData.order.items?.map((it: any) => (
-                    <tr key={it.id}>
-                      <td className="p-3 font-semibold text-slate-900">{it.product?.name || 'Laptop'}</td>
-                      <td className="p-3 text-center">{it.quantity}</td>
-                      <td className="p-3 text-right">₹{Number(it.price).toLocaleString('en-IN')}</td>
-                      <td className="p-3 text-right font-bold">₹{(Number(it.price) * it.quantity).toLocaleString('en-IN')}</td>
-                    </tr>
-                  ))}
+                  {invoiceData.order.items?.map((it: any) => {
+                    const isLease = it.purchaseMode === 'lease';
+                    return (
+                      <tr key={it.id}>
+                        <td className="p-3">
+                          <div className="font-semibold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                            <span>{it.product?.name || 'Laptop'}</span>
+                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                              isLease ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              {isLease ? 'Rent / mo' : 'Buy'}
+                            </span>
+                            {it.configuration === 'ram-16gb' && (
+                              <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                                16GB RAM Upgrade
+                              </span>
+                            )}
+                            {it.hasWarranty && !isLease && (
+                              <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800">
+                                +1 Yr Warranty
+                              </span>
+                            )}
+                          </div>
+                          {isLease && (
+                            <p className="text-[11px] text-amber-700 mt-0.5 font-medium">
+                              Month 1 advance, ₹{Number(it.price).toLocaleString('en-IN')}/month thereafter. Later months are invoiced separately.
+                            </p>
+                          )}
+                        </td>
+                        <td className="p-3 text-center">{it.quantity}</td>
+                        <td className="p-3 text-right">
+                          ₹{Number(it.price).toLocaleString('en-IN')}
+                          {isLease && <span className="text-[10px] text-slate-400 block font-normal">(1st Month)</span>}
+                        </td>
+                        <td className="p-3 text-right font-bold">
+                          ₹{((Number(it.price) + (it.hasWarranty && !isLease ? Number(it.warrantyPrice || 1999) : 0)) * it.quantity).toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

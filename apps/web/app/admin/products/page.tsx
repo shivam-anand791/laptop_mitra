@@ -29,6 +29,9 @@ export default function ProductsPage() {
     name: '',
     sku: '',
     price: '',
+    leasePriceMonthly: '',
+    bulkSellPrice: '',
+    bulkLeasePrice: '',
     stock: '',
     shortDescription: '',
     description: '',
@@ -41,8 +44,9 @@ export default function ProductsPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getAdminProducts();
-      setProducts(data);
+      const data: any = await api.getAdminProducts();
+      const productList = Array.isArray(data) ? data : data?.items || [];
+      setProducts(productList);
     } catch (err: any) {
       console.error('Failed to load products:', err);
       setError(err?.message || 'Failed to fetch catalog from backend');
@@ -66,6 +70,9 @@ export default function ProductsPage() {
       const created = await api.createAdminProduct({
         ...newProductData,
         price: parseFloat(newProductData.price),
+        leasePriceMonthly: newProductData.leasePriceMonthly ? parseFloat(newProductData.leasePriceMonthly) : undefined,
+        bulkSellPrice: newProductData.bulkSellPrice ? parseFloat(newProductData.bulkSellPrice) : undefined,
+        bulkLeasePrice: newProductData.bulkLeasePrice ? parseFloat(newProductData.bulkLeasePrice) : undefined,
         stock: parseInt(newProductData.stock || '0', 10),
       });
       setProducts([created, ...products]);
@@ -74,6 +81,9 @@ export default function ProductsPage() {
         name: '',
         sku: '',
         price: '',
+        leasePriceMonthly: '',
+        bulkSellPrice: '',
+        bulkLeasePrice: '',
         stock: '',
         shortDescription: '',
         description: '',
@@ -411,6 +421,41 @@ export default function ProductsPage() {
                     value={newProductData.price}
                     onChange={(e) => setNewProductData({ ...newProductData, price: e.target.value })}
                     className="input w-full"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Lease (₹/mo)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 2999"
+                    value={newProductData.leasePriceMonthly}
+                    onChange={(e) => setNewProductData({ ...newProductData, leasePriceMonthly: e.target.value })}
+                    className="input w-full text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Bulk Buy (5+)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 34999"
+                    value={newProductData.bulkSellPrice}
+                    onChange={(e) => setNewProductData({ ...newProductData, bulkSellPrice: e.target.value })}
+                    className="input w-full text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Bulk Lease (₹/mo)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 2499"
+                    value={newProductData.bulkLeasePrice}
+                    onChange={(e) => setNewProductData({ ...newProductData, bulkLeasePrice: e.target.value })}
+                    className="input w-full text-xs"
                   />
                 </div>
               </div>

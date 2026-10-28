@@ -27,9 +27,19 @@ export class ProductController {
     return this.productService.findAll(filters);
   }
 
+  @Get('filters')
+  @Public()
+  @ApiOperation({ summary: 'Get dynamic filter facets from active product catalog' })
+  @ApiResponse({ status: 200, description: 'Distinct brands, processors, RAM, storage, and price range' })
+  getFilters() {
+    return this.productService.getFilterFacets();
+  }
+
   @Get(':id')
+
   @Public()
   @ApiOperation({ summary: 'Get product by ID' })
+
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
   findOne(@Param('id') id: string, @Query('include') include: string = 'category,images') {

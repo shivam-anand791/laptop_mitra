@@ -29,3 +29,12 @@ export const API_BASE_URL: string =
   process.env.EXPO_PUBLIC_API_URL ??
   extra.API_URL ??
   `http://${apiHost}:${apiPort}`;
+
+export const SUPPORT_PHONE: string =
+  process.env.EXPO_PUBLIC_SUPPORT_PHONE ?? '+917701993300';
+
+export const SUPPORT_PHONE_DISPLAY: string =
+  process.env.EXPO_PUBLIC_SUPPORT_PHONE_DISPLAY ?? '+91 7701993300';
+
+export const WHATSAPP_NUMBER: string =
+  process.env.EXPO_PUBLIC_WHATSAPP_NUMBER ?? '917701993300';

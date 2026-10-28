@@ -20,7 +20,16 @@ export function useProduct(id: string) {
   });
 }
 
+export function useProductFilters() {
+  const { getClient } = useAuth();
+  return useQuery({
+    queryKey: ['productFilters'],
+    queryFn: () => getClient().getProductFilters(),
+  });
+}
+
 // Cart hooks
+
 export function useCart() {
   const { getClient, isAuthenticated } = useAuth();
   return useQuery<Cart & { total: number; itemCount: number }>({
@@ -55,8 +64,43 @@ export function useAddToCart() {
   const queryClient = useQueryClient();
   const { getClient } = useAuth();
   return useMutation({
-    mutationFn: ({ productId, quantity }: { productId: string; quantity?: number }) =>
-      getClient().addToCart(productId, quantity),
+    mutationFn: ({
+      productId,
+      quantity,
+      purchaseMode,
+      configuration,
+      hasWarranty,
+    }: {
+      productId: string;
+      quantity?: number;
+      purchaseMode?: 'sell' | 'lease';
+      configuration?: string;
+      hasWarranty?: boolean;
+    }) => getClient().addToCart(productId, quantity, purchaseMode, configuration, hasWarranty),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cart'] });
+    },
+  });
+}
+
+export function useUpdateCartItem() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: ({
+      itemId,
+      quantity,
+      hasWarranty,
+    }: {
+      itemId: string;
+      quantity?: number;
+      hasWarranty?: boolean;
+    }) => {
+      const payload: { quantity?: number; hasWarranty?: boolean } = {};
+      if (quantity !== undefined) payload.quantity = quantity;
+      if (hasWarranty !== undefined) payload.hasWarranty = hasWarranty;
+      return getClient().updateCartItem(itemId, payload);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cart'] });
     },
@@ -400,57 +444,7 @@ export function usePaymentHistory() {
   });
 }
 
-// Support & Warranty hooks
-export function useTickets() {
-  const { getClient, isAuthenticated } = useAuth();
-  return useQuery({
-    queryKey: ['support-tickets'],
-    queryFn: () => getClient().getTickets(),
-    enabled: isAuthenticated,
-  });
-}
 
-export function useCreateTicket() {
-  const queryClient = useQueryClient();
-  const { getClient } = useAuth();
-  return useMutation({
-    mutationFn: (data: { subject: string; message: string; category?: string; orderId?: string }) =>
-      getClient().createTicket(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['support-tickets'] });
-    },
-  });
-}
-
-export function useAddTicketMessage() {
-  const queryClient = useQueryClient();
-  const { getClient } = useAuth();
-  return useMutation({
-    mutationFn: ({ ticketId, message }: { ticketId: string; message: string }) =>
-      getClient().addTicketMessage(ticketId, message),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['support-tickets'] });
-    },
-  });
-}
-
-export function useTicket(id: string) {
-  const { getClient, isAuthenticated } = useAuth();
-  return useQuery({
-    queryKey: ['support-ticket', id],
-    queryFn: () => getClient().getTicket(id),
-    enabled: isAuthenticated && !!id,
-  });
-}
-
-export function useWarrantyStatus(orderItemId: string) {
-  const { getClient, isAuthenticated } = useAuth();
-  return useQuery({
-    queryKey: ['warranty-status', orderItemId],
-    queryFn: () => getClient().getWarrantyStatus(orderItemId),
-    enabled: isAuthenticated && !!orderItemId,
-  });
-}
 
 // Referral / Affiliate hook
 export function useReferralStats() {
@@ -497,5 +491,181 @@ export function useDeleteAccount() {
     mutationFn: () => getClient().deleteAccount(),
   });
 }
+
+// Support & Help Center hooks
+export function useSupportConfig() {
+  const { getClient } = useAuth();
+  return useQuery({
+    queryKey: ['support-config'],
+    queryFn: () => getClient().getSupportConfig(),
+    staleTime: 1000 * 60 * 30, // 30 minutes
+  });
+}
+
+export function useHelpCategories() {
+  const { getClient } = useAuth();
+  return useQuery({
+    queryKey: ['help-categories'],
+    queryFn: () => getClient().getHelpCategories(),
+    staleTime: 1000 * 60 * 10,
+  });
+}
+
+export function useHelpArticles(params?: { category?: string; search?: string; q?: string }) {
+  const { getClient } = useAuth();
+  return useQuery({
+    queryKey: ['help-articles', params],
+    queryFn: () => getClient().getHelpArticles(params),
+  });
+}
+
+export function useHelpArticle(slug: string) {
+  const { getClient } = useAuth();
+  return useQuery({
+    queryKey: ['help-article', slug],
+    queryFn: () => getClient().getHelpArticle(slug),
+    enabled: !!slug,
+  });
+}
+
+export function useVoteHelpArticle() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: ({ id, helpful }: { id: string; helpful: boolean }) =>
+      getClient().voteHelpArticle(id, helpful),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['help-article'] });
+    },
+  });
+}
+
+export function useTickets(params?: { status?: string }) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['tickets', params],
+    queryFn: () => getClient().getTickets(params),
+    enabled: isAuthenticated,
+    refetchInterval: 15000, // poll every 15s for live updates
+  });
+}
+
+export function useTicket(id: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['ticket', id],
+    queryFn: () => getClient().getTicket(id),
+    enabled: isAuthenticated && !!id,
+    refetchInterval: 10000,
+  });
+}
+
+export function useCreateTicket() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (data: any) => getClient().createTicket(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+    },
+  });
+}
+
+export function useAddTicketMessage() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: ({
+      ticketId,
+      content,
+      message,
+      attachmentIds,
+    }: {
+      ticketId: string;
+      content?: string;
+      message?: string;
+      attachmentIds?: string[];
+    }) => {
+      const payload: any = { body: content || message || '' };
+      if (attachmentIds && attachmentIds.length > 0) {
+        payload.attachmentIds = attachmentIds;
+      }
+      return getClient().addTicketMessage(ticketId, payload);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['ticket', variables.ticketId] });
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+    },
+  });
+}
+
+export function useReopenTicket() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (ticketId: string) => getClient().reopenTicket(ticketId),
+    onSuccess: (_data, ticketId) => {
+      queryClient.invalidateQueries({ queryKey: ['ticket', ticketId] });
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+    },
+  });
+}
+
+export function useRateTicket() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: ({ ticketId, score, comment }: { ticketId: string; score: number; comment?: string }) =>
+      getClient().rateTicket(ticketId, score, comment),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['ticket', variables.ticketId] });
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+    },
+  });
+}
+
+export function useReturnRequest(id: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['return-request', id],
+    queryFn: () => getClient().getReturnRequest(id),
+    enabled: isAuthenticated && !!id,
+    refetchInterval: 15000,
+  });
+}
+
+export function useCreateReturnRequest() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (data: any) => getClient().createReturnRequest(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['return-request'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+export function useUpdateRefundDetails() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: ({ returnId, data }: { returnId: string; data: any }) =>
+      getClient().updateRefundDetails(returnId, data),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['return-request', variables.returnId] });
+    },
+  });
+}
+
+export function useWarrantyStatus(orderItemId: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['warranty-status', orderItemId],
+    queryFn: () => getClient().getWarrantyStatus(orderItemId),
+    enabled: isAuthenticated && !!orderItemId,
+  });
+}
+
 
 

@@ -1,5 +1,6 @@
 import {
   Product,
+  ProductFilterFacets,
   Category,
   User,
   Cart,
@@ -12,9 +13,13 @@ import {
   SupportTicketMessage,
   NotificationPreferences,
   AdminAnalyticsResponse,
+  CorporateInquiry,
+  CreateCorporateInquiryDto,
 } from './types';
+
 import { NEXT_PUBLIC_API_URL } from './config';
 import { auth, signOut } from './firebase';
+import { MOCK_PRODUCTS, MOCK_CATEGORIES } from './mock-data';
 
 const API_BASE_URL = NEXT_PUBLIC_API_URL;
 
@@ -41,7 +46,12 @@ export async function request<T>(
   }
 
   const headers: Record<string, string> = { ...((options.headers as Record<string, string>) || {}) };
-  headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  if (options.body instanceof FormData) {
+    delete headers['Content-Type'];
+    delete headers['content-type'];
+  } else {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  }
   if (token && url.origin === new URL(API_BASE_URL).origin) {
     headers.Authorization = `Bearer ${token}`;
   } else {
@@ -135,27 +145,51 @@ export const api = {
     limit?: number;
     offset?: number;
   }): Promise<{ products: Product[]; total: number }> {
-    const searchParams = new URLSearchParams();
-    if (params?.search) searchParams.set('search', params.search);
-    if (params?.categoryId && params.categoryId !== 'all') searchParams.set('categoryId', params.categoryId);
-    if (params?.featured !== undefined) searchParams.set('featured', String(params.featured));
-    if (params?.newArrival !== undefined) searchParams.set('newArrival', String(params.newArrival));
-    if (params?.minPrice !== undefined) searchParams.set('minPrice', String(params.minPrice));
-    if (params?.maxPrice !== undefined) searchParams.set('maxPrice', String(params.maxPrice));
-    if (params?.stockOnly !== undefined) searchParams.set('stockOnly', String(params.stockOnly));
-    if (params?.limit) searchParams.set('limit', String(params.limit));
-    if (params?.offset) searchParams.set('offset', String(params.offset));
+    try {
+      const searchParams = new URLSearchParams();
+      if (params?.search) searchParams.set('search', params.search);
+      if (params?.categoryId && params.categoryId !== 'all') searchParams.set('categoryId', params.categoryId);
+      if (params?.featured !== undefined) searchParams.set('featured', String(params.featured));
+      if (params?.newArrival !== undefined) searchParams.set('newArrival', String(params.newArrival));
+      if (params?.minPrice !== undefined) searchParams.set('minPrice', String(params.minPrice));
+      if (params?.maxPrice !== undefined) searchParams.set('maxPrice', String(params.maxPrice));
+      if (params?.stockOnly !== undefined) searchParams.set('stockOnly', String(params.stockOnly));
+      if (params?.limit) searchParams.set('limit', String(params.limit));
+      if (params?.offset) searchParams.set('offset', String(params.offset));
 
-    const query = searchParams.toString();
-    return await request<{ products: Product[]; total: number }>(`/products${query ? `?${query}` : ''}`);
+      const query = searchParams.toString();
+      const res = await request<{ products: Product[]; total: number }>(`/products${query ? `?${query}` : ''}`);
+      if (res?.products && res.products.length > 0) {
+        return res;
+      }
+      return { products: MOCK_PRODUCTS, total: MOCK_PRODUCTS.length };
+    } catch {
+      return { products: MOCK_PRODUCTS, total: MOCK_PRODUCTS.length };
+    }
   },
 
   async getProduct(id: string): Promise<Product> {
-    return await request<Product>(`/products/${id}`);
+    try {
+      return await request<Product>(`/products/${id}`);
+    } catch {
+      const found = MOCK_PRODUCTS.find((p) => p.id === id || p.slug === id);
+      if (found) return found;
+      throw new ApiError(404, 'Product not found');
+    }
+  },
+
+  async getProductFilters(): Promise<ProductFilterFacets> {
+    return await request<ProductFilterFacets>('/products/filters');
   },
 
   async getCategories(): Promise<Category[]> {
-    return await request<Category[]>('/categories');
+    try {
+      const res = await request<Category[]>('/categories');
+      if (Array.isArray(res) && res.length > 0) return res;
+      return MOCK_CATEGORIES;
+    } catch {
+      return MOCK_CATEGORIES;
+    }
   },
 
   // Auth
@@ -195,18 +229,28 @@ export const api = {
     return await request<Cart>('/cart');
   },
 
-  async addToCart(productId: string, quantity: number = 1) {
+  async addToCart(
+    productId: string,
+    quantity: number = 1,
+    purchaseMode: 'sell' | 'lease' = 'sell',
+    configuration: string = 'default',
+    hasWarranty: boolean = false,
+  ) {
     return await request<any>('/cart/items', {
       method: 'POST',
-      body: JSON.stringify({ productId, quantity }),
+      body: JSON.stringify({ productId, quantity, purchaseMode, configuration, hasWarranty }),
+    });
+  },
+
+  async updateCartItem(itemId: string, data: { quantity?: number; hasWarranty?: boolean }) {
+    return await request<any>(`/cart/items/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
     });
   },
 
   async updateCartQuantity(itemId: string, quantity: number) {
-    return await request<any>(`/cart/items/${itemId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ quantity }),
-    });
+    return await this.updateCartItem(itemId, { quantity });
   },
 
   async removeCartItem(itemId: string) {
@@ -347,41 +391,17 @@ export const api = {
     });
   },
 
-  // Support & Warranty
-  async getTickets(): Promise<SupportTicket[]> {
-    return await request<SupportTicket[]>('/support/tickets');
-  },
-
-  async getTicket(id: string): Promise<SupportTicket> {
-    return await request<SupportTicket>(`/support/tickets/${id}`);
-  },
-
-  async createTicket(data: { subject: string; orderId?: string; message: string; category?: string }): Promise<SupportTicket> {
-    return await request<SupportTicket>('/support/tickets', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async addTicketMessage(ticketId: string, message: string): Promise<SupportTicketMessage> {
-    return await request<SupportTicketMessage>(`/support/tickets/${ticketId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ message }),
-    });
-  },
-
-  async getWarrantyStatus(orderItemId: string): Promise<{ orderItemId: string; warrantyStatus: string; coverageType: string; validUntil: string; terms: string; claimEligible: boolean }> {
-    return await request<any>(`/support/warranty/${orderItemId}`);
-  },
-
   // Referral / Affiliate
   async getReferralStats(): Promise<{
     referralCode: string;
     referralTier: string;
     referralEarnings: number;
+    referralReserved: number;
+    referralWithdrawn: number;
+    availableBalance: number;
     referredUsersCount: number;
     referralLinkClickedCount: number;
-    payoutHistory: Array<{ id: string; amount: number; date: string; status: string }>;
+    payoutHistory: Array<{ id: string; amount: number; date: string; status: string; adminNotes?: string; processedAt?: string }>;
   }> {
     return await request<any>('/discount/referral/stats');
   },
@@ -487,4 +507,229 @@ export const api = {
       body: JSON.stringify({ status }),
     });
   },
+
+  async createCorporateInquiry(data: CreateCorporateInquiryDto): Promise<CorporateInquiry> {
+    return await request<CorporateInquiry>('/support/corporate-inquiry', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getAdminInquiries(params?: {
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ items: CorporateInquiry[]; total: number; page: number; pageSize: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status && params.status !== 'all') searchParams.set('status', params.status);
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    const qs = searchParams.toString();
+    return await request<{ items: CorporateInquiry[]; total: number; page: number; pageSize: number }>(
+      `/admin/inquiries${qs ? `?${qs}` : ''}`
+    );
+  },
+
+  async updateAdminInquiryStatus(
+    id: string,
+    status: string,
+    adminNotes?: string
+  ): Promise<CorporateInquiry> {
+    return await request<CorporateInquiry>(`/admin/inquiries/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, adminNotes }),
+    });
+  },
+
+  async getPayoutDetails(): Promise<any> {
+    return await request<any>('/discounts/payout-details');
+  },
+
+  async savePayoutDetails(data: any): Promise<any> {
+    return await request<any>('/discounts/payout-details', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async uploadPayoutQr(file: File): Promise<{ success: boolean; hasQrCode: boolean }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return await request<{ success: boolean; hasQrCode: boolean }>('/discounts/payout-details/qr', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  async requestWithdrawal(amount: number): Promise<{
+    id: string;
+    amount: number;
+    status: string;
+    createdAt: string;
+  }> {
+    return await request<any>('/discounts/withdraw', {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    });
+  },
+
+  async getAdminAffiliates(params?: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+  }): Promise<{ items: any[]; total: number; page: number; pageSize: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    if (params?.search && params.search.trim()) searchParams.set('search', params.search.trim());
+    const qs = searchParams.toString();
+    return await request<any>(`/admin/affiliates${qs ? `?${qs}` : ''}`);
+  },
+
+  async getAdminAffiliateDetail(id: string): Promise<any> {
+    return await request<any>(`/admin/affiliates/${id}`);
+  },
+
+  async getAdminWithdrawalPaymentDetails(id: string): Promise<any> {
+    return await request<any>(`/admin/withdrawals/${id}/payment-details`);
+  },
+
+  async updateAdminWithdrawalStatus(
+    id: string,
+    status: 'APPROVED' | 'REJECTED',
+    adminNotes?: string,
+  ): Promise<any> {
+    return await request<any>(`/admin/withdrawals/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, adminNotes }),
+    });
+  },
+
+  // ---------------------------------------------------------------------------
+  // Help Center & Knowledge Base
+  // ---------------------------------------------------------------------------
+  async getSupportConfig(): Promise<any> {
+    return await request<any>('/support/config');
+  },
+
+  async getHelpCategories(): Promise<any[]> {
+    return await request<any[]>('/support/help/categories');
+  },
+
+  async getHelpArticles(params?: { q?: string; category?: string }): Promise<any[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.q) searchParams.set('q', params.q);
+    if (params?.category) searchParams.set('category', params.category);
+    const qs = searchParams.toString();
+    return await request<any[]>(`/support/help/articles${qs ? `?${qs}` : ''}`);
+  },
+
+  async getHelpArticle(slug: string): Promise<any> {
+    return await request<any>(`/support/help/articles/${slug}`);
+  },
+
+  async voteHelpArticle(id: string, helpful: boolean): Promise<{ success: boolean; helpfulCount: number; notHelpfulCount: number }> {
+    return await request<any>(`/support/help/articles/${id}/vote`, {
+      method: 'POST',
+      body: JSON.stringify({ helpful }),
+    });
+  },
+
+  // ---------------------------------------------------------------------------
+  // Customer Tickets
+  // ---------------------------------------------------------------------------
+  async getTickets(): Promise<any[]> {
+    return await request<any[]>('/support/tickets');
+  },
+
+  async getTicket(id: string): Promise<any> {
+    return await request<any>(`/support/tickets/${id}`);
+  },
+
+  async createTicket(data: {
+    subject: string;
+    category: string;
+    issueType?: string;
+    type?: string;
+    priority?: string;
+    orderId?: string;
+    orderItemId?: string;
+    message: string;
+    callbackPhone?: string;
+    callbackSlot?: string;
+    attachments?: string[];
+  }): Promise<any> {
+    return await request<any>('/support/tickets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async addTicketMessage(ticketId: string, message: string, attachments?: string[]): Promise<any> {
+    return await request<any>(`/support/tickets/${ticketId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ message, attachments }),
+    });
+  },
+
+  async reopenTicket(ticketId: string): Promise<any> {
+    return await request<any>(`/support/tickets/${ticketId}/reopen`, {
+      method: 'POST',
+    });
+  },
+
+  async rateTicket(ticketId: string, score: number, comment?: string): Promise<any> {
+    return await request<any>(`/support/tickets/${ticketId}/rate`, {
+      method: 'POST',
+      body: JSON.stringify({ score, comment }),
+    });
+  },
+
+  // ---------------------------------------------------------------------------
+  // Returns & Refunds
+  // ---------------------------------------------------------------------------
+  async createReturnRequest(data: {
+    orderId: string;
+    ticketId?: string;
+    type?: 'REFUND' | 'REPLACEMENT';
+    reason: string;
+    items: Array<{ orderItemId: string; quantity?: number; reason?: string }>;
+    attachments?: string[];
+    refundMethod?: 'SOURCE' | 'BANK' | 'UPI';
+    refundDetails?: {
+      accountNumber?: string;
+      confirmAccountNumber?: string;
+      ifscCode?: string;
+      accountHolderName?: string;
+      upiId?: string;
+    };
+  }): Promise<any> {
+    return await request<any>('/support/returns', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getReturnRequest(id: string): Promise<any> {
+    return await request<any>(`/support/returns/${id}`);
+  },
+
+  async updateRefundDetails(id: string, data: {
+    accountNumber?: string;
+    confirmAccountNumber?: string;
+    ifscCode?: string;
+    accountHolderName?: string;
+    upiId?: string;
+  }): Promise<any> {
+    return await request<any>(`/support/returns/${id}/refund-details`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getWarrantyStatus(orderItemId: string): Promise<any> {
+    return await request<any>(`/support/warranty/${orderItemId}`);
+  },
 };
+
+

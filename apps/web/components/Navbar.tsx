@@ -7,6 +7,12 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../lib/auth-context';
 import { useCart } from '../lib/cart-context';
 import { useWishlist } from '../lib/wishlist-context';
+import {
+  NEXT_PUBLIC_SUPPORT_PHONE,
+  NEXT_PUBLIC_SUPPORT_PHONE_DISPLAY,
+  NEXT_PUBLIC_WHATSAPP_NUMBER,
+} from '../lib/config';
+import CorporateQuoteModal from './CorporateQuoteModal';
 
 export default function Navbar() {
   const router = useRouter();
@@ -18,6 +24,10 @@ export default function Navbar() {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [laptopsDropdownOpen, setLaptopsDropdownOpen] = useState(false);
   const [solutionsDropdownOpen, setSolutionsDropdownOpen] = useState(false);
+  const [corporateModalOpen, setCorporateModalOpen] = useState(false);
+  const [corporateModalPrefill, setCorporateModalPrefill] = useState<
+    { mode?: 'sell' | 'lease'; laptopModel?: string } | undefined
+  >(undefined);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,15 +178,34 @@ export default function Navbar() {
               )}
             </Link>
 
-            {/* Get a Quote Button */}
+            {/* Support Call Link */}
             <a
-              href="https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20would%20like%20to%20request%20a%20quote%20for%20enterprise%20laptops."
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden sm:inline-flex px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold rounded-lg shadow-xs transition-all active:scale-95 shrink-0"
+              href={`tel:${NEXT_PUBLIC_SUPPORT_PHONE}`}
+              className="hidden xl:flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-slate-700 hover:text-[#2563EB] hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-200"
+              title="Customer Support"
+            >
+              <div className="w-8 h-8 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center shrink-0">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] uppercase font-bold text-slate-400 leading-none">Support</p>
+                <p className="text-xs font-black text-slate-800 leading-tight mt-0.5">{NEXT_PUBLIC_SUPPORT_PHONE_DISPLAY}</p>
+              </div>
+            </a>
+
+            {/* Get a Quote Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setCorporateModalPrefill(undefined);
+                setCorporateModalOpen(true);
+              }}
+              className="hidden sm:inline-flex px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold rounded-lg shadow-xs transition-all active:scale-95 shrink-0 cursor-pointer"
             >
               Get a Quote
-            </a>
+            </button>
 
             {/* Mobile Hamburger Trigger */}
             <button
@@ -263,17 +292,28 @@ export default function Navbar() {
                   <Link href="/products?type=buy" className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB]">
                     Outright Purchase
                   </Link>
-                  <Link href="/products?type=lease" className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB]">
-                    Corporate Leasing
-                  </Link>
-                  <a
-                    href="https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20want%20to%20inquire%20about%20bulk%20procurement."
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB]"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSolutionsDropdownOpen(false);
+                      setCorporateModalPrefill({ mode: 'lease' });
+                      setCorporateModalOpen(true);
+                    }}
+                    className="w-full text-left px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB] cursor-pointer"
                   >
-                    Bulk Procurement
-                  </a>
+                    Corporate Leasing (Quote)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSolutionsDropdownOpen(false);
+                      setCorporateModalPrefill({ mode: 'sell' });
+                      setCorporateModalOpen(true);
+                    }}
+                    className="w-full text-left px-4 py-1.5 text-xs text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB] cursor-pointer"
+                  >
+                    Bulk Procurement (Quote)
+                  </button>
                 </div>
               )}
             </div>
@@ -283,7 +323,7 @@ export default function Navbar() {
             </Link>
 
             <a
-              href="https://wa.me/919999999999?text=Hi%20LaptopMitra%20Support,%20I%20need%20assistance."
+              href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra%20Support,%20I%20need%20assistance.`}
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-[#2563EB] transition-colors"
@@ -329,7 +369,7 @@ export default function Navbar() {
               Partner Referral Program
             </Link>
             <a
-              href="https://wa.me/919999999999?text=Hi%20LaptopMitra%20Support"
+              href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra%20Support`}
               target="_blank"
               rel="noopener noreferrer"
               className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#2563EB]"
@@ -337,18 +377,28 @@ export default function Navbar() {
               Warranty &amp; Support
             </a>
             <div className="pt-2">
-              <a
-                href="https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20would%20like%20to%20request%20a%20quote%20for%20enterprise%20laptops."
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-2.5 px-4 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-xs"
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setCorporateModalPrefill(undefined);
+                  setCorporateModalOpen(true);
+                }}
+                className="w-full py-2.5 px-4 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
               >
                 Request Enterprise Quote
-              </a>
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Corporate Procurement / Leasing Quote Dialog */}
+      <CorporateQuoteModal
+        open={corporateModalOpen}
+        onClose={() => setCorporateModalOpen(false)}
+        prefill={corporateModalPrefill}
+      />
     </header>
   );
 }

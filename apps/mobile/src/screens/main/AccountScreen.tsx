@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput, Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useProfile, useSignoutEverywhere, useDeleteAccount } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { MainStackNavigationProp } from '../../navigation/types';
-import { API_BASE_URL } from '../../config';
+import { API_BASE_URL, SUPPORT_PHONE, SUPPORT_PHONE_DISPLAY, WHATSAPP_NUMBER } from '../../config';
+import CorporateQuoteModal from '../../components/CorporateQuoteModal';
 
 export default function AccountScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
@@ -21,6 +22,7 @@ export default function AccountScreen() {
   const [linkPassword, setLinkPassword] = useState('');
   const [linkName, setLinkName] = useState('');
   const [isLinking, setIsLinking] = useState(false);
+  const [corporateModalVisible, setCorporateModalVisible] = useState(false);
 
   // Delete confirmation modal (cross-platform alternative to Alert.prompt)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -134,6 +136,44 @@ export default function AccountScreen() {
         { icon: 'lock-closed-outline' as const, label: 'Change Password', route: 'ChangePassword' as const },
       ],
     },
+    {
+      title: 'Help & Customer Care',
+      items: [
+        { icon: 'help-buoy-outline' as const, label: 'Help Center & Knowledge Base', route: 'HelpHome' as const },
+        { icon: 'chatbubbles-outline' as const, label: 'My Support Tickets', route: 'TicketList' as const },
+        { icon: 'sparkles-outline' as const, label: 'Guided Support & 7-Day Returns', route: 'GuidedSupportFlow' as const },
+        {
+          icon: 'business-outline' as const,
+          label: 'Corporate Leasing & Fleet Quote',
+          onPress: () => {
+            setCorporateModalVisible(true);
+          },
+        },
+        {
+          icon: 'call-outline' as const,
+          label: `Call Specialist (${SUPPORT_PHONE_DISPLAY})`,
+          onPress: () => {
+            Linking.openURL(`tel:${SUPPORT_PHONE}`);
+          },
+        },
+        {
+          icon: 'logo-whatsapp' as const,
+          label: 'Chat on WhatsApp',
+          onPress: () => {
+            Linking.openURL(`https://wa.me/${WHATSAPP_NUMBER}?text=Hi%20LaptopMitra,%20I%20need%20assistance.`);
+          },
+        },
+      ],
+    },
+    {
+      title: 'Policies & Information',
+      items: [
+        { icon: 'shield-checkmark-outline' as const, label: '36-Month Buyback Guarantee', route: 'BuybackGuarantee' as const },
+        { icon: 'document-text-outline' as const, label: 'Terms & Conditions', route: 'Terms' as const },
+        { icon: 'lock-closed-outline' as const, label: 'Privacy Policy', route: 'Privacy' as const },
+        { icon: 'information-circle-outline' as const, label: 'About LaptopMitra', route: 'About' as const },
+      ],
+    },
   ];
 
   return (
@@ -189,7 +229,13 @@ export default function AccountScreen() {
               <TouchableOpacity
                 key={item.label}
                 style={[styles.menuRow, index < section.items.length - 1 && styles.menuRowBorder]}
-                onPress={() => navigation.navigate(item.route)}
+                onPress={() => {
+                  if ('onPress' in item && typeof item.onPress === 'function') {
+                    item.onPress();
+                  } else if ('route' in item && item.route) {
+                    (navigation as any).navigate(item.route);
+                  }
+                }}
                 activeOpacity={0.6}
               >
                 <Ionicons name={item.icon} size={22} color="#64748b" style={styles.menuIcon} />
@@ -342,6 +388,11 @@ export default function AccountScreen() {
           </View>
         </View>
       </Modal>
+
+      <CorporateQuoteModal
+        visible={corporateModalVisible}
+        onClose={() => setCorporateModalVisible(false)}
+      />
     </ScrollView>
   );
 }

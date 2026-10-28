@@ -45,6 +45,8 @@ model User {
   // Referral/Affiliate tracking
   referralCode      String      @unique
   referralEarnings  Decimal     @default(0)
+  referralReserved  Decimal     @default(0) @db.Decimal(10, 2)
+  referralWithdrawn Decimal     @default(0) @db.Decimal(10, 2)
   referralTier      String      @default("BASIC") // BASIC | GOLD | PLATINUM
   referralLinkClickedCount Int      @default(0)
 
@@ -58,6 +60,18 @@ model User {
   discountRedemptions DiscountRedemption[]
   referredRedemptions ReferralRedemption[] @relation("ReferralRecipient")
   issuedRedemptions   ReferralRedemption[] @relation("ReferralIssuer")
+  affiliatePaymentDetails AffiliatePaymentDetails?
+  withdrawalRequests  WithdrawalRequest[]
+
+  // Support & Returns relations
+  customerTickets     SupportTicket[]    @relation("CustomerTickets")
+  assignedTickets     SupportTicket[]    @relation("AssignedTickets")
+  ticketMessages      TicketMessage[]    @relation("TicketMessageAuthor")
+  ticketAttachments   TicketAttachment[] @relation("AttachmentUploader")
+  ticketEvents        TicketEvent[]      @relation("TicketEventActor")
+  returnRequests      ReturnRequest[]    @relation("CustomerReturns")
+  approvedReturns     ReturnRequest[]    @relation("ApprovedReturns")
+  processedReturns    ReturnRequest[]    @relation("ProcessedReturns")
 }
 
 model Address {
@@ -124,6 +138,9 @@ model Product {
   metadata    Json?    // Flexible extra fields (weight, dimensions, etc.)
   isFeatured   Boolean  @default(false)
   isNewArrival Boolean  @default(false)
+  leasePriceMonthly Decimal? @db.Decimal(10, 2)
+  bulkSellPrice     Decimal? @db.Decimal(10, 2)
+  bulkLeasePrice    Decimal? @db.Decimal(10, 2)
   tags         String?  // Comma-separated search/filter tags (MySQL does not support list of primitives)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -177,9 +194,13 @@ model CartItem {
   productId   String
   quantity    Int      @default(1)
   priceAtAdd  Decimal  // Price when added (captures price changes)
+  purchaseMode String   @default("sell") // "sell" | "lease"
+  configuration String  @default("default") // "default" | "ram-16gb"
+  hasWarranty Boolean  @default(false)
+  warrantyPrice Decimal @default(0) @db.Decimal(10, 2)
   createdAt   DateTime @default(now())
 
-  @@unique([cartId, productId])
+  @@unique([cartId, productId, purchaseMode, configuration])
   @@index([cartId])
 }
 
@@ -242,6 +263,8 @@ model Order {
   payments     Payment[]
   discountRedemption DiscountRedemption?
   referralRedemption ReferralRedemption?
+  supportTickets     SupportTicket[]
+  returnRequests     ReturnRequest[]
 
   @@unique([razorpayOrderId])
   @@index([inventoryStatus, reservationExpiresAt])
@@ -259,7 +282,14 @@ model OrderItem {
   productId   String
   quantity    Int
   price       Decimal  // Price at time of purchase
+  purchaseMode String   @default("sell") // "sell" | "lease"
+  configuration String  @default("default") // "default" | "ram-16gb"
+  hasWarranty Boolean  @default(false)
+  warrantyPrice Decimal @default(0) @db.Decimal(10, 2)
   createdAt   DateTime @default(now())
+
+  supportTickets SupportTicket[]
+  returnItems    ReturnItem[]
 
   @@index([orderId])
 }
@@ -387,7 +417,342 @@ model SystemSetting {
   value       String
   description String?
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime @default(now()) @updatedAt
 
   @@map("system_settings")
 }
+
+// ---------------------------------------------------------------------------
+// Corporate / Bulk Procurement Inquiries
+// ---------------------------------------------------------------------------
+
+model CorporateInquiry {
+  id             String   @id @default(uuid())
+  companyName    String
+  contactPerson  String
+  email          String
+  phone          String
+  laptopModel    String?
+  productId      String?
+  mode           String   @default("sell") // "sell" | "lease"
+  quantity       Int      @default(5)
+  city           String
+  expectedTenure String?  // e.g. "12 Months", "24 Months", "Outright Purchase"
+  notes          String?
+  status         String   @default("PENDING") // "PENDING" | "CONTACTED" | "QUOTED" | "CLOSED"
+  source         String   @default("web") // "web" | "mobile"
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Affiliate Banking & Withdrawal Lifecycle
+// ---------------------------------------------------------------------------
+
+model AffiliatePaymentDetails {
+  id                  String   @id @default(uuid())
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId              String   @unique
+  bankName            String?
+  accountHolderName   String?
+  accountNumber       String?  // Encrypted at rest (AES-256-GCM v1:...)
+  accountNumberMasked String?  // e.g. "••••••••5678"
+  ifscCode            String?  // Encrypted at rest (AES-256-GCM v1:...)
+  upiId               String?  // Encrypted at rest (AES-256-GCM v1:...)
+  upiIdMasked         String?  // e.g. "user••••@oksbi"
+  qrCodeKey           String?  // Private cloud storage key
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model WithdrawalRequest {
+  id                    String   @id @default(uuid())
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  userId                String
+  amount                Decimal  @db.Decimal(10, 2)
+  status                String   @default("PENDING") // "PENDING" | "APPROVED" | "REJECTED"
+  paymentMethodSnapshot String   // Encrypted full snapshot at request time (AES-256-GCM v1:...)
+  adminNotes            String?
+  processedAt           DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Immutable Audit Log
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String?
+  action      String   // e.g. "VIEW_PAYMENT_SNAPSHOT", "APPROVE_WITHDRAWAL", "REJECT_WITHDRAWAL"
+  entityType  String   // e.g. "WITHDRAWAL_REQUEST"
+  entityId    String
+  metadata    Json?    // Sanitized metadata (NO plaintext secrets)
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([actorUserId])
+}
+
+// ---------------------------------------------------------------------------
+// Help & Support System Models
+// ---------------------------------------------------------------------------
+
+model SupportTicket {
+  id                 String    @id @default(uuid())
+  ticketNumber       String    @unique
+  userId             String
+  user               User      @relation("CustomerTickets", fields: [userId], references: [id], onDelete: Restrict)
+  orderId            String?
+  order              Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  orderItemId        String?
+  orderItem          OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  subject            String
+  category           String
+  issueType          String?
+  type               String    @default("QUERY") // QUERY | COMPLAINT | CALLBACK | RETURN | WARRANTY
+  source             String    @default("web") // web | mobile
+  priority           String    @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
+  status             String    @default("NEW") // NEW | OPEN | WAITING_ON_CUSTOMER | IN_PROGRESS | RESOLVED | CLOSED | REOPENED | MERGED
+  reopenCount        Int       @default(0)
+  callbackPhone      String?
+  callbackSlot       String?
+  isArchived         Boolean   @default(false)
+  firstResponseDueAt DateTime?
+  resolutionDueAt    DateTime?
+  firstResponseAt    DateTime?
+  resolvedAt         DateTime?
+  closedAt           DateTime?
+  slaBreached        Boolean   @default(false)
+  slaBreachReason    String?
+  assigneeId         String?
+  assignee           User?     @relation("AssignedTickets", fields: [assigneeId], references: [id], onDelete: SetNull)
+  mergedIntoId       String?
+  mergedInto         SupportTicket?  @relation("MergedTickets", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedTickets      SupportTicket[] @relation("MergedTickets")
+  customerLastReadAt DateTime?
+  staffLastReadAt    DateTime?
+  csatScore          Int?      // 1 to 5
+  csatComment        String?   @db.Text
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  messages           TicketMessage[]
+  events             TicketEvent[]
+  attachments        TicketAttachment[]
+  returnRequests     ReturnRequest[]
+
+  @@index([userId, status])
+  @@index([status, priority])
+  @@index([assigneeId, status])
+  @@index([orderId])
+  @@index([firstResponseDueAt, status])
+  @@index([createdAt])
+}
+
+model TicketMessage {
+  id           String             @id @default(uuid())
+  ticketId     String
+  ticket       SupportTicket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorUserId String?            // Nullable so SYSTEM messages can exist
+  authorUser   User?              @relation("TicketMessageAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+  authorRole   String             @default("CUSTOMER") // CUSTOMER | SUPPORT | ADMIN | SYSTEM
+  isInternal   Boolean            @default(false) // True = internal staff note
+  body         String             @db.Text
+  metadata     Json?
+  createdAt    DateTime           @default(now())
+
+  attachments  TicketAttachment[]
+
+  @@index([ticketId, createdAt])
+  @@index([authorUserId])
+}
+
+model TicketAttachment {
+  id              String         @id @default(uuid())
+  ticketId        String?
+  ticket          SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  returnRequestId String?
+  returnRequest   ReturnRequest? @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  messageId       String?
+  message         TicketMessage? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  uploadedBy      String
+  uploader        User           @relation("AttachmentUploader", fields: [uploadedBy], references: [id], onDelete: Restrict)
+  purpose         String         @default("TICKET") // CUSTOMER_EVIDENCE | INSPECTION | TICKET
+  storageKey      String         // Private Supabase key (never public URL)
+  fileName        String
+  fileType        String         @default("IMAGE") // IMAGE | VIDEO
+  mimeType        String
+  fileSize        Int            // In bytes
+  durationSeconds Int?           // For video attachments (max 30s)
+  confirmed       Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+
+  @@index([ticketId])
+  @@index([returnRequestId])
+  @@index([storageKey])
+  @@index([confirmed, createdAt])
+}
+
+model TicketEvent {
+  id          String        @id @default(uuid())
+  ticketId    String
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actorUserId String?
+  actorUser   User?         @relation("TicketEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorRole   String        @default("CUSTOMER") // CUSTOMER | SUPPORT | ADMIN | SYSTEM
+  eventType   String        // CREATED | MESSAGE | STATUS_CHANGE | ASSIGNED | PRIORITY_CHANGE | NOTE_ADDED | MERGE | REOPEN | CSAT_RATING | SLA_BREACH | AUTO_CLOSE | CATEGORY_CHANGE | ATTACHMENT | RETURN_LINKED | FIRST_RESPONSE | ESCALATED | RESOLVED | CLOSED
+  oldValue    String?
+  newValue    String?
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+
+  @@index([ticketId, createdAt])
+  @@index([eventType])
+}
+
+model ReturnRequest {
+  id                     String         @id @default(uuid())
+  returnNumber           String         @unique
+  orderId                String
+  order                  Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  userId                 String
+  user                   User           @relation("CustomerReturns", fields: [userId], references: [id], onDelete: Restrict)
+  ticketId               String?
+  ticket                 SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  type                   String         @default("REFUND") // REFUND | REPLACEMENT
+  status                 String         @default("REQUESTED") // REQUESTED | APPROVED | REJECTED | PICKUP_SCHEDULED | PICKED_UP | INSPECTING | INSPECTION_PASSED | INSPECTION_FAILED | REFUND_PENDING | REFUNDED | REPLACED | CANCELLED | CLOSED
+  reason                 String
+  refundAmount           Decimal?       @db.Decimal(10, 2)
+  refundMethod           String         @default("SOURCE") // SOURCE | BANK | UPI
+  encryptedRefundDetails String?        @db.Text
+  refundDetailsKeyId     String?
+  refundAccountMasked    String?
+  refundIfscMasked       String?
+  refundUpiMasked        String?
+  refundDetailsUpdatedAt DateTime?
+  razorpayRefundId       String?
+  manualRefundReference  String?        // Bank UTR for COD refunds
+  pickupAddress          Json?
+  pickupTrackingNumber   String?
+  pickupScheduledAt      DateTime?
+  pickedUpAt             DateTime?
+  inspectionNotes        String?        @db.Text
+  inspectionPassed       Boolean?
+  deadlineAt             DateTime?
+  adminNotes             String?        @db.Text
+  approvedBy             String?
+  approver               User?          @relation("ApprovedReturns", fields: [approvedBy], references: [id], onDelete: SetNull)
+  approvedAt             DateTime?
+  processedBy            String?
+  processor              User?          @relation("ProcessedReturns", fields: [processedBy], references: [id], onDelete: SetNull)
+  processedAt            DateTime?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  items                  ReturnItem[]
+  attachments            TicketAttachment[]
+
+  @@index([orderId])
+  @@index([userId, status])
+  @@index([ticketId])
+  @@index([status, createdAt])
+}
+
+model ReturnItem {
+  id              String        @id @default(uuid())
+  returnRequestId String
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  orderItemId     String
+  orderItem       OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  quantity        Int           @default(1)
+  unitPrice       Decimal       @db.Decimal(10, 2) // Price actually paid per unit after proportional discount allocation
+  reason          String?
+  condition       String?
+  restocked       Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+
+  @@index([returnRequestId])
+  @@index([orderItemId])
+}
+
+model SavedReply {
+  id        String   @id @default(uuid())
+  shortcut  String   @unique
+  title     String
+  content   String   @db.Text
+  category  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}
+
+model HelpCategory {
+  id          String        @id @default(uuid())
+  slug        String        @unique
+  title       String
+  icon        String?       // Lucide icon identifier
+  order       Int           @default(0)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  articles    HelpArticle[]
+
+  @@index([order, isActive])
+}
+
+model HelpArticle {
+  id              String       @id @default(uuid())
+  categoryId      String
+  category        HelpCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  slug            String       @unique
+  title           String
+  content         String       @db.Text // Markdown body
+  summary         String?
+  order           Int          @default(0)
+  isPublished     Boolean      @default(true)
+  helpfulCount    Int          @default(0)
+  notHelpfulCount Int          @default(0)
+  viewCount       Int          @default(0)
+  updatedBy       String?
+  locale          String       @default("en")
+  tsv             Unsupported("tsvector")? @default(dbgenerated())
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([categoryId, isPublished])
+  @@index([order])
+  @@index([locale])
+  @@index([tsv], type: Gin)
+}
+
+model SupportSettings {
+  id                         String   @id @default("default")
+  firstResponseSlaMinutes    Int      @default(1440) // 24h default
+  autoCloseDays              Int      @default(7) // 7 days
+  reopenWindowDays           Int      @default(7) // 7 days
+  supportHoursText           String   @default("") // Empty default, hidden in UI until set
+  supportReturnApprovalLimit Decimal  @default(0) @db.Decimal(10, 2)
+  maxAttachmentImages        Int      @default(5)
+  maxAttachmentVideos        Int      @default(1)
+  maxVideoDurationSec        Int      @default(30)
+  maxImageSizeBytes          Int      @default(10485760) // 10MB
+  maxVideoSizeBytes          Int      @default(52428800) // 50MB
+  standardWarrantyDays       Int      @default(180)
+  returnWindowDays           Int      @default(7)
+  resolutionSlaMinutes       Int?     // Nullable, no invented default
+  urgentFirstResponseSlaMinutes Int?  // Nullable, no invented default
+  updatedAt                  DateTime @updatedAt
+}
+

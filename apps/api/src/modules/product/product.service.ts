@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Product, ProductListResponse } from '../../types';
+import { Product, ProductListResponse, ProductFilterFacets } from '../../types';
+
 
 
 // Canonical catalog repository
@@ -265,6 +266,9 @@ export class ProductService {
       shortDescription: p.shortDescription || null,
       price,
       compareAtPrice,
+      leasePriceMonthly: p.leasePriceMonthly ? parseFloat(p.leasePriceMonthly.toString()) : null,
+      bulkSellPrice: p.bulkSellPrice ? parseFloat(p.bulkSellPrice.toString()) : null,
+      bulkLeasePrice: p.bulkLeasePrice ? parseFloat(p.bulkLeasePrice.toString()) : null,
       sku: p.sku || `LM-SKU-${p.id.slice(0, 6)}`,
       barcode: p.barcode || null,
       stock: p.stock ?? 10,
@@ -450,4 +454,177 @@ export class ProductService {
     await this.prisma.product.delete({ where: { id } });
     return { message: 'Product deleted successfully' };
   }
+
+  async getFilterFacets(): Promise<ProductFilterFacets> {
+    try {
+      const activeProducts = await this.prisma.product.findMany({
+        where: { status: 'ACTIVE' },
+        include: { category: true },
+      });
+
+      const productsToProcess = activeProducts.length > 0 ? activeProducts : CANONICAL_CATALOG;
+      return this.extractFacetsFromProducts(productsToProcess);
+    } catch {
+      return this.extractFacetsFromProducts(CANONICAL_CATALOG);
+    }
+  }
+
+  private extractFacetsFromProducts(products: any[]): ProductFilterFacets {
+    const brandCounts: Record<string, number> = {};
+    const processorCounts: Record<string, number> = {};
+    const ramCounts: Record<string, number> = {};
+    const storageCounts: Record<string, number> = {};
+    const gradeCounts: Record<string, number> = {};
+    const categoryMap = new Map<string, { id: string; name: string; slug: string; count: number }>();
+
+    let minPrice = Infinity;
+    let maxPrice = 0;
+
+    const knownBrands = ['Apple', 'Lenovo', 'Dell', 'HP', 'ASUS', 'Acer', 'Microsoft', 'MSI', 'Samsung'];
+
+    for (const p of products) {
+      const price = typeof p.price === 'number' ? p.price : parseFloat(p.price?.toString() || '0') || 0;
+      if (price > 0) {
+        if (price < minPrice) minPrice = price;
+        if (price > maxPrice) maxPrice = price;
+      }
+
+      const rawMeta: any = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : p.metadata || {};
+
+      // 1. Extract Brand
+      let brand: string | undefined = rawMeta.brand?.trim();
+      if (!brand) {
+        const nameLower = p.name.toLowerCase();
+        for (const b of knownBrands) {
+          if (nameLower.includes(b.toLowerCase())) {
+            brand = b;
+            break;
+          }
+        }
+      }
+      if (brand) {
+        const canonicalBrand = knownBrands.find((b) => b.toLowerCase() === brand!.toLowerCase()) || brand;
+        brandCounts[canonicalBrand] = (brandCounts[canonicalBrand] || 0) + 1;
+      }
+
+      // 2. Extract Processor
+      let proc: string | undefined = rawMeta.processor?.trim();
+      if (!proc) {
+        const nameLower = p.name.toLowerCase();
+        if (nameLower.includes('m1') || nameLower.includes('m2') || nameLower.includes('m3') || nameLower.includes('m4') || nameLower.includes('apple')) proc = 'Apple M-Series';
+        else if (nameLower.includes('i7') || nameLower.includes('core i7')) proc = 'Intel Core i7';
+        else if (nameLower.includes('i5') || nameLower.includes('core i5')) proc = 'Intel Core i5';
+        else if (nameLower.includes('i3') || nameLower.includes('core i3')) proc = 'Intel Core i3';
+        else if (nameLower.includes('ryzen') || nameLower.includes('amd')) proc = 'AMD Ryzen';
+      }
+      if (proc) {
+        let procGroup = proc;
+        const pLower = proc.toLowerCase();
+        if (pLower.includes('m1') || pLower.includes('m2') || pLower.includes('m3') || pLower.includes('m4') || pLower.includes('apple')) procGroup = 'Apple M-Series';
+        else if (pLower.includes('i7') || pLower.includes('core i7')) procGroup = 'Intel Core i7';
+        else if (pLower.includes('i5') || pLower.includes('core i5')) procGroup = 'Intel Core i5';
+        else if (pLower.includes('i3') || pLower.includes('core i3')) procGroup = 'Intel Core i3';
+        else if (pLower.includes('ryzen') || pLower.includes('amd')) procGroup = 'AMD Ryzen';
+
+        processorCounts[procGroup] = (processorCounts[procGroup] || 0) + 1;
+      }
+
+      // 3. Extract RAM
+      let ram: string | undefined = rawMeta.ram?.trim();
+      if (!ram) {
+        const match = p.name.match(/\b(4|8|16|24|32|64|128)\s*GB\b/i);
+        if (match) ram = `${match[1]}GB`;
+      }
+      if (ram) {
+        const match = ram.match(/^(\d+)\s*(gb|gigabytes)?/i);
+        const normalizedRam = match ? `${match[1]}GB` : ram;
+        ramCounts[normalizedRam] = (ramCounts[normalizedRam] || 0) + 1;
+      }
+
+      // 4. Extract Storage
+      let storage: string | undefined = rawMeta.storage?.trim();
+      if (!storage) {
+        const match = p.name.match(/\b(128|256|512|1024|1TB|2TB)\s*(GB|TB)?\s*(SSD|HDD|NVMe)?\b/i);
+        if (match) storage = match[0];
+      }
+      if (storage) {
+        let normStorage = storage;
+        const numMatch = storage.match(/^(\d+)\s*(gb|tb)?/i);
+        if (numMatch) {
+          const num = numMatch[1];
+          const unit = (numMatch[2] || (parseInt(num, 10) <= 8 && storage.toLowerCase().includes('tb') ? 'TB' : 'GB')).toUpperCase();
+          const isHdd = storage.toUpperCase().includes('HDD');
+          normStorage = `${num}${unit} ${isHdd ? 'HDD' : 'SSD'}`;
+        }
+        storageCounts[normStorage] = (storageCounts[normStorage] || 0) + 1;
+      }
+
+      // 5. Extract Condition Grade
+      const cond = (rawMeta.condition || p.name || '').toUpperCase();
+      let grade = 'Grade B (Value)';
+      if (cond.includes('A+') || cond.includes('PRISTINE') || cond.includes('SEALED')) {
+        grade = 'Grade A+ (Pristine)';
+      } else if (/\bA\b/.test(cond) || cond.includes('EXCELLENT') || cond.includes('LIKE-NEW')) {
+        grade = 'Grade A (Excellent)';
+      }
+      gradeCounts[grade] = (gradeCounts[grade] || 0) + 1;
+
+      // 6. Extract Category
+      if (p.category) {
+        const catId = p.category.id;
+        const existing = categoryMap.get(catId);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          categoryMap.set(catId, {
+            id: p.category.id,
+            name: p.category.name,
+            slug: p.category.slug,
+            count: 1,
+          });
+        }
+      }
+    }
+
+    const ramOptions = Object.keys(ramCounts).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
+      return numA - numB;
+    });
+
+    const storageOptions = Object.keys(storageCounts).sort((a, b) => {
+      const getGb = (s: string) => {
+        const num = parseInt(s.replace(/\D/g, ''), 10) || 0;
+        return s.toLowerCase().includes('tb') ? num * 1024 : num;
+      };
+      return getGb(a) - getGb(b);
+    });
+
+    const brands = Object.keys(brandCounts).sort((a, b) => a.localeCompare(b));
+    const processors = Object.keys(processorCounts).sort((a, b) => a.localeCompare(b));
+    const grades = Object.keys(gradeCounts);
+    const categories = Array.from(categoryMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+    return {
+      brands,
+      processors,
+      ramOptions,
+      storageOptions,
+      grades,
+      categories,
+      priceRange: {
+        min: minPrice === Infinity ? 0 : minPrice,
+        max: maxPrice === 0 ? 200000 : maxPrice,
+      },
+      counts: {
+        brands: brandCounts,
+        processors: processorCounts,
+        ram: ramCounts,
+        storage: storageCounts,
+        grades: gradeCounts,
+      },
+      totalCount: products.length,
+    };
+  }
 }
+

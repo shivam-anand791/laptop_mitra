@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   View,
   Text,
@@ -20,6 +21,7 @@ import { ProductCardSkeleton } from '../../components/Skeleton';
 import SectionHeader from '../../components/ui/SectionHeader';
 import TrustStrip from '../../components/ui/TrustStrip';
 import Button from '../../components/ui/Button';
+import CorporateQuoteModal from '../../components/CorporateQuoteModal';
 import { colors, radius, shadows, spacing, typography } from '../../theme/tokens';
 
 export default function HomeScreen() {
@@ -27,6 +29,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
   const addToCart = useAddToCart();
+  const [corporateModalVisible, setCorporateModalVisible] = useState(false);
 
   const {
     data: featuredData,
@@ -314,7 +317,28 @@ export default function HomeScreen() {
             <Text style={styles.assurancePillText}>Affiliate Rewards</Text>
           </View>
         </View>
+
+        {/* Corporate Fleet Procurement & Leasing Card */}
+        <View style={styles.corporateBanner}>
+          <Text style={styles.corporateBannerTag}>B2B &amp; LEASING SOLUTIONS</Text>
+          <Text style={styles.corporateBannerTitle}>Bulk Laptops for Growing Teams</Text>
+          <Text style={styles.corporateBannerSubtitle}>
+            Unlock tiered wholesale volume rates up to 25% OFF, customized OS imaging, 18% GST input credit invoice, and monthly leasing.
+          </Text>
+          <TouchableOpacity
+            style={styles.corporateBannerBtn}
+            onPress={() => setCorporateModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.corporateBannerBtnText}>Request Corporate Quote →</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      <CorporateQuoteModal
+        visible={corporateModalVisible}
+        onClose={() => setCorporateModalVisible(false)}
+      />
     </ScrollView>
   );
 }
@@ -560,5 +584,42 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  corporateBanner: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.navy,
+    borderRadius: radius.md,
+  },
+  corporateBannerTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: '#38BDF8',
+    marginBottom: 4,
+  },
+  corporateBannerTitle: {
+    ...typography.h3,
+    color: colors.textWhite,
+    marginBottom: 4,
+  },
+  corporateBannerSubtitle: {
+    ...typography.caption,
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: 16,
+    marginBottom: spacing.sm,
+  },
+  corporateBannerBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 9,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  corporateBannerBtnText: {
+    ...typography.caption,
+    fontWeight: '700',
+    color: colors.textWhite,
   },
 });

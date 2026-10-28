@@ -8,7 +8,17 @@ import EmptyState from '../../components/EmptyState';
 import { useCart } from '../../lib/cart-context';
 
 export default function CartPage() {
-  const { items, itemCount, subtotal, updateQuantity, removeItem, clearCart } = useCart();
+  const {
+    items,
+    itemCount,
+    subtotal,
+    oneTimeTotal,
+    monthlyTotal,
+    updateQuantity,
+    updateWarranty,
+    removeItem,
+    clearCart,
+  } = useCart();
   const [pincode, setPincode] = useState('');
   const [pincodeStatus, setPincodeStatus] = useState<string | null>(null);
   const [promoCode, setPromoCode] = useState('');
@@ -79,8 +89,10 @@ export default function CartPage() {
             {/* ITEMS LIST (8 cols) */}
             <div className="lg:col-span-8 space-y-4">
               {items.map((item) => {
+                const isLease = item.purchaseMode === 'lease';
                 const unitPrice = Number(item.priceAtAdd);
-                const itemTotal = unitPrice * item.quantity;
+                const warrantyAmount = (!isLease && item.hasWarranty) ? (item.warrantyPrice || 1999) : 0;
+                const itemTotal = (unitPrice + warrantyAmount) * item.quantity;
                 const imgUrl =
                   item.product?.images?.find((i) => i.isPrimary)?.url ||
                   item.product?.images?.[0]?.url ||
@@ -88,7 +100,7 @@ export default function CartPage() {
 
                 return (
                   <div
-                    key={item.productId}
+                    key={item.id || `${item.productId}-${item.purchaseMode}-${item.configuration}`}
                     className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs flex flex-col sm:flex-row items-start sm:items-center gap-4 transition-all hover:border-slate-300"
                   >
                     {/* Thumbnail */}
@@ -112,27 +124,76 @@ export default function CartPage() {
 
                     {/* Info */}
                     <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-[#1D6FF2] border border-blue-200">
-                          Refurb
-                        </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {isLease ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200">
+                            RENT / mo
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-[#1D6FF2] border border-blue-200">
+                            BUY
+                          </span>
+                        )}
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                           Grade A+ Inspected
                         </span>
+                        {item.configuration === 'ram-16gb' && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            16GB Pro Upgrade
+                          </span>
+                        )}
                       </div>
+
                       <Link href={`/products/${item.productId}`} className="block">
                         <h3 className="font-bold text-sm sm:text-base text-[#0B1F4B] line-clamp-1 hover:text-[#1D6FF2] transition-colors">
                           {item.product?.name || 'Certified Refurbished Laptop'}
                         </h3>
                       </Link>
+
                       <p className="text-xs text-slate-400 font-mono">
                         SKU: {item.product?.sku || 'LM-SKU'}
                       </p>
 
-                      <div className="flex items-center gap-2 pt-1 text-xs text-slate-600">
-                        <span>Unit: <strong className="text-[#0B1F4B] tabular-nums">₹{unitPrice.toLocaleString('en-IN')}</strong></span>
-                        <span className="text-slate-300">•</span>
-                        <span className="text-emerald-700 font-medium">1-Yr Warranty Included</span>
+                      <div className="pt-1 text-xs text-slate-600">
+                        {isLease ? (
+                          <div className="space-y-0.5">
+                            <div>
+                              <span>Rate: <strong className="text-[#0B1F4B] tabular-nums">₹{unitPrice.toLocaleString('en-IN')}</strong> / mo</span>
+                            </div>
+                            <p className="text-[11px] text-purple-700 font-bold">
+                              Month 1 advance, ₹{unitPrice.toLocaleString('en-IN')}/month thereafter
+                            </p>
+                            <p className="text-[10px] text-slate-400">
+                              Later months are invoiced separately • Quarterly servicing included
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <span>Unit: <strong className="text-[#0B1F4B] tabular-nums">₹{unitPrice.toLocaleString('en-IN')}</strong></span>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-emerald-700 font-medium">1-Yr Warranty Included</span>
+                            </div>
+
+                            {/* Warranty Add-on Checkbox */}
+                            <label className="flex items-center gap-2 cursor-pointer text-[11px] text-slate-700 pt-0.5">
+                              <input
+                                type="checkbox"
+                                checked={item.hasWarranty || false}
+                                onChange={(e) => updateWarranty(item.id, e.target.checked)}
+                                className="w-3.5 h-3.5 rounded border-slate-300 text-[#2563EB] focus:ring-[#2563EB]"
+                              />
+                              <span className="font-medium">
+                                + 1-Year Extended Warranty (+₹1,999)
+                              </span>
+                              {item.hasWarranty && (
+                                <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                  Active (2-Yr Total)
+                                </span>
+                              )}
+                            </label>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -145,7 +206,7 @@ export default function CartPage() {
                       <div className="flex items-center gap-2">
                         <div className="flex items-center border border-[#CBD5E1] rounded-xl overflow-hidden bg-[#F8FAFC] h-9">
                           <button
-                            onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
                             className="px-2.5 h-full text-xs font-bold hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer flex items-center justify-center"
                             aria-label="Decrease quantity"
                           >
@@ -155,7 +216,7 @@ export default function CartPage() {
                             {item.quantity}
                           </span>
                           <button
-                            onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
                             className="px-2.5 h-full text-xs font-bold hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer flex items-center justify-center"
                             aria-label="Increase quantity"
                           >
@@ -164,7 +225,7 @@ export default function CartPage() {
                         </div>
 
                         <button
-                          onClick={() => removeItem(item.productId)}
+                          onClick={() => removeItem(item.id)}
                           className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer flex items-center justify-center"
                           title="Remove item"
                           aria-label="Remove item"
@@ -230,10 +291,19 @@ export default function CartPage() {
                 </h2>
 
                 <div className="space-y-3 text-xs">
-                  <div className="flex justify-between text-slate-600">
-                    <span>Subtotal ({itemCount} {itemCount === 1 ? 'item' : 'items'})</span>
-                    <span className="font-bold text-[#0B1F4B] tabular-nums">₹{subtotal.toLocaleString('en-IN')}</span>
-                  </div>
+                  {oneTimeTotal > 0 && (
+                    <div className="flex justify-between text-slate-600">
+                      <span>Outright Purchase Subtotal</span>
+                      <span className="font-bold text-[#0B1F4B] tabular-nums">₹{oneTimeTotal.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+
+                  {monthlyTotal > 0 && (
+                    <div className="flex justify-between text-slate-600">
+                      <span>Lease (Month 1 Advance)</span>
+                      <span className="font-bold text-purple-700 tabular-nums">₹{monthlyTotal.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
 
                   <div className="flex justify-between text-slate-600">
                     <span>Pan-India Insured Express Shipping</span>
@@ -241,8 +311,8 @@ export default function CartPage() {
                   </div>
 
                   <div className="flex justify-between text-slate-600">
-                    <span>1-Year Comprehensive Warranty</span>
-                    <span className="font-bold text-emerald-700 uppercase">FREE (Included)</span>
+                    <span>Warranty & Service Coverage</span>
+                    <span className="font-bold text-emerald-700 uppercase">Included</span>
                   </div>
 
                   <div className="flex justify-between text-slate-500 pt-2 border-t border-[#E4E9F2] text-[11px]">
@@ -274,14 +344,22 @@ export default function CartPage() {
                 </div>
 
                 {/* Total */}
-                <div className="pt-3 border-t border-[#E2E8F0] flex items-baseline justify-between">
-                  <div>
-                    <span className="text-sm font-bold text-[#111827] block">Total Amount</span>
-                    <span className="text-[10px] text-[#475569]">All Taxes &amp; Shipping Included</span>
+                <div className="pt-3 border-t border-[#E2E8F0] space-y-2">
+                  <div className="flex items-baseline justify-between">
+                    <div>
+                      <span className="text-sm font-bold text-[#111827] block">Total Due Now</span>
+                      <span className="text-[10px] text-[#475569]">All Taxes &amp; Shipping Included</span>
+                    </div>
+                    <span className="text-2xl font-bold text-[#111827] tabular-nums">
+                      ₹{subtotal.toLocaleString('en-IN')}
+                    </span>
                   </div>
-                  <span className="text-2xl font-bold text-[#111827] tabular-nums">
-                    ₹{subtotal.toLocaleString('en-IN')}
-                  </span>
+
+                  {monthlyTotal > 0 && (
+                    <p className="text-[11px] text-purple-700 font-medium bg-purple-50 p-2.5 rounded-xl border border-purple-200">
+                      ℹ️ Includes ₹{monthlyTotal.toLocaleString('en-IN')} Month 1 advance. ₹{monthlyTotal.toLocaleString('en-IN')}/month thereafter is invoiced separately.
+                    </p>
+                  )}
                 </div>
 
                 {/* Checkout CTA */}

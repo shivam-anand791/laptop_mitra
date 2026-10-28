@@ -27,6 +27,9 @@ async function bootstrap() {
     ? configuredOrigins
     : ['http://localhost:3000', 'http://127.0.0.1:3000'];
 
+  // Trust reverse proxy (Render, Cloudflare, load balancers) for accurate client IP rate limiting
+  app.set('trust proxy', 1);
+
   // Register Helmet security headers
   app.use(
     helmet({

@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput, RefreshControl } from 'react-native';
-import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
+import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useOrder, useCancelOrder, useReturnOrder, useReorder, useOrderInvoice, useOrderTracking } from '../../hooks/useApi';
-import { MainStackParamList } from '../../navigation/types';
+import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
 
 type OrderDetailRouteProp = RouteProp<MainStackParamList, 'OrderDetail'>;
 
@@ -34,6 +34,7 @@ const formatDate = (dateStr: string) => {
 
 export default function OrderDetailScreen() {
   const route = useRoute<OrderDetailRouteProp>();
+  const navigation = useNavigation<MainStackNavigationProp>();
   const { orderId } = route.params;
 
   const { data: order, isLoading, refetch: refetchOrder, isRefetching: isRefetchingOrder } = useOrder(orderId);
@@ -197,6 +198,15 @@ export default function OrderDetailScreen() {
             <Text style={styles.secondaryButtonText}>Return</Text>
           </TouchableOpacity>
         )}
+
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => navigation.navigate('GuidedSupportFlow', { orderId: order.id })}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="help-buoy-outline" size={16} color="#2563eb" />
+          <Text style={styles.secondaryButtonText}>Need Help?</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Status Timeline */}
@@ -238,9 +248,12 @@ export default function OrderDetailScreen() {
       {/* Order Items */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Ordered Laptops & Items</Text>
-        {order.items?.map((item) => {
+        {order.items?.map((item: any) => {
           const product = item.product;
-          const primaryImage = product?.images?.find((img) => img.isPrimary) ?? product?.images?.[0];
+          const primaryImage = product?.images?.find((img: any) => img.isPrimary) ?? product?.images?.[0];
+          const isLease = item.purchaseMode === 'lease';
+          const lineUnitTotal = Number(item.price) + (item.hasWarranty && !isLease ? Number(item.warrantyPrice || 1999) : 0);
+
           return (
             <View key={item.id} style={styles.orderItem}>
               <View style={styles.itemImage}>
@@ -253,9 +266,45 @@ export default function OrderDetailScreen() {
                 )}
               </View>
               <View style={styles.itemInfo}>
+                <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center', marginBottom: 2 }}>
+                  <View style={{
+                    paddingHorizontal: 5,
+                    paddingVertical: 1,
+                    borderRadius: 4,
+                    backgroundColor: isLease ? '#FEF3C7' : '#DCFCE7',
+                  }}>
+                    <Text style={{
+                      fontSize: 9,
+                      fontWeight: '800',
+                      textTransform: 'uppercase',
+                      color: isLease ? '#92400E' : '#15803D',
+                    }}>
+                      {isLease ? 'Rent / mo' : 'Buy'}
+                    </Text>
+                  </View>
+                  {item.configuration === 'ram-16gb' && (
+                    <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: '#EFF6FF' }}>
+                      <Text style={{ fontSize: 9, fontWeight: '700', color: '#1D4ED8' }}>16GB RAM</Text>
+                    </View>
+                  )}
+                  {item.hasWarranty && !isLease && (
+                    <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: '#F3E8FF' }}>
+                      <Text style={{ fontSize: 9, fontWeight: '700', color: '#7E22CE' }}>+1 Yr Warranty</Text>
+                    </View>
+                  )}
+                </View>
+
                 <Text style={styles.itemName} numberOfLines={2}>{product?.name ?? 'Laptop Item'}</Text>
-                <Text style={styles.itemDetail}>Qty: {item.quantity} × {formatPrice(item.price)}</Text>
-                <Text style={styles.itemTotal}>{formatPrice(Number(item.price) * (item.quantity ?? 1))}</Text>
+                <Text style={styles.itemDetail}>
+                  Qty: {item.quantity} × {formatPrice(item.price)}
+                  {isLease && <Text style={{ color: '#92400E', fontWeight: '600' }}> (1st Month)</Text>}
+                </Text>
+                {isLease && (
+                  <Text style={{ fontSize: 10, color: '#92400E', fontWeight: '500', marginTop: 2 }}>
+                    Month 1 advance, {formatPrice(item.price)}/mo thereafter. Later months are invoiced separately.
+                  </Text>
+                )}
+                <Text style={styles.itemTotal}>{formatPrice(lineUnitTotal * (item.quantity ?? 1))}</Text>
               </View>
             </View>
           );
@@ -323,6 +372,24 @@ export default function OrderDetailScreen() {
             <Text style={styles.summaryValue}>{order.paymentMethod || 'Razorpay Secure'}</Text>
           </View>
         </View>
+      </View>
+
+      {/* Need Help With This Order Banner */}
+      <View style={styles.helpBannerCard}>
+        <Ionicons name="chatbubbles-outline" size={24} color="#2563eb" />
+        <View style={styles.helpBannerContent}>
+          <Text style={styles.helpBannerTitle}>Need help with this order?</Text>
+          <Text style={styles.helpBannerDesc}>
+            Track delivery, check 7-day return eligibility, or connect with a specialist.
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.helpBannerButton}
+          onPress={() => navigation.navigate('GuidedSupportFlow', { orderId: order.id })}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.helpBannerButtonText}>Get Help</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Cancel Button */}
@@ -778,5 +845,42 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 14,
     marginBottom: 16,
+  },
+  helpBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#bfdbfe',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  helpBannerContent: {
+    flex: 1,
+  },
+  helpBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  helpBannerDesc: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  helpBannerButton: {
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  helpBannerButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

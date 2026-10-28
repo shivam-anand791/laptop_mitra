@@ -8,6 +8,7 @@ import { useWishlist } from '../lib/wishlist-context';
 import { GradeBadge } from './ui/Badge';
 import SpecTag from './SpecTag';
 import PriceDisplay from './PriceDisplay';
+import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../lib/config';
 
 /* ── Variants ── */
 export type ProductCardVariant = 'default' | 'compact' | 'featured';
@@ -35,9 +36,12 @@ export function getDiscount(product: Product): number | null {
   return Math.round(((compare - price) / compare) * 100);
 }
 
-/* ── Bulk Price estimate ── */
-export function getBulkPrice(price: number): number {
-  return Math.round(price * 0.93);
+/* ── Bulk Price helper (real DB column) ── */
+export function getBulkPrice(product: Product): number | null {
+  if (product.bulkSellPrice !== null && product.bulkSellPrice !== undefined) {
+    return Number(product.bulkSellPrice);
+  }
+  return null;
 }
 
 /* ── Primary image ── */
@@ -65,7 +69,7 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
   const img = getPrimaryImage(product);
   const inStock = product.stock > 0;
   const numPrice = Number(product.price);
-  const bulkPrice = getBulkPrice(numPrice);
+  const bulkPrice = getBulkPrice(product);
 
   const handleAdd = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -89,7 +93,7 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
   const handleWhatsApp = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const url = `https://wa.me/919999999999?text=${encodeURIComponent(
+    const url = `https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=${encodeURIComponent(
       `Hi LaptopMitra, I am interested in ${product.name} (SKU: ${product.sku}) priced at ₹${numPrice.toLocaleString('en-IN')}. Please share bulk/best quotation.`
     )}`;
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -240,10 +244,17 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
           </div>
 
           {/* Bulk Pricing Line */}
-          <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200/80 px-2 py-1 rounded-md flex items-center justify-between font-medium">
-            <span>Bulk (5+ units):</span>
-            <strong className="text-[#0B1F4B] font-bold">₹{bulkPrice.toLocaleString('en-IN')}/pc</strong>
-          </div>
+          {bulkPrice ? (
+            <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200/80 px-2 py-1 rounded-md flex items-center justify-between font-medium">
+              <span>Bulk (5+ units):</span>
+              <strong className="text-[#0B1F4B] font-bold">₹{bulkPrice.toLocaleString('en-IN')}/pc</strong>
+            </div>
+          ) : (
+            <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200/80 px-2 py-1 rounded-md flex items-center justify-between font-medium">
+              <span>Bulk (5+ units):</span>
+              <span className="text-[#2563EB] font-semibold">Quote on request</span>
+            </div>
+          )}
         </div>
 
         {/* Price + Action Button */}

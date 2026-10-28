@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Category, Product } from '../lib/types';
+import { Category, Product, ProductFilterFacets } from '../lib/types';
 
 export interface FilterState {
   category: string;
@@ -23,7 +23,9 @@ interface FilterSidebarProps {
   onFilterChange: (filters: FilterState) => void;
   onReset: () => void;
   onCloseMobile?: () => void;
+  dynamicFacets?: ProductFilterFacets | null;
 }
+
 
 export const BASE_BRANDS = ['Lenovo', 'Apple', 'Dell', 'HP', 'ASUS', 'Acer'];
 export const BASE_PROCESSORS = ['Apple M-Series', 'Intel Core i7', 'Intel Core i5', 'Intel Core i3', 'AMD Ryzen'];
@@ -144,7 +146,7 @@ export function getProductStorageGroup(product: Product): string {
 export function getProductGrade(product: Product): 'A+' | 'A' | 'B' {
   const condition = (product.metadata?.condition || product.name || '').toUpperCase();
   if (condition.includes('A+') || condition.includes('PRISTINE') || condition.includes('SEALED')) return 'A+';
-  if (condition.includes('A') || condition.includes('EXCELLENT')) return 'A';
+  if (/\bA\b/.test(condition) || condition.includes('EXCELLENT')) return 'A';
   return 'B';
 }
 
@@ -155,6 +157,7 @@ export default function FilterSidebar({
   onFilterChange,
   onReset,
   onCloseMobile,
+  dynamicFacets,
 }: FilterSidebarProps) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     categories: true,
@@ -170,26 +173,35 @@ export default function FilterSidebar({
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
-  // Dynamically derive available options from catalog + base options
+  // Dynamically derive available options from live stock facets or catalog fallback
   const dynamicBrands = useMemo(() => {
+    if (dynamicFacets?.brands && dynamicFacets.brands.length > 0) {
+      return dynamicFacets.brands;
+    }
     const set = new Set(BASE_BRANDS);
     products.forEach((p) => {
       const b = getProductBrand(p);
       if (b !== 'Other') set.add(b);
     });
     return Array.from(set);
-  }, [products]);
+  }, [products, dynamicFacets]);
 
   const dynamicProcessors = useMemo(() => {
+    if (dynamicFacets?.processors && dynamicFacets.processors.length > 0) {
+      return dynamicFacets.processors;
+    }
     const set = new Set(BASE_PROCESSORS);
     products.forEach((p) => {
       const pr = getProductProcessorGroup(p);
       if (pr !== 'Other') set.add(pr);
     });
     return Array.from(set);
-  }, [products]);
+  }, [products, dynamicFacets]);
 
   const dynamicRams = useMemo(() => {
+    if (dynamicFacets?.ramOptions && dynamicFacets.ramOptions.length > 0) {
+      return dynamicFacets.ramOptions;
+    }
     const set = new Set(BASE_RAMS);
     products.forEach((p) => {
       const r = getProductRamGroup(p);
@@ -200,16 +212,20 @@ export default function FilterSidebar({
       const numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
       return numA - numB;
     });
-  }, [products]);
+  }, [products, dynamicFacets]);
 
   const dynamicStorages = useMemo(() => {
+    if (dynamicFacets?.storageOptions && dynamicFacets.storageOptions.length > 0) {
+      return dynamicFacets.storageOptions;
+    }
     const set = new Set(BASE_STORAGES);
     products.forEach((p) => {
       const s = getProductStorageGroup(p);
       if (s !== 'Other') set.add(s);
     });
     return Array.from(set);
-  }, [products]);
+  }, [products, dynamicFacets]);
+
 
   // Helper matcher function for faceted count computation
   const matchesFilter = (

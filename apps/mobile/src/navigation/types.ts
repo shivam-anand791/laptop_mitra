@@ -34,6 +34,16 @@ export type MainStackParamList = {
   AddressBook: undefined;
   AddAddress: { addressId?: string };
   ChangePassword: undefined;
+  BuybackGuarantee: undefined;
+  Terms: undefined;
+  Privacy: undefined;
+  About: undefined;
+  HelpHome: undefined;
+  HelpArticleDetail: { slug: string; title?: string };
+  GuidedSupportFlow: { orderId?: string; category?: string };
+  TicketList: undefined;
+  TicketDetail: { ticketId: string; isNew?: boolean };
+  ReturnDetail: { returnId: string; isNew?: boolean };
 };
 
 export type RootNavigationProp = NativeStackNavigationProp<RootStackParamList>;

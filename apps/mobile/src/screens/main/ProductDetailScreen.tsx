@@ -9,6 +9,7 @@ import {
   Alert,
   Dimensions,
   FlatList,
+  Linking,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +20,7 @@ import { useAuth } from '../../providers/AuthProvider';
 import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
+import CorporateQuoteModal from '../../components/CorporateQuoteModal';
 import { colors, radius, shadows, spacing, typography } from '../../theme/tokens';
 
 type ProductDetailRouteProp = RouteProp<MainStackParamList, 'ProductDetail'>;
@@ -30,7 +32,7 @@ export default function ProductDetailScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
   const insets = useSafeAreaInsets();
   const { productId } = route.params;
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   const { data: product, isLoading, error } = useProduct(productId);
   const addToCart = useAddToCart();
@@ -40,6 +42,13 @@ export default function ProductDetailScreen() {
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<'specs' | 'overview' | 'warranty'>('specs');
+  const [corporateModalVisible, setCorporateModalVisible] = useState(false);
+  const [quoteModalMode, setQuoteModalMode] = useState<'sell' | 'lease'>('sell');
+
+  // Phase R3 Commercial States
+  const [purchaseMode, setPurchaseMode] = useState<'sell' | 'lease'>('sell');
+  const [configuration, setConfiguration] = useState<'default' | 'ram-16gb'>('default');
+  const [hasWarranty, setHasWarranty] = useState<boolean>(false);
 
   const isWishlisted = wishlist?.some((item: { productId: string; id: string }) => item.productId === productId);
   const wishlistItem = wishlist?.find((item: { productId: string; id: string }) => item.productId === productId);
@@ -54,17 +63,44 @@ export default function ProductDetailScreen() {
       Alert.alert('Login Required', 'Please login to add items to your cart.');
       return;
     }
+    const hasLease = product?.leasePriceMonthly !== null && product?.leasePriceMonthly !== undefined;
+    if (purchaseMode === 'lease' && !hasLease) {
+      Alert.alert(
+        'Quote Required',
+        'This product does not have a fixed monthly lease price. Please request a quote.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Request Quote',
+            onPress: () => {
+              setQuoteModalMode('lease');
+              setCorporateModalVisible(true);
+            },
+          },
+        ]
+      );
+      return;
+    }
     addToCart.mutate(
-      { productId, quantity: 1 },
+      {
+        productId,
+        quantity: 1,
+        purchaseMode,
+        configuration,
+        hasWarranty: purchaseMode === 'sell' ? hasWarranty : false,
+      },
       {
         onSuccess: () => {
           if (onSuccess) {
             onSuccess();
           } else {
-            Alert.alert('Added to Cart', `${product?.name ?? 'Item'} added to your cart.`);
+            Alert.alert(
+              'Added to Cart',
+              `${product?.name ?? 'Item'} (${purchaseMode === 'lease' ? 'Rent / Lease' : 'Buy'}) added to your cart.`
+            );
           }
         },
-        onError: (err) => Alert.alert('Error', err.message),
+        onError: (err: any) => Alert.alert('Error', err.message),
       },
     );
   };
@@ -72,6 +108,30 @@ export default function ProductDetailScreen() {
   const handleBuyNow = () => {
     handleAddToCart(() => {
       navigation.navigate('MainTabs');
+    });
+  };
+
+  const handleWhatsAppShare = () => {
+    const rawPrice = typeof product?.price === 'string' ? parseFloat(product.price) : (product?.price || 0);
+    const isLease = purchaseMode === 'lease';
+    const hasLease = product?.leasePriceMonthly !== null && product?.leasePriceMonthly !== undefined;
+    const leaseMonthly = hasLease
+      ? (typeof product?.leasePriceMonthly === 'string' ? parseFloat(product?.leasePriceMonthly) : product?.leasePriceMonthly)
+      : null;
+    const activePrice = isLease
+      ? (leaseMonthly !== null && leaseMonthly !== undefined ? Number(leaseMonthly) + (configuration === 'ram-16gb' ? 500 : 0) : null)
+      : rawPrice + (configuration === 'ram-16gb' ? 4000 : 0);
+
+    const priceText = activePrice !== null
+      ? `Price: ₹${activePrice.toLocaleString('en-IN')}${isLease ? '/month' : ''}`
+      : 'Price: On Request (Rent / Lease)';
+
+    const referralText = user?.referralCode
+      ? `\nUse my Mitra code *${user.referralCode}* at checkout to get flat ₹500 instant discount!`
+      : '';
+    const message = `Check out this certified refurbished laptop on LaptopMitra:\n*${product?.name || 'Laptop'}*\n${priceText}\nGrade A+ Inspected with 1-Year Warranty.${referralText}\nhttps://laptopmitra.in/products/${productId}`;
+    Linking.openURL(`https://wa.me/?text=${encodeURIComponent(message)}`).catch(() => {
+      Alert.alert('Unable to open WhatsApp', 'Please ensure WhatsApp is installed on your device.');
     });
   };
 
@@ -134,7 +194,20 @@ export default function ProductDetailScreen() {
 
   const meta = product.metadata || {};
   const condition = meta.condition || meta.grade || 'Grade A+ (Like New)';
-  const bulkPrice = meta.bulkPrice || meta.wholesalePrice;
+
+  const hasLeasePrice = product.leasePriceMonthly !== null && product.leasePriceMonthly !== undefined;
+  const leasePriceNum = hasLeasePrice
+    ? (typeof product.leasePriceMonthly === 'string' ? parseFloat(product.leasePriceMonthly) : product.leasePriceMonthly)
+    : null;
+
+  const isLease = purchaseMode === 'lease';
+  const basePrice = isLease ? leasePriceNum : priceNum;
+  const configUpgradePrice = configuration === 'ram-16gb' ? (isLease ? 500 : 4000) : 0;
+  const currentUnitPrice = (basePrice !== null && basePrice !== undefined) ? Number(basePrice) + configUpgradePrice : null;
+
+  const currentBulkPrice = isLease
+    ? (product.bulkLeasePrice ? (typeof product.bulkLeasePrice === 'string' ? parseFloat(product.bulkLeasePrice) : product.bulkLeasePrice) : null)
+    : (product.bulkSellPrice ? (typeof product.bulkSellPrice === 'string' ? parseFloat(product.bulkSellPrice) : product.bulkSellPrice) : null);
 
   // Build spec sheet
   const specItems: { label: string; value: string }[] = [];
@@ -233,31 +306,212 @@ export default function ProductDetailScreen() {
             </View>
           )}
 
+          {/* Procurement Mode Selector */}
+          <View style={styles.modeSelector}>
+            <TouchableOpacity
+              style={[styles.modeTab, purchaseMode === 'sell' && styles.modeTabActive]}
+              onPress={() => setPurchaseMode('sell')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.modeTabText, purchaseMode === 'sell' && styles.modeTabTextActive]}>
+                Buy Outright
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeTab, purchaseMode === 'lease' && styles.modeTabActiveLease]}
+              onPress={() => {
+                setPurchaseMode('lease');
+                setHasWarranty(false); // strictly rejected on lease
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.modeTabText, purchaseMode === 'lease' && styles.modeTabTextActiveLease]}>
+                Rent / Lease
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Price Section */}
           <View style={styles.priceContainer}>
-            <View style={styles.priceRow}>
-              <Text style={styles.mainPrice}>{formatPrice(product.price)}</Text>
-              {hasDiscount && (
-                <>
-                  <Text style={styles.comparePrice}>{formatPrice(comparePriceNum!)}</Text>
-                  <Badge variant="discount" discountPercent={discountPercent} />
-                </>
-              )}
-            </View>
-            <Text style={styles.taxNote}>
-              Inclusive of 18% GST • Free express delivery across India
-            </Text>
+            {purchaseMode === 'lease' && !hasLeasePrice ? (
+              <View>
+                <View style={styles.priceRow}>
+                  <Text style={styles.mainPrice}>Price on request</Text>
+                  <View style={styles.quoteBadge}>
+                    <Text style={styles.quoteBadgeText}>Quote Required</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.requestQuoteInlineBtn}
+                  onPress={() => {
+                    setQuoteModalMode('lease');
+                    setCorporateModalVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.requestQuoteInlineBtnText}>Request a Quote →</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.priceRow}>
+                <Text style={styles.mainPrice}>{formatPrice(currentUnitPrice!)}</Text>
+                {purchaseMode === 'lease' && (
+                  <Text style={styles.perMonthText}>/ month</Text>
+                )}
+                {purchaseMode === 'sell' && hasDiscount && (
+                  <>
+                    <Text style={styles.comparePrice}>{formatPrice(comparePriceNum!)}</Text>
+                    <Badge variant="discount" discountPercent={discountPercent} />
+                  </>
+                )}
+              </View>
+            )}
+
+            {purchaseMode === 'lease' ? (
+              <View style={styles.leaseNoticeBox}>
+                <Ionicons name="information-circle-outline" size={16} color="#B45309" />
+                <Text style={styles.leaseNoticeText}>
+                  Month 1 advance, then {hasLeasePrice ? formatPrice(currentUnitPrice!) : 'agreed rate'}/month; later months invoiced separately.
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.taxNote}>
+                Inclusive of 18% GST • Free express delivery across India
+              </Text>
+            )}
 
             {/* Bulk Pricing Callout */}
-            {bulkPrice && (
-              <View style={styles.bulkCallout}>
+            <View style={styles.bulkCallout}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <Ionicons name="cube-outline" size={16} color={colors.primary} />
                 <Text style={styles.bulkCalloutText}>
-                  Wholesale Rate: <Text style={styles.boldText}>{formatPrice(bulkPrice)}</Text> per unit on 5+ orders
+                  {currentBulkPrice ? (
+                    <>
+                      Bulk Rate: <Text style={styles.boldText}>{formatPrice(currentBulkPrice)}</Text>
+                      {purchaseMode === 'lease' ? '/mo' : ''} per unit (5+ units, via quote)
+                    </>
+                  ) : (
+                    <>Bulk / Fleet Procurement (5+ units, via quote)</>
+                  )}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={{ marginTop: 6, alignSelf: 'flex-start' }}
+                onPress={() => {
+                  setQuoteModalMode(purchaseMode === 'lease' ? 'lease' : 'sell');
+                  setCorporateModalVisible(true);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>
+                  Request Fleet / Corporate Quote →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Configuration Upgrade Selector */}
+          <View style={styles.configContainer}>
+            <Text style={styles.sectionHeaderTitle}>Select Configuration</Text>
+            <View style={styles.configCardsRow}>
+              <TouchableOpacity
+                style={[styles.configCard, configuration === 'default' && styles.configCardActive]}
+                onPress={() => setConfiguration('default')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.configCardHeader}>
+                  <Text style={[styles.configCardTitle, configuration === 'default' && styles.configCardTitleActive]}>
+                    Standard Factory
+                  </Text>
+                  {configuration === 'default' && (
+                    <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
+                  )}
+                </View>
+                <Text style={styles.configCardDesc}>Default specs as listed</Text>
+                <Text style={styles.configCardPrice}>Included (₹0)</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.configCard, configuration === 'ram-16gb' && styles.configCardActive]}
+                onPress={() => setConfiguration('ram-16gb')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.configCardHeader}>
+                  <Text style={[styles.configCardTitle, configuration === 'ram-16gb' && styles.configCardTitleActive]}>
+                    16GB Pro Upgrade
+                  </Text>
+                  {configuration === 'ram-16gb' && (
+                    <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
+                  )}
+                </View>
+                <Text style={styles.configCardDesc}>High-speed performance</Text>
+                <Text style={styles.configCardPrice}>
+                  {purchaseMode === 'lease' ? '+₹500/mo' : '+₹4,000'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Warranty Toggle Section */}
+          <View style={styles.warrantyBox}>
+            {purchaseMode === 'sell' ? (
+              <TouchableOpacity
+                style={[styles.warrantyToggleRow, hasWarranty && styles.warrantyToggleRowActive]}
+                onPress={() => setHasWarranty(!hasWarranty)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={hasWarranty ? 'checkbox' : 'square-outline'}
+                  size={20}
+                  color={hasWarranty ? colors.primary : colors.textMuted}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.warrantyToggleTitle}>1-Year Extended Hardware Warranty</Text>
+                  <Text style={styles.warrantyToggleSub}>Full motherboard & part protection across India (+₹1,999)</Text>
+                </View>
+                <Text style={styles.warrantyPriceTag}>₹1,999</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.leaseWarrantyRow}>
+                <Ionicons name="shield-checkmark" size={18} color="#D97706" />
+                <Text style={styles.leaseWarrantyText}>
+                  Lease Maintenance: Quarterly servicing and component repairs are included in your monthly lease agreement.
                 </Text>
               </View>
             )}
           </View>
+
+          {/* WhatsApp Share Button */}
+          <TouchableOpacity
+            style={styles.whatsAppShareBtn}
+            onPress={handleWhatsAppShare}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="logo-whatsapp" size={18} color="#15803D" />
+            <Text style={styles.whatsAppShareText}>Share Deal on WhatsApp (Earn 10% Cash)</Text>
+          </TouchableOpacity>
+
+          {/* 36-Month Buyback Assurance Trust Block */}
+          <TouchableOpacity
+            style={styles.buybackCard}
+            onPress={() => navigation.navigate('BuybackGuarantee')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.buybackIconCircle}>
+              <Ionicons name="shield-checkmark" size={22} color="#0284C7" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.buybackBadge}>LIFETIME</Text>
+                <Text style={styles.buybackTag}>Up to 70% Value</Text>
+              </View>
+              <Text style={styles.buybackTitle}>Buyback Assurance</Text>
+              <Text style={styles.buybackSubtitle}>
+                Guaranteed return value up to 36 months (70% / 60% / 50% / 40%)
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#0284C7" />
+          </TouchableOpacity>
 
           {/* 32-Point Quality Inspection Box */}
           <View style={styles.inspectionCard}>
@@ -377,6 +631,20 @@ export default function ProductDetailScreen() {
                   </Text>
                 </View>
               </View>
+
+              <TouchableOpacity
+                style={styles.warrantyItem}
+                onPress={() => navigation.navigate('BuybackGuarantee')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="shield-checkmark-outline" size={20} color="#0284C7" />
+                <View style={styles.warrantyTextWrap}>
+                  <Text style={[styles.warrantyTitle, { color: '#0284C7' }]}>36-Month Buyback Guarantee</Text>
+                  <Text style={styles.warrantyDesc}>
+                    Assured return value up to 70% within 36 months (70/60/50/40%). Tap to read policy →
+                  </Text>
+                </View>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -398,25 +666,51 @@ export default function ProductDetailScreen() {
           />
         </TouchableOpacity>
 
-        <Button
-          title={addToCart.isPending ? 'Adding...' : 'Add to Cart'}
-          onPress={() => handleAddToCart()}
-          variant="secondary"
-          size="md"
-          loading={addToCart.isPending}
-          disabled={product.stock <= 0}
-          style={styles.bottomActionButton}
-        />
+        {purchaseMode === 'lease' && !hasLeasePrice ? (
+          <Button
+            title="Request a Quote for Rent / Lease"
+            onPress={() => {
+              setQuoteModalMode('lease');
+              setCorporateModalVisible(true);
+            }}
+            variant="primary"
+            size="md"
+            style={{ flex: 1 }}
+          />
+        ) : (
+          <>
+            <Button
+              title={addToCart.isPending ? 'Adding...' : 'Add to Cart'}
+              onPress={() => handleAddToCart()}
+              variant="secondary"
+              size="md"
+              loading={addToCart.isPending}
+              disabled={product.stock <= 0}
+              style={styles.bottomActionButton}
+            />
 
-        <Button
-          title={product.stock > 0 ? 'Buy Now' : 'Out of Stock'}
-          onPress={handleBuyNow}
-          variant="navy"
-          size="md"
-          disabled={product.stock <= 0}
-          style={styles.bottomActionButton}
-        />
+            <Button
+              title={product.stock > 0 ? (purchaseMode === 'lease' ? 'Lease Now' : 'Buy Now') : 'Out of Stock'}
+              onPress={handleBuyNow}
+              variant="navy"
+              size="md"
+              disabled={product.stock <= 0}
+              style={styles.bottomActionButton}
+            />
+          </>
+        )}
       </View>
+
+      <CorporateQuoteModal
+        visible={corporateModalVisible}
+        onClose={() => setCorporateModalVisible(false)}
+        prefill={{
+          productId: product?.id,
+          laptopModel: product?.name,
+          mode: quoteModalMode,
+          quantity: 5,
+        }}
+      />
     </View>
   );
 }
@@ -754,5 +1048,245 @@ const styles = StyleSheet.create({
   },
   bottomActionButton: {
     flex: 1,
+  },
+  modeSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#E2E8F0',
+    borderRadius: radius.md,
+    padding: 3,
+    gap: 4,
+  },
+  modeTab: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    borderRadius: radius.sm,
+  },
+  modeTabActive: {
+    backgroundColor: colors.cardBg,
+    ...shadows.sm,
+  },
+  modeTabActiveLease: {
+    backgroundColor: '#FEF3C7',
+    ...shadows.sm,
+  },
+  modeTabText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  modeTabTextActive: {
+    color: colors.primary,
+  },
+  modeTabTextActiveLease: {
+    color: '#92400E',
+  },
+  perMonthText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginLeft: 2,
+  },
+  quoteBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  quoteBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  requestQuoteInlineBtn: {
+    marginTop: 8,
+    backgroundColor: colors.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    alignSelf: 'flex-start',
+  },
+  requestQuoteInlineBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  leaseNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFBEB',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.xs,
+    marginTop: spacing.xs,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  leaseNoticeText: {
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '600',
+    flex: 1,
+  },
+  configContainer: {
+    gap: spacing.xs + 2,
+  },
+  sectionHeaderTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.navy,
+  },
+  configCardsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  configCard: {
+    flex: 1,
+    backgroundColor: colors.cardBg,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1.5,
+    borderColor: colors.cardBorder,
+    gap: 4,
+  },
+  configCardActive: {
+    borderColor: colors.primary,
+    backgroundColor: '#EFF6FF',
+  },
+  configCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  configCardTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  configCardTitleActive: {
+    color: colors.primary,
+  },
+  configCardDesc: {
+    fontSize: 10,
+    color: colors.textSecondary,
+  },
+  configCardPrice: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.navy,
+    marginTop: 2,
+  },
+  warrantyBox: {
+    marginTop: spacing.xs,
+  },
+  warrantyToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.cardBg,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  warrantyToggleRowActive: {
+    borderColor: colors.primary,
+    backgroundColor: '#F5F3FF',
+  },
+  warrantyToggleTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.navy,
+  },
+  warrantyToggleSub: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  warrantyPriceTag: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  leaseWarrantyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: '#FFFBEB',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  leaseWarrantyText: {
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '600',
+    flex: 1,
+  },
+  whatsAppShareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: '#DCFCE7',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  whatsAppShareText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  buybackCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + 2,
+    backgroundColor: '#F0F9FF',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    ...shadows.sm,
+  },
+  buybackIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buybackBadge: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#0369A1',
+    letterSpacing: 0.8,
+  },
+  buybackTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#15803D',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  buybackTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.navy,
+    marginTop: 1,
+  },
+  buybackSubtitle: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });

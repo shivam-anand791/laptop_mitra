@@ -15,8 +15,9 @@ import FilterSidebar, {
 } from '../../components/FilterSidebar';
 import { ProductCardSkeleton } from '../../components/ui/Skeleton';
 import EmptyState from '../../components/EmptyState';
-import { Product, Category } from '../../lib/types';
+import { Product, Category, ProductFilterFacets } from '../../lib/types';
 import { api } from '../../lib/api';
+import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../lib/config';
 
 function ProductsContent() {
   const searchParams = useSearchParams();
@@ -29,6 +30,7 @@ function ProductsContent() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [productFilters, setProductFilters] = useState<ProductFilterFacets | null>(null);
   const [loading, setLoading] = useState(true);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [sortBy, setSortBy] = useState<string>('featured');
@@ -50,12 +52,14 @@ function ProductsContent() {
     async function loadData() {
       setLoading(true);
       try {
-        const [catRes, prodRes] = await Promise.all([
+        const [catRes, prodRes, filterRes] = await Promise.all([
           api.getCategories(),
           api.getProducts(),
+          api.getProductFilters().catch(() => null),
         ]);
         setCategories(catRes);
         setProducts(prodRes.products);
+        if (filterRes) setProductFilters(filterRes);
       } catch {
         // Handled by api fallback
       } finally {
@@ -64,6 +68,7 @@ function ProductsContent() {
     }
     loadData();
   }, []);
+
 
   useEffect(() => {
     const cat = searchParams.get('category');
@@ -245,7 +250,7 @@ function ProductsContent() {
           </div>
           <div className="flex items-center gap-3 shrink-0 pt-2 md:pt-0">
             <a
-              href="https://wa.me/919999999999?text=Hi%20LaptopMitra,%20I%20want%20to%20inquire%20about%20a%20bulk%20laptop%20order."
+              href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra,%20I%20want%20to%20inquire%20about%20a%20bulk%20laptop%20order.`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-bold text-xs shadow-md shadow-emerald-900/20 active:scale-95 transition-all cursor-pointer"
@@ -389,6 +394,7 @@ function ProductsContent() {
             onFilterChange={setFilters}
             onReset={resetFilters}
             onCloseMobile={() => setMobileFiltersOpen(false)}
+            dynamicFacets={productFilters}
           />
         </div>
       )}
@@ -404,9 +410,11 @@ function ProductsContent() {
               filters={filters}
               onFilterChange={setFilters}
               onReset={resetFilters}
+              dynamicFacets={productFilters}
             />
           </div>
         </aside>
+
 
         {/* Main Product Area */}
         <div className="lg:col-span-3 space-y-6">

@@ -101,8 +101,9 @@ export const envObjectSchema = z
     // Mail
     // ---------------------------------------------------------------------
     /** 'console' writes the email to the log instead of sending it. */
-    MAIL_DRIVER: z.enum(['console', 'smtp']).default('console'),
-    MAIL_FROM: z.string().email().optional(),
+    MAIL_DRIVER: z.enum(['console', 'smtp', 'resend']).default('console'),
+    MAIL_FROM: z.string().optional(),
+    RESEND_API_KEY: z.string().optional(),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().int().positive().max(65535).optional(),
     SMTP_USER: z.string().optional(),
@@ -186,12 +187,12 @@ export const envObjectSchema = z
     }
 
     // --- Hard stop: real email sending outside production -----------------
-    if (env.MAIL_DRIVER === 'smtp' && !isProd && !env.ALLOW_REAL_EMAILS) {
+    if ((env.MAIL_DRIVER === 'smtp' || env.MAIL_DRIVER === 'resend') && !isProd && !env.ALLOW_REAL_EMAILS) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['MAIL_DRIVER'],
         message:
-          'Refusing to start: MAIL_DRIVER=smtp outside production would send real email to real ' +
+          `Refusing to start: MAIL_DRIVER=${env.MAIL_DRIVER} outside production would send real email to real ` +
           'addresses. Use MAIL_DRIVER=console, or set ALLOW_REAL_EMAILS=true to override.',
       });
     }
@@ -205,6 +206,16 @@ export const envObjectSchema = z
             message: `${key} is required when MAIL_DRIVER=smtp`,
           });
         }
+      }
+    }
+
+    if (env.MAIL_DRIVER === 'resend') {
+      if (!env.RESEND_API_KEY) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['RESEND_API_KEY'],
+          message: 'RESEND_API_KEY is required when MAIL_DRIVER=resend',
+        });
       }
     }
 

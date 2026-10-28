@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {
   ORDER_TRANSITION_MAP,
   ORDER_STATUSES,
-} from '../../../../packages/types/src/index.ts';
-import type { OrderStatus } from '../../../../packages/types/src/index.ts';
+} from '../../../../packages/types/dist/index.js';
+import type { OrderStatus } from '../../../../packages/types/dist/index.js';
 import { formatINR, toNumber } from '../../lib/format.ts';
 
 // Shipping address parser under test

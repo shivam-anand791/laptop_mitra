@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 // Canonical roles and statuses under test matching Phase 3 / packages/types
-const USER_ROLES = ['CUSTOMER', 'ADMIN', 'MODERATOR', 'GUEST'] as const;
+const USER_ROLES = ['CUSTOMER', 'ADMIN', 'MODERATOR', 'SUPPORT', 'GUEST'] as const;
 type UserRole = typeof USER_ROLES[number];
 
 const USER_STATUSES = ['ACTIVE', 'SUSPENDED', 'DELETED'] as const;
@@ -26,8 +26,8 @@ function formatINR(amount: number | string | null | undefined): string {
 
 describe('Phase 8: Admin Users & Analytics Contract Tests', () => {
   describe('Users Security & Role Rules', () => {
-    it('role filter strictly matches canonical Phase 3 roles (CUSTOMER, ADMIN, MODERATOR, GUEST), never USER', () => {
-      assert.deepEqual(Array.from(USER_ROLES), ['CUSTOMER', 'ADMIN', 'MODERATOR', 'GUEST']);
+    it('role filter strictly matches canonical Phase 3 roles (CUSTOMER, ADMIN, MODERATOR, SUPPORT, GUEST), never USER', () => {
+      assert.deepEqual(Array.from(USER_ROLES), ['CUSTOMER', 'ADMIN', 'MODERATOR', 'SUPPORT', 'GUEST']);
       assert.ok(!USER_ROLES.includes('USER' as any), 'Legacy "USER" role must not exist in canonical roles');
     });
 

@@ -19,6 +19,8 @@ import {
   Sparkles,
   ArrowRight,
   CheckCircle2,
+  LifeBuoy,
+  HelpCircle,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -26,9 +28,11 @@ const NAV_ITEMS = [
   { href: '/account/profile', label: 'My Profile', icon: User },
   { href: '/account/addresses', label: 'Manage Addresses', icon: MapPin },
   { href: '/account/orders', label: 'Orders & Returns', icon: Package },
+  { href: '/account/tickets', label: 'My Support Tickets', icon: LifeBuoy },
+  { href: '/help', label: 'Help & Support Hub', icon: HelpCircle },
   { href: '/account/wishlist', label: 'Wishlist', icon: Heart },
   { href: '/account/payments', label: 'Payment History', icon: CreditCard },
-  { href: '/account/warranty-support', label: 'Warranty & Support', icon: ShieldCheck },
+  { href: '/account/warranty-support', label: 'Warranty Claims', icon: ShieldCheck },
   { href: '/account/referral', label: 'Mitra Partner & Rewards', icon: Share2 },
   { href: '/account/notifications', label: 'Notification Settings', icon: Bell },
   { href: '/account/security', label: 'Security & Privacy', icon: Lock },

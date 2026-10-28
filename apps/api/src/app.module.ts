@@ -20,6 +20,9 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { SupportModule } from './modules/support/support.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { FirebaseAuthGuard } from './auth/guards/firebase-auth.guard';
+import { PaymentEncryptionModule } from './common/encryption/payment-encryption.module';
+import { QrStorageModule } from './common/storage/qr-storage.module';
+import { MailModule } from './modules/mail/mail.module';
 
 const apiPackageRoot = resolve(__dirname, '..');
 const repoRoot = resolve(__dirname, '..', '..', '..');
@@ -55,6 +58,9 @@ const repoRoot = resolve(__dirname, '..', '..', '..');
     CategoriesModule,
     SupportModule,
     FirebaseModule,
+    PaymentEncryptionModule,
+    QrStorageModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [

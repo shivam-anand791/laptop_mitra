@@ -10,6 +10,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ProductFilterFacets } from '@laptopmitra/types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import Button from './ui/Button';
 
@@ -27,9 +28,10 @@ interface FilterModalProps {
   onClose: () => void;
   onApply: (filters: FilterState) => void;
   currentFilters: FilterState;
-  brandCounts?: Record<string, number>;
-  ramCounts?: Record<string, number>;
-  storageCounts?: Record<string, number>;
+  brandCounts?: Record<string, number> | undefined;
+  ramCounts?: Record<string, number> | undefined;
+  storageCounts?: Record<string, number> | undefined;
+  dynamicFacets?: ProductFilterFacets | null | undefined;
 }
 
 const PRESET_RANGES = [
@@ -51,6 +53,7 @@ export default function FilterModal({
   brandCounts = {},
   ramCounts = {},
   storageCounts = {},
+  dynamicFacets,
 }: FilterModalProps) {
   const [minPrice, setMinPrice] = useState(currentFilters.minPrice);
   const [maxPrice, setMaxPrice] = useState(currentFilters.maxPrice);
@@ -58,6 +61,32 @@ export default function FilterModal({
   const [brand, setBrand] = useState(currentFilters.brand || '');
   const [ram, setRam] = useState(currentFilters.ram || '');
   const [storage, setStorage] = useState(currentFilters.storage || '');
+
+  const brands = dynamicFacets?.brands && dynamicFacets.brands.length > 0 ? dynamicFacets.brands : BRANDS;
+  const ramOptions = dynamicFacets?.ramOptions && dynamicFacets.ramOptions.length > 0 ? dynamicFacets.ramOptions : RAM_OPTIONS;
+  const storageOptions = dynamicFacets?.storageOptions && dynamicFacets.storageOptions.length > 0 ? dynamicFacets.storageOptions : STORAGE_OPTIONS;
+
+  const getBrandCount = (b: string) => {
+    if (dynamicFacets?.counts?.brands) {
+      return dynamicFacets.counts.brands[b] ?? dynamicFacets.counts.brands[b.toLowerCase()];
+    }
+    return brandCounts[b.toLowerCase()];
+  };
+
+  const getRamCount = (r: string) => {
+    if (dynamicFacets?.counts?.ram) {
+      return dynamicFacets.counts.ram[r] ?? dynamicFacets.counts.ram[r.toLowerCase()];
+    }
+    return ramCounts[r.toLowerCase()];
+  };
+
+  const getStorageCount = (s: string) => {
+    if (dynamicFacets?.counts?.storage) {
+      return dynamicFacets.counts.storage[s] ?? dynamicFacets.counts.storage[s.toLowerCase()];
+    }
+    return storageCounts[s.toLowerCase()];
+  };
+
 
   useEffect(() => {
     if (visible) {
@@ -193,9 +222,9 @@ export default function FilterModal({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Brand</Text>
               <View style={styles.pillsGrid}>
-                {BRANDS.map((b) => {
+                {brands.map((b) => {
                   const isActive = brand.toLowerCase() === b.toLowerCase();
-                  const count = brandCounts[b.toLowerCase()];
+                  const count = getBrandCount(b);
                   return (
                     <TouchableOpacity
                       key={b}
@@ -221,9 +250,9 @@ export default function FilterModal({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>RAM</Text>
               <View style={styles.pillsGrid}>
-                {RAM_OPTIONS.map((r) => {
+                {ramOptions.map((r) => {
                   const isActive = ram.toLowerCase() === r.toLowerCase();
-                  const count = ramCounts[r.toLowerCase()];
+                  const count = getRamCount(r);
                   return (
                     <TouchableOpacity
                       key={r}
@@ -249,9 +278,9 @@ export default function FilterModal({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Storage</Text>
               <View style={styles.pillsGrid}>
-                {STORAGE_OPTIONS.map((s) => {
+                {storageOptions.map((s) => {
                   const isActive = storage.toLowerCase() === s.toLowerCase();
-                  const count = storageCounts[s.toLowerCase()];
+                  const count = getStorageCount(s);
                   return (
                     <TouchableOpacity
                       key={s}
@@ -272,6 +301,7 @@ export default function FilterModal({
                 })}
               </View>
             </View>
+
 
             {/* In Stock Only Switch */}
             <View style={[styles.section, styles.stockSection]}>

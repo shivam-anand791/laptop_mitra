@@ -18,6 +18,7 @@ import Button from '../../../components/ui/Button';
 export function UserRoleBadge({ role }: { role: string }) {
   const styles: Record<string, string> = {
     ADMIN: 'badge-primary',
+    SUPPORT: 'badge-info',
     MODERATOR: 'badge-info',
     CUSTOMER: 'badge-gray',
     GUEST: 'badge-gray',

@@ -49,6 +49,9 @@ export interface Product {
   } | null;
   isFeatured: boolean;
   isNewArrival: boolean;
+  leasePriceMonthly?: number | null;
+  bulkSellPrice?: number | null;
+  bulkLeasePrice?: number | null;
   tags?: string | null;
   categoryId?: string | null;
   category?: Category | null;
@@ -63,12 +66,35 @@ export interface ProductListResponse {
   total: number;
 }
 
+export interface ProductFilterFacets {
+  brands: string[];
+  processors: string[];
+  ramOptions: string[];
+  storageOptions: string[];
+  grades: string[];
+  categories: Array<{ id: string; name: string; slug: string; count: number }>;
+  priceRange: { min: number; max: number };
+  counts: {
+    brands: Record<string, number>;
+    processors: Record<string, number>;
+    ram: Record<string, number>;
+    storage: Record<string, number>;
+    grades: Record<string, number>;
+  };
+  totalCount: number;
+}
+
+
 export interface CartItem {
   id: string;
   cartId?: string;
   productId: string;
   quantity: number;
   priceAtAdd: number;
+  purchaseMode?: 'sell' | 'lease';
+  configuration?: 'default' | 'ram-16gb' | string;
+  hasWarranty?: boolean;
+  warrantyPrice?: number;
   product?: Product;
 }
 
@@ -144,6 +170,10 @@ export interface OrderItem {
   productId: string;
   quantity: number;
   price: number;
+  purchaseMode?: 'sell' | 'lease';
+  configuration?: 'default' | 'ram-16gb' | string;
+  hasWarranty?: boolean;
+  warrantyPrice?: number;
   product?: Product;
   warrantyStatus?: string | null;
   warrantyValidUntil?: string | null;
@@ -182,31 +212,6 @@ export interface OrderListResponse {
   total: number;
 }
 
-export interface SupportTicketMessage {
-  id: string;
-  ticketId: string;
-  sender?: 'USER' | 'SUPPORT' | 'SYSTEM' | string;
-  senderRole?: 'USER' | 'ADMIN' | 'SUPPORT' | string;
-  message: string;
-  attachments?: string[];
-  createdAt: string;
-}
-
-export interface SupportTicket {
-  id: string;
-  ticketNumber?: string;
-  userId?: string;
-  orderId?: string | null;
-  orderNumber?: string | null;
-  subject: string;
-  category?: 'WARRANTY' | 'ORDER' | 'PAYMENT' | 'GENERAL' | string;
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | string;
-  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | string;
-  message?: string;
-  messages?: SupportTicketMessage[];
-  createdAt: string;
-  updatedAt?: string;
-}
 
 export interface NotificationPreferences {
   emailOrderUpdates: boolean;
@@ -243,7 +248,7 @@ export interface PaymentRecord {
 // ---------------------------------------------------------------------------
 
 export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
-export type UserRole = 'CUSTOMER' | 'ADMIN' | 'MODERATOR' | 'GUEST';
+export type UserRole = 'CUSTOMER' | 'ADMIN' | 'MODERATOR' | 'SUPPORT' | 'GUEST';
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED';
 export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
 export type ProductStatus = 'ACTIVE' | 'INACTIVE' | 'DISCONTINUED';
@@ -307,8 +312,11 @@ export interface AdminOrder {
   notes: string | null;
   referralCode: string | null;
   referralDiscount: string | number;
+  carrier?: string | null;
+  trackingNumber?: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
+
   user?: {
     id: string;
     name: string | null;
@@ -417,6 +425,24 @@ export {
   type AdminAnalyticsResponse,
   type AdminSettings,
   type UpdateAdminSettingsDto,
+  type CorporateInquiry,
+  type CreateCorporateInquiryDto,
+  type SupportTicket,
+  type TicketMessage,
+  type SupportTicketMessage,
+  type TicketAttachment,
+  type TicketEvent,
+  type CreateTicketDto,
+  type AddTicketMessageDto,
+  type UpdateTicketDto,
+  type ReturnRequest,
+  type ReturnItem,
+  type CreateReturnRequestDto,
+  type ProcessReturnDto,
+  type HelpCategory,
+  type HelpArticle,
+  type SavedReply,
+  type SupportSettings,
 } from '@laptopmitra/types';
 
 

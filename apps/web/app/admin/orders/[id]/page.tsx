@@ -15,7 +15,7 @@ import {
 } from '../../../../lib/types';
 import { formatINR, formatDate, toNumber } from '../../../../lib/format';
 import { QueryState } from '../../../../components/admin/QueryState';
-import { ConfirmModal } from '../../../../components/ui/Modal';
+import Modal, { ConfirmModal } from '../../../../components/ui/Modal';
 import { useToast } from '../../../../components/ui/Toast';
 import Button from '../../../../components/ui/Button';
 
@@ -68,19 +68,31 @@ export default function AdminOrderDetailPage() {
   // State machine transition state
   const [modalTransition, setModalTransition] = useState<OrderStatus | null>(null);
 
+  // Courier / Tracking dispatch modal state
+  const [shippingModalOpen, setShippingModalOpen] = useState(false);
+  const [courierName, setCourierName] = useState('');
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [shippingError, setShippingError] = useState('');
+
   // Legal transitions according to authoritative transition map
   const currentStatus = (order?.status as OrderStatus) || 'PENDING';
   const allowedTransitions = (ORDER_TRANSITION_MAP[currentStatus] || []) as readonly OrderStatus[];
 
   // Execute status update with error boundary
-  const executeStatusUpdate = async (targetStatus: string) => {
+  const executeStatusUpdate = async (
+    targetStatus: string,
+    trackingInfo?: { courierName?: string; trackingNumber?: string },
+  ) => {
     try {
       await updateStatusMutation.mutateAsync({
         id,
         status: targetStatus,
+        courierName: trackingInfo?.courierName,
+        trackingNumber: trackingInfo?.trackingNumber,
       });
       addToast('success', `Order #${order?.orderNumber || id.slice(-8)} transitioned to ${targetStatus}`);
       setModalTransition(null);
+      setShippingModalOpen(false);
     } catch (err: unknown) {
       const serverMessage =
         err instanceof Error
@@ -89,11 +101,22 @@ export default function AdminOrderDetailPage() {
           ? String((err as { message: unknown }).message)
           : 'Failed to update order status. Please verify transition rules.';
       addToast('error', serverMessage);
+      if (shippingModalOpen) {
+        setShippingError(serverMessage);
+      }
     }
   };
 
   const handleInitiateTransition = (targetStatus: string) => {
     if (!targetStatus) return;
+
+    if (targetStatus === 'SHIPPING') {
+      setCourierName(order?.deliveries?.[0]?.carrier || order?.carrier || 'BlueDart');
+      setTrackingNumber(order?.deliveries?.[0]?.trackingNumber || order?.trackingNumber || '');
+      setShippingError('');
+      setShippingModalOpen(true);
+      return;
+    }
 
     // Destructive moves require explicit admin confirmation modal explaining stock changes
     if (targetStatus === 'CANCELLED' || targetStatus === 'REFUNDED') {
@@ -102,6 +125,20 @@ export default function AdminOrderDetailPage() {
       executeStatusUpdate(targetStatus);
     }
   };
+
+  const handleShippingSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!courierName.trim() || !trackingNumber.trim()) {
+      setShippingError('Both courier name and tracking number are required to dispatch this shipment.');
+      return;
+    }
+    setShippingError('');
+    executeStatusUpdate('SHIPPING', {
+      courierName: courierName.trim(),
+      trackingNumber: trackingNumber.trim(),
+    });
+  };
+
 
   // Safe typed parsing of shipping address
   const shipping = parseShippingAddress(order?.shippingAddress);
@@ -251,13 +288,13 @@ export default function AdminOrderDetailPage() {
                   <div>
                     <span className="text-gray-500 block text-[11px]">Carrier</span>
                     <span className="font-medium text-gray-900 dark:text-white">
-                      {primaryDelivery?.carrier || 'BlueDart / Delhivery Express'}
+                      {primaryDelivery?.carrier || order.carrier || (order.status === 'SHIPPING' || order.status === 'DELIVERED' ? 'Courier Assigned' : 'Awaiting dispatch')}
                     </span>
                   </div>
                   <div>
-                    <span className="text-gray-500 block text-[11px]">Tracking Number</span>
+                    <span className="text-gray-500 block text-[11px]">Tracking Number (AWB)</span>
                     <span className="font-mono font-medium text-gray-900 dark:text-white">
-                      {primaryDelivery?.trackingNumber || 'LM-TRK-' + (order.orderNumber || order.id.slice(-6))}
+                      {primaryDelivery?.trackingNumber || order.trackingNumber || 'Not assigned yet'}
                     </span>
                   </div>
                   <div>
@@ -272,6 +309,7 @@ export default function AdminOrderDetailPage() {
                   </div>
                 </div>
               </div>
+
 
               {/* Customer & Shipping Details Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -506,6 +544,70 @@ export default function AdminOrderDetailPage() {
         variant="danger"
         loading={updateStatusMutation.isPending}
       />
+
+      {/* Shipping / Courier Dispatch Modal */}
+      <Modal
+        open={shippingModalOpen}
+        onClose={() => setShippingModalOpen(false)}
+        title="Dispatch Order & Assign Courier Tracking"
+        description="Enter the shipping carrier and AWB tracking number. Moving to SHIPPING will immediately trigger a branded dispatch email with the tracking ID to the customer."
+        size="md"
+      >
+        <form onSubmit={handleShippingSubmit} className="space-y-4">
+          {shippingError && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-600 dark:text-red-400">
+              {shippingError}
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+              Courier Partner / Carrier <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={courierName}
+              onChange={(e) => setCourierName(e.target.value)}
+              placeholder="e.g. BlueDart, Delhivery, DTDC, FedEx"
+              className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+              Tracking Number / AWB <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={trackingNumber}
+              onChange={(e) => setTrackingNumber(e.target.value)}
+              placeholder="e.g. BD123456789, DEL987654321"
+              className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+            <button
+              type="button"
+              onClick={() => setShippingModalOpen(false)}
+              className="btn-secondary text-xs"
+              disabled={updateStatusMutation.isPending}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-primary text-xs"
+              disabled={updateStatusMutation.isPending}
+            >
+              {updateStatusMutation.isPending ? 'Dispatching...' : 'Confirm Dispatch & Send Email'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
+

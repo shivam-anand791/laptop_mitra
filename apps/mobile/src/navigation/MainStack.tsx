@@ -11,6 +11,16 @@ import MitraDashboardScreen from '../screens/main/MitraDashboardScreen';
 import AddressBookScreen from '../screens/main/AddressBookScreen';
 import AddAddressScreen from '../screens/main/AddAddressScreen';
 import ChangePasswordScreen from '../screens/main/ChangePasswordScreen';
+import BuybackGuaranteeScreen from '../screens/main/BuybackGuaranteeScreen';
+import TermsScreen from '../screens/main/TermsScreen';
+import PrivacyScreen from '../screens/main/PrivacyScreen';
+import AboutScreen from '../screens/main/AboutScreen';
+import HelpHomeScreen from '../screens/main/HelpHomeScreen';
+import HelpArticleDetailScreen from '../screens/main/HelpArticleDetailScreen';
+import GuidedSupportFlowScreen from '../screens/main/GuidedSupportFlowScreen';
+import TicketListScreen from '../screens/main/TicketListScreen';
+import TicketDetailScreen from '../screens/main/TicketDetailScreen';
+import ReturnDetailScreen from '../screens/main/ReturnDetailScreen';
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
@@ -76,6 +86,64 @@ export default function MainStack() {
         name="ChangePassword"
         component={ChangePasswordScreen}
         options={{ headerShown: true, title: 'Change Password', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="BuybackGuarantee"
+        component={BuybackGuaranteeScreen}
+        options={{ headerShown: true, title: 'Buyback Guarantee', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="Terms"
+        component={TermsScreen}
+        options={{ headerShown: true, title: 'Terms & Conditions', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="Privacy"
+        component={PrivacyScreen}
+        options={{ headerShown: true, title: 'Privacy Policy', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="About"
+        component={AboutScreen}
+        options={{ headerShown: true, title: 'About Us', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="HelpHome"
+        component={HelpHomeScreen}
+        options={{ headerShown: true, title: 'Help & Customer Support', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="HelpArticleDetail"
+        component={HelpArticleDetailScreen}
+        options={({ route }) => ({
+          headerShown: true,
+          title: route.params?.title || 'Support Article',
+          headerTintColor: '#2563eb',
+        })}
+      />
+      <Stack.Screen
+        name="GuidedSupportFlow"
+        component={GuidedSupportFlowScreen}
+        options={{ headerShown: true, title: 'Guided Resolution', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="TicketList"
+        component={TicketListScreen}
+        options={{ headerShown: true, title: 'My Support Tickets', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="TicketDetail"
+        component={TicketDetailScreen}
+        options={{
+          headerShown: true,
+          title: 'Ticket Details',
+          headerTintColor: '#2563eb',
+        }}
+      />
+      <Stack.Screen
+        name="ReturnDetail"
+        component={ReturnDetailScreen}
+        options={{ headerShown: true, title: 'Return & Inspection Tracker', headerTintColor: '#2563eb' }}
       />
     </Stack.Navigator>
   );
