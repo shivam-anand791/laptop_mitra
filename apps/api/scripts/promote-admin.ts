@@ -1,6 +1,6 @@
-import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import * as readline from 'readline';
+import { assertSafeDatabaseTarget, loadDatabaseEnvironment } from '../src/common/database-safety';
 
 export function extractHost(databaseUrl: string | undefined): string {
   if (!databaseUrl) {
@@ -33,6 +33,9 @@ async function askConfirmation(question: string): Promise<boolean> {
 }
 
 export async function main() {
+  loadDatabaseEnvironment('development');
+  assertSafeDatabaseTarget();
+
   const args = process.argv.slice(2);
   const isProdFlag = args.includes('--i-know-this-is-prod');
   const autoConfirm = args.includes('-y') || args.includes('--yes');

@@ -110,8 +110,8 @@ describe('Production Database Resilience & Fallback Prevention', () => {
     describe('SupportService', () => {
       it('getUserTickets rejects with ServiceUnavailableException when Prisma throws', async () => {
         const prisma = {
-          user: {
-            findUnique: jest.fn().mockRejectedValue(new Error('Prisma connection lost')),
+          supportTicket: {
+            findMany: jest.fn().mockRejectedValue(new Error('Prisma connection lost')),
           },
         } as any;
 
@@ -119,18 +119,16 @@ describe('Production Database Resilience & Fallback Prevention', () => {
         await expect(service.getUserTickets('user-1')).rejects.toThrow(ServiceUnavailableException);
       });
 
-      it('createTicket rejects with ServiceUnavailableException when order lookup fails on DB error', async () => {
+      it('createTicket rejects with ServiceUnavailableException when ticket number allocation fails', async () => {
         const prisma = {
-          user: { findUnique: jest.fn().mockResolvedValue({ id: 'user-1' }) },
-          order: {
-            findUnique: jest.fn().mockRejectedValue(new Error('Deadlock detected')),
-          },
+          $queryRaw: jest.fn().mockRejectedValue(new Error('Sequence unavailable')),
         } as any;
 
         const service = new SupportService(prisma);
         await expect(
           service.createTicket('user-1', {
             subject: 'Broken screen on delivery',
+            category: 'ORDER_DELIVERY',
             message: 'Laptop arrived damaged',
             orderId: 'ord-123',
           }),
@@ -310,20 +308,21 @@ describe('Production Database Resilience & Fallback Prevention', () => {
       expect(res.message).toBe('Device token registered successfully');
     });
 
-    it('SupportService.createTicket falls back when order lookup fails', async () => {
+    it('SupportService.createTicket does not fabricate a ticket when persistence fails', async () => {
+      const tx = {
+        supportTicket: { create: jest.fn().mockRejectedValue(new Error('Database unavailable')) },
+      };
       const prisma = {
-        user: { findUnique: jest.fn().mockRejectedValue(new Error('Connection refused')) },
-        order: { findUnique: jest.fn().mockRejectedValue(new Error('Connection refused')) },
+        $queryRaw: jest.fn().mockResolvedValue([{ nextval: 1234 }]),
+        $transaction: jest.fn((callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
       } as any;
 
       const service = new SupportService(prisma);
-      const ticket = await service.createTicket('dev-user', {
+      await expect(service.createTicket('dev-user', {
         subject: 'Dev question',
-        message: 'Testing fallback',
-        orderId: 'ord-dev-1',
-      });
-      expect(ticket.ticketNumber).toBeDefined();
-      expect(ticket.orderNumber).toBe('ORD-ORD-DE');
+        category: 'OTHER',
+        message: 'Testing fail-closed persistence',
+      })).rejects.toThrow('Database unavailable');
     });
 
     it('OrderService.createOrder fails closed with ServiceUnavailableException when DB error occurs', async () => {

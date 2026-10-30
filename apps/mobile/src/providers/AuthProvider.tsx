@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { onIdTokenChanged, signOut as firebaseSignOut, User as FirebaseUser } from 'firebase/auth';
 import { useQueryClient } from '@tanstack/react-query';
+import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 import { LaptopMitraApiClient } from '@laptopmitra/api-client';
 import { User } from '@laptopmitra/types';
 import { API_BASE_URL } from '../config';
@@ -104,6 +107,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribe?.();
     };
   }, [queryClient, syncUser]);
+
+  useEffect(() => {
+    if (!user || user.isGuest) return;
+    let active = true;
+
+    void (async () => {
+      const currentPermission = await Notifications.getPermissionsAsync();
+      const permission = currentPermission.granted
+        ? currentPermission
+        : await Notifications.requestPermissionsAsync();
+      if (!active || !permission.granted) return;
+
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      const { data: token } = await Notifications.getExpoPushTokenAsync(
+        projectId ? { projectId } : undefined,
+      );
+      if (active) await getClient().registerDeviceToken(token, Platform.OS);
+    })().catch((error: unknown) => {
+      console.warn('Push notification registration failed', error);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [getClient, user?.id, user?.isGuest]);
 
   const login = useCallback(async (email: string, password: string) => {
     const { signInWithEmailAndPassword } = await import('firebase/auth');

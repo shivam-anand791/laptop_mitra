@@ -44,6 +44,7 @@ describe('MailService', () => {
   it('should activate Resend provider when RESEND_API_KEY is supplied', () => {
     mockConfig['RESEND_API_KEY'] = 're_test_1234567890';
     mockConfig['MAIL_FROM'] = 'LaptopMitra <noreply@laptopmitra.com>';
+    mockConfig['ALLOW_REAL_EMAILS'] = 'true';
 
     mailService.onModuleInit();
     expect(mailService.getActiveProvider()).toBe('resend');
@@ -55,8 +56,18 @@ describe('MailService', () => {
     mockConfig['SMTP_PORT'] = '587';
     mockConfig['SMTP_USER'] = 'resend';
     mockConfig['SMTP_PASS'] = 're_test_smtp_pass';
+    mockConfig['ALLOW_REAL_EMAILS'] = 'true';
 
     mailService.onModuleInit();
     expect(mailService.getActiveProvider()).toBe('smtp');
+  });
+
+  it('keeps real delivery disabled even when provider credentials are configured', () => {
+    mockConfig['RESEND_API_KEY'] = 're_test_1234567890';
+    mockConfig['ALLOW_REAL_EMAILS'] = 'false';
+
+    mailService.onModuleInit();
+
+    expect(mailService.getActiveProvider()).toBe('stdout');
   });
 });

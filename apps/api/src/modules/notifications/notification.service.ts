@@ -5,6 +5,15 @@ import { NotificationPreferences } from '../../types';
 import { allowInMemoryFallback } from '../../common/fallback';
 import { MailService } from '../mail/mail.service';
 
+type SupportNotification =
+  | { type: 'ticket-created'; ticketId: string; ticketNumber: string; subject: string }
+  | { type: 'ticket-reply'; ticketId: string; ticketNumber: string; subject: string }
+  | { type: 'ticket-status'; ticketId: string; ticketNumber: string; subject: string; status: string }
+  | { type: 'ticket-resolved'; ticketId: string; ticketNumber: string; subject: string }
+  | { type: 'ticket-reopened'; ticketId: string; ticketNumber: string; subject: string }
+  | { type: 'return-status'; returnNumber: string; status: string }
+  | { type: 'refund-reference'; returnNumber: string; reference: string };
+
 // In-memory preferences fallback
 const inMemoryPreferences: Map<string, NotificationPreferences> = new Map();
 
@@ -101,8 +110,156 @@ export class NotificationService {
     body: string;
     data?: Record<string, string>;
   }) {
-    this.logger.log(`Dispatching notification to ${userId}: ${payload.title}`);
-    return { sent: 1, message: 'Notification dispatched' };
+    let tokens: Array<{ token: string }>;
+    try {
+      tokens = await this.prisma.deviceToken.findMany({
+        where: { userId },
+        select: { token: true },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to load push tokens for user ${userId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return { sent: 0, failed: 1 };
+    }
+
+    if (tokens.length === 0) return { sent: 0, failed: 0 };
+
+    try {
+      const response = await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Accept-Encoding': 'gzip, deflate',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(
+          tokens.map(({ token }) => ({
+            to: token,
+            title: payload.title,
+            body: payload.body,
+            data: payload.data,
+            sound: 'default',
+          })),
+        ),
+      });
+
+      if (!response.ok) {
+        this.logger.error(`Expo push service returned HTTP ${response.status}`);
+        return { sent: 0, failed: tokens.length };
+      }
+
+      const result = (await response.json()) as {
+        data?: Array<{ status?: string; message?: string }>;
+      };
+      const sent = result.data?.filter((item) => item.status === 'ok').length || 0;
+      const failed = tokens.length - sent;
+      if (failed > 0) {
+        this.logger.error(`Expo push service rejected ${failed} notification(s) for user ${userId}`);
+      }
+      return { sent, failed };
+    } catch (error) {
+      this.logger.error(
+        `Failed to dispatch push notification to user ${userId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return { sent: 0, failed: tokens.length };
+    }
+  }
+
+  async dispatchSupportNotification(userId: string, notification: SupportNotification) {
+    let title: string;
+    let subjectLine: string;
+    let details: string;
+
+    switch (notification.type) {
+      case 'ticket-created':
+        title = 'Support ticket received';
+        subjectLine = `Ticket ${notification.ticketNumber}: ${notification.subject}`;
+        details = '';
+        break;
+      case 'ticket-reply':
+        title = 'New support reply';
+        subjectLine = `Ticket ${notification.ticketNumber}: ${notification.subject}`;
+        details = '';
+        break;
+      case 'ticket-status':
+        title = 'Support ticket updated';
+        subjectLine = `Ticket ${notification.ticketNumber}: ${notification.subject}`;
+        details = `Status: ${notification.status}`;
+        break;
+      case 'ticket-resolved':
+        title = 'Support ticket resolved';
+        subjectLine = `Ticket ${notification.ticketNumber}: ${notification.subject}`;
+        details = 'Please sign in to rate your support experience.';
+        break;
+      case 'ticket-reopened':
+        title = 'Support ticket reopened';
+        subjectLine = `Ticket ${notification.ticketNumber}: ${notification.subject}`;
+        details = '';
+        break;
+      case 'return-status':
+        title = `Return ${notification.status.toLowerCase()}`;
+        subjectLine = `Return ${notification.returnNumber}`;
+        details = `Status: ${notification.status}`;
+        break;
+      case 'refund-reference':
+        title = 'Refund processed';
+        subjectLine = `Return ${notification.returnNumber}`;
+        details = `Refund reference: ${notification.reference}`;
+        break;
+    }
+    const accountUrl = this.configService?.get<string>('WEB_APP_URL');
+    const link = accountUrl
+      ? 'ticketId' in notification
+        ? `${accountUrl.replace(/\/$/, '')}/account/tickets/${notification.ticketId}`
+        : `${accountUrl.replace(/\/$/, '')}/account/orders`
+      : '';
+    const text = [
+      `Hello,`,
+      '',
+      title,
+      subjectLine,
+      details,
+      '',
+      link ? `View details: ${link}` : '',
+      '',
+      'LaptopMitra Support',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      });
+      if (user?.email && this.mailService) {
+        const result = await this.mailService.sendMail({
+          to: user.email,
+          subject: `[LaptopMitra] ${title} — ${subjectLine}`,
+          text,
+        });
+        if (!result.success) {
+          this.logger.error(`Support email delivery failed for user ${userId}: ${result.error || 'unknown error'}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to prepare support email for user ${userId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+
+    return this.dispatchNotification(userId, {
+      title,
+      body: `${subjectLine}${notification.type === 'refund-reference' ? '' : details ? ` — ${details}` : ''}`,
+      data: {
+        type: notification.type,
+        ...('ticketId' in notification ? { ticketId: notification.ticketId } : { returnNumber: notification.returnNumber }),
+      },
+    });
   }
 
   async dispatchOrderUpdate(userId: string, orderId: string, status: string) {
@@ -285,4 +442,3 @@ export class NotificationService {
     };
   }
 }
-

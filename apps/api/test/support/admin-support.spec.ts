@@ -99,6 +99,7 @@ describe('SupportService (Admin Support & Returns Workspace - Phase S5)', () => 
       helpCategory: {
         findUnique: jest.fn(),
         findMany: jest.fn(),
+        count: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
@@ -108,6 +109,7 @@ describe('SupportService (Admin Support & Returns Workspace - Phase S5)', () => 
         findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
         delete: jest.fn(),
       },
       supportSettings: {
@@ -414,6 +416,62 @@ describe('SupportService (Admin Support & Returns Workspace - Phase S5)', () => 
           }),
         })
       );
+    });
+
+    describe('4. Knowledge Base Archiving', () => {
+      it('does not show fallback help content when all stored categories are archived', async () => {
+        prisma.helpCategory.findMany.mockResolvedValueOnce([]);
+        prisma.helpCategory.count.mockResolvedValueOnce(1);
+        prisma.helpArticle.findMany.mockResolvedValueOnce([]);
+        prisma.helpCategory.count.mockResolvedValueOnce(1);
+
+        await expect(service.getHelpCategories()).resolves.toEqual([]);
+        await expect(service.getHelpArticles()).resolves.toEqual([]);
+      });
+
+      it('archives a category and unpublishes all its articles in one transaction', async () => {
+        prisma.helpCategory.findUnique.mockResolvedValueOnce({ id: 'cat-1', isActive: true });
+        prisma.helpArticle.updateMany.mockResolvedValueOnce({ count: 2 });
+        prisma.helpCategory.update.mockResolvedValueOnce({ id: 'cat-1', isActive: false });
+
+        const result = await service.archiveAdminHelpCategory('cat-1');
+
+        expect(result.success).toBe(true);
+        expect(prisma.helpArticle.updateMany).toHaveBeenCalledWith({
+          where: { categoryId: 'cat-1' },
+          data: { isPublished: false },
+        });
+        expect(prisma.helpCategory.update).toHaveBeenCalledWith({
+          where: { id: 'cat-1' },
+          data: { isActive: false },
+        });
+      });
+
+      it('unpublishes but retains an article when it is archived', async () => {
+        prisma.helpArticle.findUnique.mockResolvedValueOnce({ id: 'article-1' });
+        prisma.helpArticle.update.mockResolvedValueOnce({ id: 'article-1', isPublished: false });
+
+        const result = await service.archiveAdminHelpArticle('article-1');
+
+        expect(result.success).toBe(true);
+        expect(prisma.helpArticle.update).toHaveBeenCalledWith({
+          where: { id: 'article-1' },
+          data: { isPublished: false },
+        });
+        expect(prisma.helpArticle.delete).not.toHaveBeenCalled();
+      });
+
+      it('does not publish an article under an archived category', async () => {
+        prisma.helpArticle.findUnique.mockResolvedValueOnce({
+          id: 'article-1',
+          categoryId: 'cat-1',
+        });
+        prisma.helpCategory.findUnique.mockResolvedValueOnce({ isActive: false });
+
+        await expect(
+          service.updateAdminHelpArticle('article-1', { isPublished: true }),
+        ).rejects.toThrow('Articles can only be published in an active category');
+      });
     });
   });
 });

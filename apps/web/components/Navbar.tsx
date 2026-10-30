@@ -10,7 +10,6 @@ import { useWishlist } from '../lib/wishlist-context';
 import {
   NEXT_PUBLIC_SUPPORT_PHONE,
   NEXT_PUBLIC_SUPPORT_PHONE_DISPLAY,
-  NEXT_PUBLIC_WHATSAPP_NUMBER,
 } from '../lib/config';
 import CorporateQuoteModal from './CorporateQuoteModal';
 
@@ -322,14 +321,9 @@ export default function Navbar() {
               Partner Referral Program
             </Link>
 
-            <a
-              href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra%20Support,%20I%20need%20assistance.`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-[#2563EB] transition-colors"
-            >
+            <Link href="/help" className="hover:text-[#2563EB] transition-colors">
               Warranty &amp; Support
-            </a>
+            </Link>
           </nav>
         </div>
       </div>
@@ -368,14 +362,9 @@ export default function Navbar() {
             <Link href="/profile#referral" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#2563EB]">
               Partner Referral Program
             </Link>
-            <a
-              href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra%20Support`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#2563EB]"
-            >
+            <Link href="/help" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#2563EB]">
               Warranty &amp; Support
-            </a>
+            </Link>
             <div className="pt-2">
               <button
                 type="button"

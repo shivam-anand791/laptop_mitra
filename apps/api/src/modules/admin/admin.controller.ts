@@ -52,6 +52,14 @@ export class AdminController {
     return this.adminService.getAllUsers(query);
   }
 
+  @Get('users/:id/support-history')
+  @ApiOperation({ summary: 'Get read-only support history for a customer' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Customer ticket and return history' })
+  async getUserSupportHistory(@Param('id') id: string) {
+    return this.adminService.getUserSupportHistory(id);
+  }
+
   @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Put('users/:id/status')
   @ApiOperation({ summary: 'Update user account status (ACTIVE, SUSPENDED, DELETED)' })

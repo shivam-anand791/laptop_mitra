@@ -25,6 +25,12 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
         update: jest.fn(),
         count: jest.fn(),
       },
+      supportTicket: {
+        findMany: jest.fn(),
+      },
+      returnRequest: {
+        findMany: jest.fn(),
+      },
       product: {
         findMany: jest.fn(),
         findUnique: jest.fn(),
@@ -92,6 +98,29 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
             status: true,
           }),
         }),
+      );
+    });
+
+    it('returns read-only ticket and return history for an existing customer', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ id: 'u2', name: 'Customer', email: 'customer@example.test' });
+      prismaMock.supportTicket.findMany.mockResolvedValue([
+        { id: 't1', ticketNumber: 'LM-T-1', category: 'PAYMENT', csatScore: 5 },
+      ]);
+      prismaMock.returnRequest.findMany.mockResolvedValue([
+        { id: 'r1', returnNumber: 'LM-R-1', order: { orderNumber: 'LM-O-1' }, ticket: null },
+      ]);
+
+      const result = await adminService.getUserSupportHistory('u2');
+
+      expect(result.ticketCount).toBe(1);
+      expect(result.returnCount).toBe(1);
+      expect(result.categoryCounts).toEqual({ PAYMENT: 1 });
+      expect(result.tickets[0].csatScore).toBe(5);
+      expect(prismaMock.supportTicket.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: 'u2' } }),
+      );
+      expect(prismaMock.returnRequest.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: 'u2' } }),
       );
     });
 
@@ -777,4 +806,3 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
     });
   });
 });
-

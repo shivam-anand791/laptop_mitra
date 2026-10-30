@@ -32,13 +32,17 @@ function CartIcon({ focused, color, size }: { focused: boolean; color: string; s
 function AccountIcon({ focused, color, size }: { focused: boolean; color: string; size: number }) {
   const { data: tickets } = useTickets();
   const unreadCount = Array.isArray(tickets)
-    ? tickets.filter((t: any) => t.status === 'WAITING_FOR_CUSTOMER').length
+    ? tickets.filter((ticket: { hasUnread?: boolean }) => ticket.hasUnread).length
     : 0;
 
   return (
     <View>
       <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
-      {unreadCount > 0 && <View style={styles.unreadDot} />}
+      {unreadCount > 0 && (
+        <View style={styles.unreadBadge}>
+          <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -137,13 +141,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.textWhite,
   },
-  unreadDot: {
+  unreadBadge: {
     position: 'absolute',
-    top: -2,
-    right: -4,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: -6,
+    right: -10,
     backgroundColor: colors.danger,
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
   },
 });

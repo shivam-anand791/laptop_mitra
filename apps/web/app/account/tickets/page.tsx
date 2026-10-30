@@ -64,6 +64,7 @@ export default function MyTicketsPage() {
     }
     return true;
   });
+  const unreadCount = tickets.filter((ticket) => ticket.hasUnread).length;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -97,6 +98,11 @@ export default function MyTicketsPage() {
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Track inquiries, warranty claims, and conversation threads with our support team.
+            {unreadCount > 0 && (
+              <span className="ml-2 font-semibold text-blue-700" role="status">
+                {unreadCount} unread {unreadCount === 1 ? 'update' : 'updates'}
+              </span>
+            )}
           </p>
         </div>
 

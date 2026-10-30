@@ -113,11 +113,6 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
     >
       {/* ── Top Floating Badges ── */}
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 pointer-events-none">
-        {/* REFURB badge */}
-        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black bg-[#0B1F4B] text-white shadow-xs tracking-wider uppercase">
-          REFURB
-        </span>
-
         {/* Best Seller badge if featured */}
         {product.isFeatured && (
           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#F97316] text-white uppercase tracking-wider shadow-xs">

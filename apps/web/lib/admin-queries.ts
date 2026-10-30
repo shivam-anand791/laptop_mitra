@@ -24,6 +24,7 @@ export const adminQueryKeys = {
   order: (id: string) => [...adminQueryKeys.orders(), id] as const,
   users: () => [...adminQueryKeys.all, 'users'] as const,
   user: (id: string) => [...adminQueryKeys.users(), id] as const,
+  userSupportHistory: (id: string) => [...adminQueryKeys.user(id), 'support-history'] as const,
   products: () => [...adminQueryKeys.all, 'products'] as const,
   product: (id: string) => [...adminQueryKeys.products(), id] as const,
   analytics: () => [...adminQueryKeys.all, 'analytics'] as const,
@@ -85,6 +86,14 @@ export function useAdminUsers(params?: {
     queryKey: [...adminQueryKeys.users(), params],
     queryFn: () => adminApi.getUsers(params),
     placeholderData: keepPreviousData,
+  });
+}
+
+export function useAdminUserSupportHistory(userId: string | null) {
+  return useQuery({
+    queryKey: adminQueryKeys.userSupportHistory(userId || ''),
+    queryFn: () => adminApi.getUserSupportHistory(userId!),
+    enabled: !!userId,
   });
 }
 
@@ -235,4 +244,3 @@ export function useUpdateInquiryStatus() {
     },
   });
 }
-

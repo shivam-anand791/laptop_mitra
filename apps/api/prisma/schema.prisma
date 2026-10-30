@@ -312,7 +312,7 @@ model Delivery {
 // Payment records (for webhook tracking)
 model Payment {
   id               String   @id @default(uuid())
-  order           Order    @relation(fields: [orderId], references: [id])
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
   orderId          String
   razorpayPaymentId  String?
   razorpayOrderId   String?
@@ -366,7 +366,7 @@ model DiscountCode {
 // Now it's ONE system covering both use cases.
 model Referral {
   id            String   @id @default(uuid())
-  user          User     @relation(fields: [userId], references: [id])
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   userId        String
   code          String   @unique
   tier          String   @default("BASIC") // BASIC | GOLD | PLATINUM
@@ -386,7 +386,7 @@ model DiscountRedemption {
   discountCodeId String
   user           User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   userId         String
-  order          Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order          Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
   orderId        String       @unique
   createdAt      DateTime     @default(now())
 
@@ -399,7 +399,7 @@ model ReferralRedemption {
   referrerUserId String
   referredUser   User     @relation("ReferralRecipient", fields: [referredUserId], references: [id], onDelete: Restrict)
   referredUserId String   @unique
-  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
   orderId        String   @unique
   referralCode   String
   discountAmount Decimal
@@ -454,7 +454,7 @@ model CorporateInquiry {
 
 model AffiliatePaymentDetails {
   id                  String   @id @default(uuid())
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   userId              String   @unique
   bankName            String?
   accountHolderName   String?
@@ -513,9 +513,9 @@ model SupportTicket {
   userId             String
   user               User      @relation("CustomerTickets", fields: [userId], references: [id], onDelete: Restrict)
   orderId            String?
-  order              Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  order              Order?    @relation(fields: [orderId], references: [id], onDelete: Restrict)
   orderItemId        String?
-  orderItem          OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  orderItem          OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
   subject            String
   category           String
   issueType          String?
@@ -537,7 +537,7 @@ model SupportTicket {
   assigneeId         String?
   assignee           User?     @relation("AssignedTickets", fields: [assigneeId], references: [id], onDelete: SetNull)
   mergedIntoId       String?
-  mergedInto         SupportTicket?  @relation("MergedTickets", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedInto         SupportTicket?  @relation("MergedTickets", fields: [mergedIntoId], references: [id], onDelete: Restrict)
   mergedTickets      SupportTicket[] @relation("MergedTickets")
   customerLastReadAt DateTime?
   staffLastReadAt    DateTime?
@@ -562,7 +562,7 @@ model SupportTicket {
 model TicketMessage {
   id           String             @id @default(uuid())
   ticketId     String
-  ticket       SupportTicket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket       SupportTicket      @relation(fields: [ticketId], references: [id], onDelete: Restrict)
   authorUserId String?            // Nullable so SYSTEM messages can exist
   authorUser   User?              @relation("TicketMessageAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
   authorRole   String             @default("CUSTOMER") // CUSTOMER | SUPPORT | ADMIN | SYSTEM
@@ -580,11 +580,11 @@ model TicketMessage {
 model TicketAttachment {
   id              String         @id @default(uuid())
   ticketId        String?
-  ticket          SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket          SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: Restrict)
   returnRequestId String?
-  returnRequest   ReturnRequest? @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  returnRequest   ReturnRequest? @relation(fields: [returnRequestId], references: [id], onDelete: Restrict)
   messageId       String?
-  message         TicketMessage? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message         TicketMessage? @relation(fields: [messageId], references: [id], onDelete: Restrict)
   uploadedBy      String
   uploader        User           @relation("AttachmentUploader", fields: [uploadedBy], references: [id], onDelete: Restrict)
   purpose         String         @default("TICKET") // CUSTOMER_EVIDENCE | INSPECTION | TICKET
@@ -606,7 +606,7 @@ model TicketAttachment {
 model TicketEvent {
   id          String        @id @default(uuid())
   ticketId    String
-  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Restrict)
   actorUserId String?
   actorUser   User?         @relation("TicketEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
   actorRole   String        @default("CUSTOMER") // CUSTOMER | SUPPORT | ADMIN | SYSTEM
@@ -628,7 +628,7 @@ model ReturnRequest {
   userId                 String
   user                   User           @relation("CustomerReturns", fields: [userId], references: [id], onDelete: Restrict)
   ticketId               String?
-  ticket                 SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  ticket                 SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: Restrict)
   type                   String         @default("REFUND") // REFUND | REPLACEMENT
   status                 String         @default("REQUESTED") // REQUESTED | APPROVED | REJECTED | PICKUP_SCHEDULED | PICKED_UP | INSPECTING | INSPECTION_PASSED | INSPECTION_FAILED | REFUND_PENDING | REFUNDED | REPLACED | CANCELLED | CLOSED
   reason                 String
@@ -671,7 +671,7 @@ model ReturnRequest {
 model ReturnItem {
   id              String        @id @default(uuid())
   returnRequestId String
-  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Restrict)
   orderItemId     String
   orderItem       OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
   quantity        Int           @default(1)
@@ -715,7 +715,7 @@ model HelpCategory {
 model HelpArticle {
   id              String       @id @default(uuid())
   categoryId      String
-  category        HelpCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category        HelpCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   slug            String       @unique
   title           String
   content         String       @db.Text // Markdown body
@@ -727,7 +727,7 @@ model HelpArticle {
   viewCount       Int          @default(0)
   updatedBy       String?
   locale          String       @default("en")
-  tsv             Unsupported("tsvector")? @default(dbgenerated())
+  tsv             Unsupported("tsvector")? @default(dbgenerated("to_tsvector('english'::regconfig, ((COALESCE(title, ''::text) || ' '::text) || COALESCE(content, ''::text)))"))
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
@@ -755,4 +755,3 @@ model SupportSettings {
   urgentFirstResponseSlaMinutes Int?  // Nullable, no invented default
   updatedAt                  DateTime @updatedAt
 }
-

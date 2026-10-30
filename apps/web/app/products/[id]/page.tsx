@@ -14,6 +14,7 @@ import { useWishlist } from '../../../lib/wishlist-context';
 import { useAuth } from '../../../lib/auth-context';
 import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../../lib/config';
 import CorporateQuoteModal from '../../../components/CorporateQuoteModal';
+import QualityPromiseSection from '../../../components/QualityPromiseSection';
 import { BUYBACK_POLICY } from '@laptopmitra/types';
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -179,28 +180,59 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           <div className="bg-white rounded-3xl border border-[#E4E9F2] shadow-sm p-5 sm:p-6 lg:p-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 xl:gap-12">
               
-              {/* LEFT COLUMN: Media Gallery & Certifications (7 cols) */}
+              {/* LEFT COLUMN: Media Gallery, Product Info & Certifications (7 cols) */}
               <div className="lg:col-span-6 xl:col-span-7 space-y-6">
-                {/* Main Hero Image */}
-                <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-[#F8FAFC] border border-[#E4E9F2] flex items-center justify-center p-6 group">
-                  {/* Badges Overlay */}
-                  <div className="absolute top-4 left-4 z-10 flex flex-wrap gap-2">
-                    <Badge variant="refurb">REFURB</Badge>
-                    {product.isFeatured && <Badge variant="bestSeller">⭐ Best Seller</Badge>}
-                    {product.isNewArrival && !product.isFeatured && <Badge variant="newArrival">⚡ New Arrival</Badge>}
-                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm">
-                      ✓ Grade A+ Pristine
+                {/* Product Identity Header */}
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="uppercase tracking-wider font-extrabold text-[#1D6FF2] bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
+                      {product.category?.name || 'Enterprise Certified Laptop'}
+                    </span>
+                    <span className="font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 text-[11px]">
+                      SKU: {product.sku}
                     </span>
                   </div>
 
-                  {discountPercent > 0 && (
-                    <div className="absolute top-4 right-4 z-10">
-                      <span className="px-3 py-1 rounded-xl text-xs font-black bg-[#EF4444] text-white shadow-md">
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B1F4B] leading-tight tracking-tight">
+                    {product.name}
+                  </h1>
+
+                  {/* Condition & Badges Strip */}
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    {product.isFeatured && <Badge variant="bestSeller">⭐ Best Seller</Badge>}
+                    {product.isNewArrival && !product.isFeatured && <Badge variant="newArrival">⚡ New Arrival</Badge>}
+                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                      ✓ Grade A+ Pristine
+                    </span>
+                    {discountPercent > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-black bg-[#EF4444] text-white shadow-2xs">
                         {discountPercent}% OFF
                       </span>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
+                  <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                    {product.shortDescription || product.description}
+                  </p>
+
+                  {/* Stock & Dispatch Status */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                    {product.stock > 0 ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Ready for Dispatch • {product.stock} units available
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        Temporarily Out of Stock
+                      </span>
+                    )}
+                    <span className="text-slate-500 font-medium">| Express Pan-India Delivery</span>
+                  </div>
+                </div>
+
+                {/* Main Hero Image */}
+                <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-[#F8FAFC] border border-[#E4E9F2] flex items-center justify-center p-6 group">
                   <div className="relative w-full h-full max-h-[420px]">
                     {displayImageSrc.startsWith('http') ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
@@ -224,7 +256,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
                 {/* Interactive Thumbnails */}
                 {product.images && product.images.length > 1 && (
-                  <div className="flex gap-3 overflow-x-auto pb-2">
+                  <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
                     {product.images.map((img, idx) => {
                       const isSelected = selectedImage === img.url;
                       return (
@@ -233,7 +265,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                           onClick={() => setSelectedImage(img.url)}
                           className={`relative w-20 h-20 rounded-xl overflow-hidden border-2 bg-[#F8FAFC] p-1 shrink-0 transition-all cursor-pointer ${
                             isSelected
-                              ? 'border-[#1D6FF2] ring-2 ring-blue-500/20 shadow-sm'
+                              ? 'border-[#1D6FF2] ring-2 ring-blue-500/20 shadow-xs'
                               : 'border-[#E4E9F2] opacity-70 hover:opacity-100'
                           }`}
                         >
@@ -308,36 +340,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               {/* RIGHT COLUMN: Buy Box, Pricing & Actions (5 cols) */}
-              <div className="lg:col-span-6 xl:col-span-5 space-y-6">
-                <div>
-                  <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-                    <span className="uppercase tracking-wider font-bold text-[#2563EB]">
-                      {product.category?.name || 'Enterprise Certified Laptop'}
-                    </span>
-                    <span className="font-mono text-slate-400">SKU: {product.sku}</span>
-                  </div>
-                  <h1 className="text-2xl sm:text-3xl font-bold text-[#111827] leading-tight tracking-tight">
-                    {product.name}
-                  </h1>
-                  <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                    {product.shortDescription || product.description}
-                  </p>
-                </div>
-
-                {/* Stock & Dispatch Status */}
-                <div className="flex items-center gap-2">
-                  {product.stock > 0 ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Ready for Dispatch • {product.stock} units available
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                      Temporarily Out of Stock
-                    </span>
-                  )}
-                  <span className="text-xs text-slate-500">| Express Pan-India Delivery</span>
-                </div>
+              <div className="lg:col-span-6 xl:col-span-5 space-y-5 lg:sticky lg:top-24 self-start">
 
                 {/* Procurement Model Selector */}
                 <div className="space-y-1.5">
@@ -519,39 +522,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       </div>
                     </label>
                   )}
-                </div>
-
-                {/* Bulk Order Pricing Callout (PHP-faithful: 5+ units via quote) */}
-                <div className="p-4 rounded-2xl bg-white border border-[#E4E9F2] space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-[#0B1F4B]">
-                    <span>Wholesale &amp; Bulk Procurement (5+ Units)</span>
-                    <span className="text-[10px] text-[#1D6FF2] font-semibold">Via Quote</span>
-                  </div>
-                  {bulkPrice ? (
-                    <div className="p-3 rounded-xl bg-blue-50/50 border border-blue-200 flex items-center justify-between text-xs">
-                      <div>
-                        <span className="text-[11px] text-slate-500 block">Unit Rate on 5+ orders:</span>
-                        <span className="font-bold text-[#0B1F4B] text-sm tabular-nums">
-                          ₹{bulkPrice.toLocaleString('en-IN')} {isLease ? '/ month' : ''}
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
-                        Bulk Rate
-                      </span>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-500">
-                      Looking to procure 5 or more machines for your company, school, or institution? Custom bulk discounts available.
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setCorporateModalOpen(true)}
-                    className="w-full mt-2 py-2 px-3 bg-blue-50 hover:bg-blue-100/80 text-[#1D6FF2] font-bold text-xs rounded-xl border border-blue-200 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span>Request Bulk / Fleet Quote</span>
-                    <span>→</span>
-                  </button>
                 </div>
 
                 {/* Quick Hardware Specs Grid */}
@@ -772,6 +742,39 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                 </div>
 
+                {/* Wholesale & Bulk Procurement (5+ Units) */}
+                <div className="p-4 rounded-2xl bg-white border border-[#E4E9F2] space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-[#0B1F4B]">
+                    <span>Wholesale &amp; Bulk Procurement (5+ Units)</span>
+                    <span className="text-[10px] text-[#1D6FF2] font-semibold">Via Quote</span>
+                  </div>
+                  {bulkPrice ? (
+                    <div className="p-3 rounded-xl bg-blue-50/50 border border-blue-200 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="text-[11px] text-slate-500 block">Unit Rate on 5+ orders:</span>
+                        <span className="font-bold text-[#0B1F4B] text-sm tabular-nums">
+                          ₹{bulkPrice.toLocaleString('en-IN')} {isLease ? '/ month' : ''}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                        Bulk Rate
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">
+                      Looking to procure 5 or more machines for your company, school, or institution? Custom bulk discounts available.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setCorporateModalOpen(true)}
+                    className="w-full mt-2 py-2 px-3 bg-blue-50 hover:bg-blue-100/80 text-[#1D6FF2] font-bold text-xs rounded-xl border border-blue-200 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>Request Bulk / Fleet Quote</span>
+                    <span>→</span>
+                  </button>
+                </div>
+
                 {/* Trust 4-point pill strip */}
                 <div className="pt-4 border-t border-[#E4E9F2] grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[11px]">
                   <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2]">
@@ -797,6 +800,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* LAPTOP MITRA QUALITY PROMISE */}
+          <div className="mt-8 sm:mt-12">
+            <QualityPromiseSection product={product} />
           </div>
 
           {/* TABBED DETAILS SECTION */}

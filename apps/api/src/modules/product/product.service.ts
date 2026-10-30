@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Product, ProductListResponse, ProductFilterFacets } from '../../types';
 
@@ -235,6 +235,8 @@ const CANONICAL_CATALOG: Product[] = [
 
 @Injectable()
 export class ProductService {
+  private readonly logger = new Logger(ProductService.name);
+
   constructor(private prisma: PrismaService) {}
 
   private normalizeProduct(p: any): Product {
@@ -366,8 +368,13 @@ export class ProductService {
           total,
         };
       }
+      if (process.env.NODE_ENV === 'development') {
+        this.logger.warn('Product database query returned no products; using the canonical catalog fallback.');
+      }
     } catch {
-      // Prisma database unavailable or table empty — proceed to canonical catalog
+      if (process.env.NODE_ENV === 'development') {
+        this.logger.warn('Product database query failed; using the canonical catalog fallback.');
+      }
     }
 
     // Canonical catalog fallback
@@ -424,12 +431,17 @@ export class ProductService {
         return this.normalizeProduct(dbProduct);
       }
     } catch {
-      // fallback to canonical
+      if (process.env.NODE_ENV === 'development') {
+        this.logger.warn('Product database lookup failed; using the canonical catalog fallback.');
+      }
     }
 
     const item = CANONICAL_CATALOG.find((p) => p.id === id || p.slug === id);
     if (!item) {
       throw new NotFoundException(`Product with id ${id} not found`);
+    }
+    if (process.env.NODE_ENV === 'development') {
+      this.logger.warn(`Product "${id}" is not in the database; using the canonical catalog fallback.`);
     }
     return this.normalizeProduct(item);
   }
@@ -627,4 +639,3 @@ export class ProductService {
     };
   }
 }
-

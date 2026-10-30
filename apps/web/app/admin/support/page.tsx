@@ -10,6 +10,7 @@ import { adminApi } from '../../../lib/admin-api';
 import { api } from '../../../lib/api';
 import { useAuth } from '../../../lib/auth-context';
 import { formatDate, formatCurrency } from '../../../lib/format';
+import { useToast } from '../../../components/ui/Toast';
 
 type TabKey = 'tickets' | 'help' | 'replies' | 'settings' | 'reports';
 
@@ -40,7 +41,21 @@ function SupportWorkspaceContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const { addToast } = useToast();
   const isAdmin = user?.role === 'ADMIN';
+  const [exportingTickets, setExportingTickets] = useState(false);
+
+  const exportTickets = async () => {
+    setExportingTickets(true);
+    try {
+      await adminApi.downloadSupportTicketsCsv();
+      addToast('success', 'Support ticket export downloaded.');
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to export support tickets.');
+    } finally {
+      setExportingTickets(false);
+    }
+  };
 
   // Active tab state
   const [activeTab, setActiveTab] = useState<TabKey>(
@@ -59,6 +74,16 @@ function SupportWorkspaceContent() {
       <PageHeader
         title="Help & Support Desk"
         description="Omnichannel ticketing, SLA monitoring, returns triage, knowledge base, and automated templates"
+        actions={isAdmin ? (
+          <button
+            type="button"
+            onClick={() => void exportTickets()}
+            disabled={exportingTickets}
+            className="btn btn-secondary text-sm disabled:opacity-50"
+          >
+            {exportingTickets ? 'Exporting...' : 'Export tickets CSV'}
+          </button>
+        ) : undefined}
       />
 
       {/* Workspace Tabs Navigation */}
@@ -991,6 +1016,7 @@ function HelpCenterPanel() {
   const [catTitle, setCatTitle] = useState('');
   const [catSlug, setCatSlug] = useState('');
   const [catIcon, setCatIcon] = useState('HelpCircle');
+  const activeCategories = categories.filter((category) => category.isActive);
 
   // Form states for Article
   const [artCategory, setArtCategory] = useState('');
@@ -1022,7 +1048,7 @@ function HelpCenterPanel() {
 
   const openCreateArticle = () => {
     setEditingArticle(null);
-    setArtCategory(categories[0]?.id || '');
+    setArtCategory(activeCategories[0]?.id || '');
     setArtTitle('');
     setArtSlug('');
     setArtSummary('');
@@ -1074,13 +1100,23 @@ function HelpCenterPanel() {
     }
   };
 
-  const handleDeleteArticle = async (id: string) => {
-    if (!confirm('Are you sure you want to permanently delete this help article?')) return;
+  const handleArchiveArticle = async (id: string) => {
+    if (!confirm('Unpublish this article and retain it in the knowledge base?')) return;
     try {
-      await adminApi.deleteAdminHelpArticle(id);
+      await adminApi.archiveAdminHelpArticle(id);
       loadData();
     } catch (err: any) {
-      alert(err?.message || 'Failed to delete article');
+      alert(err?.message || 'Failed to archive article');
+    }
+  };
+
+  const handleArchiveCategory = async (id: string) => {
+    if (!confirm('Archive this category and unpublish all of its articles?')) return;
+    try {
+      await adminApi.archiveAdminHelpCategory(id);
+      loadData();
+    } catch (err: any) {
+      alert(err?.message || 'Failed to archive category');
     }
   };
 
@@ -1131,7 +1167,7 @@ function HelpCenterPanel() {
               : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
           }`}
         >
-          {a.isPublished ? 'Published' : 'Draft'}
+          {a.isPublished ? 'Published' : 'Unpublished / Draft'}
         </span>
       ),
     },
@@ -1156,12 +1192,14 @@ function HelpCenterPanel() {
           >
             Edit
           </button>
-          <button
-            onClick={() => handleDeleteArticle(a.id)}
-            className="px-2.5 py-1 text-xs font-semibold rounded text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-          >
-            Delete
-          </button>
+          {a.isPublished && (
+            <button
+              onClick={() => handleArchiveArticle(a.id)}
+              className="px-2.5 py-1 text-xs font-semibold rounded text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+            >
+              Archive
+            </button>
+          )}
         </div>
       ),
     },
@@ -1183,10 +1221,35 @@ function HelpCenterPanel() {
           </button>
           <button
             onClick={openCreateArticle}
-            className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+            disabled={activeCategories.length === 0}
+            className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
           >
             + New Article
           </button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+        <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Categories</h4>
+        <div className="space-y-2">
+          {categories.map((category) => (
+            <div key={category.id} className="flex items-center justify-between gap-3 text-xs">
+              <div>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">{category.title}</span>
+                <span className="ml-2 text-slate-500">
+                  {category.isActive ? 'Active' : 'Archived'} · {category.articleCount ?? category._count?.articles ?? 0} articles
+                </span>
+              </div>
+              {category.isActive && (
+                <button
+                  onClick={() => handleArchiveCategory(category.id)}
+                  className="px-2.5 py-1 font-semibold rounded text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                >
+                  Archive
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 
@@ -1217,9 +1280,9 @@ function HelpCenterPanel() {
                   onChange={(e) => setArtCategory(e.target.value)}
                   className="w-full p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                 >
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.title}
+                  {categories.filter((c) => c.isActive || c.id === artCategory).map((c) => (
+                    <option key={c.id} value={c.id} disabled={!c.isActive}>
+                      {c.title}{c.isActive ? '' : ' (Archived)'}
                     </option>
                   ))}
                 </select>
@@ -1233,6 +1296,7 @@ function HelpCenterPanel() {
                   <input
                     type="checkbox"
                     checked={artPublished}
+                    disabled={!categories.find((category) => category.id === artCategory)?.isActive}
                     onChange={(e) => setArtPublished(e.target.checked)}
                     className="rounded text-blue-600 focus:ring-blue-500"
                   />

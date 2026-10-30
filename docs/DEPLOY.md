@@ -3,7 +3,7 @@
 This document outlines the hosting configuration for deploying LaptopMitra:
 - **Backend API (`apps/api`)**: Deployed on [Render](https://render.com) using the root Blueprint [`render.yaml`](../render.yaml).
 - **Web Frontend (`apps/web`)**: Deployed on [Vercel](https://vercel.com).
-- **Database**: PostgreSQL (managed on Supabase, Neon, or Render).
+- **Database**: PostgreSQL (managed on Supabase, Neon, or Render). Local development uses a separate guarded Docker database; see [`deploy-database.md`](deploy-database.md#1-local-development-database).
 - **Authentication**: Firebase Authentication.
 - **Payments**: Razorpay.
 
@@ -52,7 +52,7 @@ The API service is configured via [`render.yaml`](../render.yaml) at the reposit
 - **Runtime**: `node` (Node.js 22)
 - **Health Check Path**: `/health`
 - **Build Command**: `corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter api exec prisma generate && pnpm --filter api build`
-- **Start Command**: `pnpm --filter api exec prisma migrate deploy && node apps/api/dist/main`
+- **Start Command**: `node apps/api/dist/main` (database migrations are a separately approved deployment step; they are not run automatically on API restart)
 
 Set the following secret environment variables in the Render dashboard (marked `sync: false` in `render.yaml`):
 - `DATABASE_URL` (PostgreSQL pooled or direct connection string)

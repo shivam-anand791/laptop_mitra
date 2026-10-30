@@ -259,7 +259,6 @@ export default function ProductDetailScreen() {
 
           {/* Top Badges Overlay */}
           <View style={styles.galleryBadges}>
-            <Badge variant="refurb" label="REFURB" />
             {product.isFeatured && <Badge variant="bestSeller" label="Best Seller" />}
             {product.isNewArrival && !product.isFeatured && <Badge variant="newArrival" label="New" />}
           </View>

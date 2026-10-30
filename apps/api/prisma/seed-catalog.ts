@@ -1,6 +1,12 @@
 import { PrismaClient } from '@prisma/client';
 import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '../../web/lib/mock-data';
+import { assertSafeDatabaseTarget, loadDatabaseEnvironment } from '../src/common/database-safety';
 
+loadDatabaseEnvironment('development');
+assertSafeDatabaseTarget();
+if (process.env.ALLOW_DEV_SEED !== 'true') {
+  throw new Error('Refusing to seed without ALLOW_DEV_SEED=true.');
+}
 const prisma = new PrismaClient();
 
 async function seedCatalog() {
@@ -67,12 +73,28 @@ async function seedCatalog() {
     }
   }, { maxWait: 10000, timeout: 60000 });
 
+  for (const user of [
+    { email: 'admin@example.test', firebaseUid: 'local-dev-admin', name: 'Local Admin', role: 'ADMIN', referralCode: 'LOCALADMIN' },
+    { email: 'support@example.test', firebaseUid: 'local-dev-support', name: 'Local Support', role: 'SUPPORT', referralCode: 'LOCALSUPPORT' },
+    { email: 'customer@example.test', firebaseUid: 'local-dev-customer', name: 'Local Customer', role: 'CUSTOMER', referralCode: 'LOCALCUSTOMER' },
+  ]) {
+    await prisma.user.upsert({
+      where: { email: user.email },
+      update: {},
+      create: {
+        ...user,
+        status: 'ACTIVE',
+        emailVerified: new Date(),
+      },
+    });
+  }
+
   const [categoryCount, productCount, imageCount] = await Promise.all([
     prisma.category.count(),
     prisma.product.count(),
     prisma.productImage.count(),
   ]);
-  console.log(`Catalog sync complete: ${categoryCount} categories, ${productCount} products, ${imageCount} images.`);
+  console.log(`Dev seed complete: ${categoryCount} categories, ${productCount} products, ${imageCount} images, 3 example users.`);
 }
 
 seedCatalog()

@@ -125,8 +125,7 @@ export default function TicketListScreen() {
           renderItem={({ item }: { item: any }) => {
             const fallbackConfig = { label: 'Open', bg: '#eff6ff', text: '#2563eb' };
             const statusConfig = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.OPEN ?? fallbackConfig;
-            const needsCustomerReply =
-              item.status === 'PENDING_CUSTOMER' || item.status === 'WAITING_FOR_CUSTOMER';
+            const needsCustomerReply = !!item.hasUnread;
             const lastMsg = item.messages?.[item.messages.length - 1];
 
             return (

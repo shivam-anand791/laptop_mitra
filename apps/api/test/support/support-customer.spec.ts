@@ -1,12 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupportService } from '../../src/modules/support/support.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PaymentEncryptionService } from '../../src/common/encryption/payment-encryption.service';
+import { NotificationService } from '../../src/modules/notifications/notification.service';
 
 describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
   let service: SupportService;
   let prisma: any;
+  let notifications: { dispatchSupportNotification: jest.Mock };
 
   const mockUserA = { id: 'usr-user-a', name: 'User A', email: 'a@example.com' };
   const mockUserB = { id: 'usr-user-b', name: 'User B', email: 'b@example.com' };
@@ -75,11 +77,13 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
         update: jest.fn(),
       },
     };
+    notifications = { dispatchSupportNotification: jest.fn().mockResolvedValue({ sent: 0, failed: 0 }) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SupportService,
         { provide: PrismaService, useValue: prisma },
+        { provide: NotificationService, useValue: notifications },
         {
           provide: PaymentEncryptionService,
           useValue: {
@@ -116,6 +120,34 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
 
       const result = await service.getTicketById(mockTicketA.id, 'admin-id', true);
       expect(result).toBeDefined();
+      expect(prisma.supportTicket.update).toHaveBeenCalledWith({
+        where: { id: mockTicketA.id },
+        data: { staffLastReadAt: expect.any(Date) },
+      });
+    });
+
+    it('marks a customer ticket read and returns unread status from read timestamps', async () => {
+      prisma.supportTicket.findMany.mockResolvedValue([
+        {
+          ...mockTicketA,
+          customerLastReadAt: new Date('2026-10-28T10:00:00Z'),
+          staffLastReadAt: new Date('2026-10-28T10:01:00Z'),
+          messages: [],
+          _count: { messages: 0, attachments: 0 },
+        },
+        {
+          ...mockTicketA,
+          id: 'tkt-read',
+          staffLastReadAt: new Date('2026-10-28T10:01:00Z'),
+          customerLastReadAt: new Date('2026-10-28T10:02:00Z'),
+          messages: [],
+          _count: { messages: 0, attachments: 0 },
+        },
+      ]);
+
+      const result = await service.getUserTickets(mockUserA.id);
+
+      expect(result.map((ticket) => ticket.hasUnread)).toEqual([true, false]);
     });
 
     it('blocks User B from adding a reply to User A ticket (IDOR)', async () => {
@@ -165,6 +197,10 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
 
       expect(ticket.ticketNumber).toBe('LM-T-1042');
       expect(ticket.status).toBe('NEW');
+      expect(notifications.dispatchSupportNotification).toHaveBeenCalledWith(
+        mockUserA.id,
+        expect.objectContaining({ type: 'ticket-created', ticketNumber: 'LM-T-1042' }),
+      );
       expect(prisma.supportTicket.create).toHaveBeenCalled();
       expect(prisma.ticketMessage.create).toHaveBeenCalled();
       expect(prisma.ticketEvent.create).toHaveBeenCalledWith(
@@ -190,6 +226,17 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
           message: '',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('fails closed when the ticket sequence is unavailable', async () => {
+      prisma.$queryRaw.mockRejectedValue(new Error('Sequence unavailable'));
+
+      await expect(service.createTicket(mockUserA.id, {
+        subject: 'Sequence failure',
+        category: 'OTHER',
+        message: 'Must not create a random ticket number',
+      })).rejects.toThrow(ServiceUnavailableException);
+      expect(prisma.supportTicket.create).not.toHaveBeenCalled();
     });
   });
 
@@ -293,6 +340,18 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
 
       expect(returnReq.returnNumber).toBe('LM-R-2005');
       expect(returnReq.status).toBe('REQUESTED');
+    });
+
+    it('fails closed when the return sequence is unavailable', async () => {
+      prisma.order.findUnique.mockResolvedValue(mockOrderA);
+      prisma.$queryRaw.mockRejectedValue(new Error('Sequence unavailable'));
+
+      await expect(service.createReturnRequest(mockUserA.id, {
+        orderId: mockOrderA.id,
+        reason: 'Sequence failure',
+        items: [{ orderItemId: 'item-1', quantity: 1 }],
+      })).rejects.toThrow(ServiceUnavailableException);
+      expect(prisma.returnRequest.create).not.toHaveBeenCalled();
     });
 
     it('validates matching account number and valid Indian IFSC code for COD bank details', async () => {

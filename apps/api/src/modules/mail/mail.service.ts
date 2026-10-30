@@ -27,15 +27,18 @@ export class MailService implements OnModuleInit {
 
   private initializeTransport() {
     const mailDriver = this.getEnv('MAIL_DRIVER');
+    const allowRealEmails = this.getEnv('ALLOW_REAL_EMAILS') === 'true';
     const resendApiKey = this.getEnv('RESEND_API_KEY');
     const mailFrom = this.getEnv('MAIL_FROM') || this.getEnv('EMAIL_FROM');
     if (mailFrom) {
       this.defaultFrom = mailFrom;
     }
 
-    if (mailDriver === 'console') {
+    if (mailDriver === 'console' || !allowRealEmails) {
       this.activeProvider = 'stdout';
-      this.logger.log(`[MailService] Initialized in STDOUT console mode (MAIL_DRIVER=console)`);
+      this.logger.log(
+        `[MailService] Initialized in STDOUT mode (${mailDriver === 'console' ? 'MAIL_DRIVER=console' : 'ALLOW_REAL_EMAILS is not true'})`,
+      );
       return;
     }
 

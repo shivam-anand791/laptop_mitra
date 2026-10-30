@@ -70,7 +70,6 @@ export default function ProductCard({
 
         {/* Top Badges */}
         <View style={styles.topLeftBadges}>
-          <Badge variant="refurb" label="REFURB" />
           {product.isFeatured && <Badge variant="bestSeller" label="Best Seller" />}
           {product.isNewArrival && !product.isFeatured && (
             <Badge variant="newArrival" label="New" />

@@ -2,7 +2,12 @@
 
 import React, { Suspense, useState, useEffect, useTransition, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { useAdminUsers, useAdminStats, useUpdateUserStatus } from '../../../lib/admin-queries';
+import {
+  useAdminUsers,
+  useAdminStats,
+  useAdminUserSupportHistory,
+  useUpdateUserStatus,
+} from '../../../lib/admin-queries';
 import { useAuth } from '../../../lib/auth-context';
 import { AdminUser, UserStatus, UserRole, USER_ROLES, USER_STATUSES } from '../../../lib/types';
 import { formatINR, formatDate, toNumber } from '../../../lib/format';
@@ -165,6 +170,8 @@ function UsersPageContent() {
 
   // 3. Status Mutation with Confirmation Modal
   const updateUserStatusMutation = useUpdateUserStatus();
+  const [historyUser, setHistoryUser] = useState<AdminUser | null>(null);
+  const historyQuery = useAdminUserSupportHistory(historyUser?.id ?? null);
   const [modalState, setModalState] = useState<{
     open: boolean;
     user: AdminUser | null;
@@ -453,7 +460,15 @@ function UsersPageContent() {
                     </td>
 
                     <td className="text-right whitespace-nowrap">
-                      {isSelf ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setHistoryUser(row)}
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 px-2.5 py-1 rounded-md border border-blue-200 dark:border-blue-900/60 hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-colors"
+                        >
+                          Support history
+                        </button>
+                        {isSelf ? (
                         <span
                           className="text-xs text-gray-400 dark:text-gray-500 italic select-none"
                           title="You cannot modify your own administrator account status"
@@ -485,11 +500,12 @@ function UsersPageContent() {
                         >
                           Reactivate
                         </button>
-                      ) : (
-                        <span className="text-xs text-gray-400 dark:text-gray-500 italic">
-                          Deleted
-                        </span>
-                      )}
+                        ) : (
+                          <span className="text-xs text-gray-400 dark:text-gray-500 italic">
+                            Deleted
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -601,6 +617,87 @@ function UsersPageContent() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={!!historyUser}
+        onClose={() => setHistoryUser(null)}
+        title="Support history"
+        description={historyUser ? `Read-only history for ${historyUser.name || historyUser.email || 'customer'}` : undefined}
+        size="lg"
+      >
+        {historyQuery.isLoading ? (
+          <p className="py-6 text-center text-sm text-gray-500">Loading support history...</p>
+        ) : historyQuery.isError ? (
+          <div className="space-y-3 py-4">
+            <p className="text-sm text-red-600">{historyQuery.error.message}</p>
+            <Button variant="secondary" size="sm" onClick={() => void historyQuery.refetch()}>
+              Try again
+            </Button>
+          </div>
+        ) : historyQuery.data ? (
+          <div className="max-h-[70vh] space-y-5 overflow-y-auto pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs text-gray-500">Tickets</p>
+                <p className="text-lg font-semibold">{historyQuery.data.ticketCount}</p>
+              </div>
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs text-gray-500">Returns</p>
+                <p className="text-lg font-semibold">{historyQuery.data.returnCount}</p>
+              </div>
+            </div>
+
+            <section>
+              <h2 className="mb-2 text-sm font-semibold">Ticket categories</h2>
+              {Object.keys(historyQuery.data.categoryCounts).length ? (
+                <ul className="space-y-1 text-sm">
+                  {Object.entries(historyQuery.data.categoryCounts).map(([category, count]) => (
+                    <li key={category} className="flex justify-between">
+                      <span>{category}</span><span>{count}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-sm text-gray-500">No ticket history.</p>}
+            </section>
+
+            <section>
+              <h2 className="mb-2 text-sm font-semibold">Tickets and satisfaction ratings</h2>
+              {historyQuery.data.tickets.length ? (
+                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {historyQuery.data.tickets.map((ticket) => (
+                    <li key={ticket.id} className="py-2 text-sm">
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <span className="font-medium">{ticket.ticketNumber} · {ticket.subject}</span>
+                        <span>{ticket.status} · {ticket.csatScore ? `${ticket.csatScore}/5` : 'Not rated'}</span>
+                      </div>
+                      <p className="text-xs text-gray-500">{ticket.category} · {formatDate(ticket.createdAt)}</p>
+                      {ticket.csatComment && <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{ticket.csatComment}</p>}
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-sm text-gray-500">No ticket history.</p>}
+            </section>
+
+            <section>
+              <h2 className="mb-2 text-sm font-semibold">Returns</h2>
+              {historyQuery.data.returns.length ? (
+                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {historyQuery.data.returns.map((request) => (
+                    <li key={request.id} className="py-2 text-sm">
+                      <p className="font-medium">{request.returnNumber} · {request.status}</p>
+                      <p className="text-xs text-gray-500">
+                        {request.order.orderNumber} · {request.type} · {formatDate(request.createdAt)}
+                        {request.ticket ? ` · ${request.ticket.ticketNumber}` : ''}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{request.reason}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-sm text-gray-500">No return history.</p>}
+            </section>
+          </div>
+        ) : null}
       </Modal>
     </div>
   );

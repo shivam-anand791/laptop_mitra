@@ -1,15 +1,14 @@
-import * as dotenv from 'dotenv';
-import { resolve } from 'path';
 import { PrismaClient } from '@prisma/client';
+import { assertSafeDatabaseTarget, loadDatabaseEnvironment } from '../src/common/database-safety';
 import { PaymentEncryptionService } from '../src/common/encryption/payment-encryption.service';
 import { QrStorageService } from '../src/common/storage/qr-storage.service';
 import { DiscountService } from '../src/modules/discount/discount.service';
 import { AdminService } from '../src/modules/admin/admin.service';
 
-dotenv.config({ path: resolve(__dirname, '../.env') });
-dotenv.config({ path: resolve(__dirname, '../../../.env') });
-
 async function runRealDatabaseConcurrencySuite() {
+  loadDatabaseEnvironment('development');
+  assertSafeDatabaseTarget();
+
   console.log('========================================================================');
   console.log('  PAYOUT & WITHDRAWAL REAL POSTGRESQL CONCURRENCY TEST SUITE');
   console.log('========================================================================');
@@ -37,7 +36,7 @@ async function runRealDatabaseConcurrencySuite() {
       data: {
         id: testUserId,
         firebaseUid: `uid-${testUserId}`,
-        email: `${testUserId}@example.com`,
+        email: `${testUserId}@example.test`,
         referralCode: `REF${Date.now().toString().slice(-6)}`,
         name: 'Concurrency Tester',
         role: 'CUSTOMER',
@@ -113,15 +112,15 @@ async function runRealDatabaseConcurrencySuite() {
       throw new Error('No withdrawal ID was created in Test 1.');
     }
 
-    console.log('\n--- TEST 2: Firing 4 Concurrent Admin Updates on Same Withdrawal in Parallel ---');
+    console.log('\n--- TEST 2: Firing 4 Concurrent APPROVED Updates on Same Withdrawal in Parallel ---');
     console.log(`Target Withdrawal: #${createdWithdrawalId} (Status: PENDING)`);
     console.log('Expectation: Exactly 1 transaction processes the status; other 3 fail with 409 Conflict.');
 
     const parallelAdminActions = await Promise.allSettled([
       adminService.updateWithdrawalStatus(createdWithdrawalId, 'APPROVED', testAdminId, 'Payment IMPS ref 001'),
       adminService.updateWithdrawalStatus(createdWithdrawalId, 'APPROVED', testAdminId, 'Payment IMPS ref 002'),
-      adminService.updateWithdrawalStatus(createdWithdrawalId, 'REJECTED', testAdminId, 'Rejected wrong IFSC'),
       adminService.updateWithdrawalStatus(createdWithdrawalId, 'APPROVED', testAdminId, 'Payment IMPS ref 003'),
+      adminService.updateWithdrawalStatus(createdWithdrawalId, 'APPROVED', testAdminId, 'Payment IMPS ref 004'),
     ]);
 
     let adminSuccessCount = 0;
@@ -162,10 +161,9 @@ async function runRealDatabaseConcurrencySuite() {
     console.log('\n[Teardown] Cleaning up test records...');
     await prisma.withdrawalRequest.deleteMany({ where: { userId: testUserId } });
     await prisma.affiliatePaymentDetails.deleteMany({ where: { userId: testUserId } });
-    await prisma.auditLog.deleteMany({ where: { actorUserId: testAdminId } });
     await prisma.user.deleteMany({ where: { id: testUserId } });
     await prisma.$disconnect();
-    console.log('✔ Cleanup complete.');
+    console.log('✔ Test records removed; append-only audit entries retained.');
   }
 }
 

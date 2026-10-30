@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { SupportService } from './support.service';
@@ -238,6 +238,30 @@ export class SupportController {
     return this.supportService.getAdminTickets(query);
   }
 
+  @Get('admin/exports/tickets.csv')
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="support-tickets.csv"')
+  @Header('Cache-Control', 'private, no-store')
+  @ApiOperation({ summary: 'Export support tickets as CSV (ADMIN only)' })
+  async exportAdminTicketsCsv(@GetUser() admin: any) {
+    return this.supportService.exportAdminTicketsCsv(admin.id);
+  }
+
+  @Get('admin/exports/returns.csv')
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="support-returns.csv"')
+  @Header('Cache-Control', 'private, no-store')
+  @ApiOperation({ summary: 'Export return requests as CSV (ADMIN only)' })
+  async exportAdminReturnsCsv(@GetUser() admin: any) {
+    return this.supportService.exportAdminReturnsCsv(admin.id);
+  }
+
   @Get('admin/tickets/:id')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
@@ -420,13 +444,13 @@ export class SupportController {
     return this.supportService.updateAdminHelpCategory(id, dto);
   }
 
-  @Delete('admin/help/categories/:id')
+  @Put('admin/help/categories/:id/archive')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
   @Roles('SUPPORT', 'ADMIN')
-  @ApiOperation({ summary: 'Delete help category' })
-  async deleteAdminHelpCategory(@Param('id') id: string) {
-    return this.supportService.deleteAdminHelpCategory(id);
+  @ApiOperation({ summary: 'Archive help category and unpublish its articles' })
+  async archiveAdminHelpCategory(@Param('id') id: string) {
+    return this.supportService.archiveAdminHelpCategory(id);
   }
 
   @Get('admin/help/articles')
@@ -459,13 +483,13 @@ export class SupportController {
     return this.supportService.updateAdminHelpArticle(id, dto);
   }
 
-  @Delete('admin/help/articles/:id')
+  @Put('admin/help/articles/:id/archive')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
   @Roles('SUPPORT', 'ADMIN')
-  @ApiOperation({ summary: 'Delete help article' })
-  async deleteAdminHelpArticle(@Param('id') id: string) {
-    return this.supportService.deleteAdminHelpArticle(id);
+  @ApiOperation({ summary: 'Unpublish and retain help article' })
+  async archiveAdminHelpArticle(@Param('id') id: string) {
+    return this.supportService.archiveAdminHelpArticle(id);
   }
 
   @Get('admin/settings')
@@ -498,4 +522,3 @@ export class SupportController {
     return this.supportService.getAdminSupportReports();
   }
 }
-

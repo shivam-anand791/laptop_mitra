@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Logger,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
@@ -28,6 +29,18 @@ import {
   UpdateSupportSettingsDto,
 } from './dto/admin-support.dto';
 
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  let text = value instanceof Date ? value.toISOString() : String(value);
+  if (typeof value === 'string' && /^[\s\u0000-\u001f]*[=+\-@]/.test(text)) {
+    text = `'${text}`;
+  }
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function toCsv(headers: string[], rows: unknown[][]): string {
+  return `\uFEFF${[headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n')}\r\n`;
+}
 
 export const SUPPORT_CATEGORIES = [
   {
@@ -247,7 +260,7 @@ export class SupportService {
       },
     });
 
-    if (categories.length === 0) {
+    if (categories.length === 0 && await this.prisma.helpCategory.count() === 0) {
       return this.getFallbackHelpCategories();
     }
 
@@ -262,10 +275,13 @@ export class SupportService {
   }
 
   async getHelpArticles(query?: string, categorySlug?: string) {
-    const where: any = { isPublished: true };
+    const where: any = {
+      isPublished: true,
+      category: { isActive: true },
+    };
 
     if (categorySlug) {
-      where.category = { slug: categorySlug };
+      where.category.slug = categorySlug;
     }
 
     if (query && query.trim()) {
@@ -288,7 +304,12 @@ export class SupportService {
       take: 50,
     });
 
-    if (articles.length === 0 && !query && !categorySlug) {
+    if (
+      articles.length === 0 &&
+      !query &&
+      !categorySlug &&
+      await this.prisma.helpCategory.count() === 0
+    ) {
       return this.getFallbackHelpArticles();
     }
 
@@ -303,7 +324,7 @@ export class SupportService {
       },
     });
 
-    if (!article || !article.isPublished) {
+    if (!article || !article.isPublished || !article.category.isActive) {
       // Check fallback
       const fallback = this.getFallbackHelpArticles().find((a) => a.slug === slug);
       if (fallback) return fallback;
@@ -338,26 +359,32 @@ export class SupportService {
   // 4. Ticket Management (Customer & Support)
   // ---------------------------------------------------------------------------
   async getUserTickets(userId: string) {
-    const tickets = await this.prisma.supportTicket.findMany({
-      where: {
-        userId,
-        isArchived: false,
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        messages: {
-          where: { isInternal: false },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
+    let tickets;
+    try {
+      tickets = await this.prisma.supportTicket.findMany({
+        where: {
+          userId,
+          isArchived: false,
         },
-        _count: {
-          select: {
-            messages: { where: { isInternal: false } },
-            attachments: true,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          messages: {
+            where: { isInternal: false },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+          _count: {
+            select: {
+              messages: { where: { isInternal: false } },
+              attachments: true,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (error) {
+      this.logger.error('Failed to fetch customer support tickets', error instanceof Error ? error.stack : String(error));
+      throw new ServiceUnavailableException('Support service is temporarily unavailable');
+    }
 
     return tickets.map((t) => {
       const hasUnread = t.staffLastReadAt && (!t.customerLastReadAt || t.staffLastReadAt > t.customerLastReadAt);
@@ -442,13 +469,10 @@ export class SupportService {
       throw new ForbiddenException('You do not have access to this support ticket');
     }
 
-    // Mark customer read
-    if (!isStaff) {
-      this.prisma.supportTicket.update({
-        where: { id: ticket.id },
-        data: { customerLastReadAt: new Date() },
-      }).catch(() => null);
-    }
+    await this.prisma.supportTicket.update({
+      where: { id: ticket.id },
+      data: isStaff ? { staffLastReadAt: new Date() } : { customerLastReadAt: new Date() },
+    });
 
     return ticket;
   }
@@ -462,9 +486,11 @@ export class SupportService {
     let ticketNumber: string;
     try {
       const result = await this.prisma.$queryRaw<{ nextval: any }[]>`SELECT nextval('ticket_number_seq')`;
+      if (!result[0]?.nextval) throw new Error('Ticket number sequence returned no value');
       ticketNumber = `LM-T-${result[0].nextval}`;
-    } catch {
-      ticketNumber = `LM-T-${Math.floor(1000 + Math.random() * 9000)}`;
+    } catch (error) {
+      this.logger.error('Failed to allocate a ticket number', error instanceof Error ? error.stack : String(error));
+      throw new ServiceUnavailableException('Unable to allocate a ticket number');
     }
 
     const firstResponseDueAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
@@ -540,6 +566,12 @@ export class SupportService {
     });
 
     this.logger.log(`Ticket #${ticket.ticketNumber} created successfully for user ${userId}`);
+    await this.notificationService?.dispatchSupportNotification(userId, {
+      type: 'ticket-created',
+      ticketId: ticket.id,
+      ticketNumber: ticket.ticketNumber,
+      subject: ticket.subject,
+    });
     return ticket;
   }
 
@@ -564,7 +596,7 @@ export class SupportService {
       throw new ForbiddenException('You do not have access to this ticket');
     }
 
-    return await this.prisma.$transaction(async (tx) => {
+    const createdMessage = await this.prisma.$transaction(async (tx) => {
       const msg = await tx.ticketMessage.create({
         data: {
           ticketId,
@@ -633,6 +665,17 @@ export class SupportService {
 
       return msg;
     });
+
+    if (role !== 'CUSTOMER' && !isInternal) {
+      await this.notificationService?.dispatchSupportNotification(ticket.userId, {
+        type: 'ticket-reply',
+        ticketId: ticket.id,
+        ticketNumber: ticket.ticketNumber,
+        subject: ticket.subject,
+      });
+    }
+
+    return createdMessage;
   }
 
   async reopenTicket(ticketId: string, userId: string) {
@@ -656,7 +699,7 @@ export class SupportService {
       }
     }
 
-    return await this.prisma.$transaction(async (tx) => {
+    const reopened = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.supportTicket.update({
         where: { id: ticketId },
         data: {
@@ -680,6 +723,14 @@ export class SupportService {
 
       return updated;
     });
+
+    await this.notificationService?.dispatchSupportNotification(userId, {
+      type: 'ticket-reopened',
+      ticketId: ticket.id,
+      ticketNumber: ticket.ticketNumber,
+      subject: ticket.subject,
+    });
+    return reopened;
   }
 
   async rateTicket(ticketId: string, userId: string, score: number, comment?: string) {
@@ -745,9 +796,11 @@ export class SupportService {
     let returnNumber: string;
     try {
       const result = await this.prisma.$queryRaw<{ nextval: any }[]>`SELECT nextval('return_number_seq')`;
+      if (!result[0]?.nextval) throw new Error('Return number sequence returned no value');
       returnNumber = `LM-R-${result[0].nextval}`;
-    } catch {
-      returnNumber = `LM-R-${Math.floor(1000 + Math.random() * 9000)}`;
+    } catch (error) {
+      this.logger.error('Failed to allocate a return number', error instanceof Error ? error.stack : String(error));
+      throw new ServiceUnavailableException('Unable to allocate a return number');
     }
 
     // Handle refund details for COD / Bank transfer
@@ -1153,6 +1206,118 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
   // ---------------------------------------------------------------------------
   // 7. Admin / Staff Tickets Workspace
   // ---------------------------------------------------------------------------
+  async exportAdminTicketsCsv(adminUserId: string) {
+    const tickets = await this.prisma.supportTicket.findMany({
+      orderBy: { createdAt: 'asc' },
+      select: {
+        ticketNumber: true,
+        user: { select: { name: true, email: true } },
+        order: { select: { orderNumber: true } },
+        subject: true,
+        category: true,
+        issueType: true,
+        type: true,
+        status: true,
+        priority: true,
+        assignee: { select: { name: true } },
+        firstResponseAt: true,
+        resolvedAt: true,
+        csatScore: true,
+        csatComment: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: adminUserId,
+        action: 'EXPORT_SUPPORT_TICKETS_CSV',
+        entityType: 'SUPPORT_EXPORT',
+        entityId: 'tickets',
+        metadata: { rowCount: tickets.length },
+      },
+    });
+
+    return toCsv(
+      ['ticketNumber', 'customerName', 'customerEmail', 'orderNumber', 'subject', 'category', 'issueType', 'type', 'status', 'priority', 'assignee', 'firstResponseAt', 'resolvedAt', 'csatScore', 'csatComment', 'createdAt', 'updatedAt'],
+      tickets.map((ticket) => [
+        ticket.ticketNumber,
+        ticket.user.name,
+        ticket.user.email,
+        ticket.order?.orderNumber,
+        ticket.subject,
+        ticket.category,
+        ticket.issueType,
+        ticket.type,
+        ticket.status,
+        ticket.priority,
+        ticket.assignee?.name,
+        ticket.firstResponseAt,
+        ticket.resolvedAt,
+        ticket.csatScore,
+        ticket.csatComment,
+        ticket.createdAt,
+        ticket.updatedAt,
+      ]),
+    );
+  }
+
+  async exportAdminReturnsCsv(adminUserId: string) {
+    const returns = await this.prisma.returnRequest.findMany({
+      orderBy: { createdAt: 'asc' },
+      select: {
+        returnNumber: true,
+        user: { select: { name: true, email: true } },
+        order: { select: { orderNumber: true } },
+        ticket: { select: { ticketNumber: true } },
+        type: true,
+        status: true,
+        reason: true,
+        refundAmount: true,
+        refundMethod: true,
+        manualRefundReference: true,
+        razorpayRefundId: true,
+        createdAt: true,
+        approvedAt: true,
+        pickedUpAt: true,
+        processedAt: true,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: adminUserId,
+        action: 'EXPORT_SUPPORT_RETURNS_CSV',
+        entityType: 'SUPPORT_EXPORT',
+        entityId: 'returns',
+        metadata: { rowCount: returns.length },
+      },
+    });
+
+    return toCsv(
+      ['returnNumber', 'customerName', 'customerEmail', 'orderNumber', 'ticketNumber', 'type', 'status', 'reason', 'refundAmount', 'refundMethod', 'manualRefundReference', 'razorpayRefundId', 'createdAt', 'approvedAt', 'pickedUpAt', 'processedAt'],
+      returns.map((request) => [
+        request.returnNumber,
+        request.user.name,
+        request.user.email,
+        request.order.orderNumber,
+        request.ticket?.ticketNumber,
+        request.type,
+        request.status,
+        request.reason,
+        request.refundAmount,
+        request.refundMethod,
+        request.manualRefundReference,
+        request.razorpayRefundId,
+        request.createdAt,
+        request.approvedAt,
+        request.pickedUpAt,
+        request.processedAt,
+      ]),
+    );
+  }
+
   async getAdminTickets(query: AdminTicketQueryDto) {
     const page = query.page && query.page > 0 ? query.page : 1;
     const pageSize = query.pageSize && query.pageSize > 0 ? query.pageSize : 20;
@@ -1270,6 +1435,8 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
         user: t.user,
         assignee: t.assignee,
         order: t.order,
+        hasUnread: !!t.customerLastReadAt &&
+          (!t.staffLastReadAt || t.customerLastReadAt > t.staffLastReadAt),
         messageCount: t._count.messages,
         attachmentCount: t._count.attachments,
         reopenCount: t.reopenCount,
@@ -1317,7 +1484,7 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
 
     if (!ticket) throw new NotFoundException(`Ticket #${id} not found`);
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const dataToUpdate: any = { updatedAt: new Date(), staffLastReadAt: new Date() };
       const eventsToCreate: any[] = [];
 
@@ -1402,6 +1569,26 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
 
       return updated;
     });
+
+    if (dto.status && dto.status !== ticket.status) {
+      const notification =
+        dto.status === 'RESOLVED'
+          ? {
+              type: 'ticket-resolved' as const,
+              ticketId: ticket.id,
+              ticketNumber: ticket.ticketNumber,
+              subject: ticket.subject,
+            }
+          : {
+              type: 'ticket-status' as const,
+              ticketId: ticket.id,
+              ticketNumber: ticket.ticketNumber,
+              subject: ticket.subject,
+              status: dto.status,
+            };
+      await this.notificationService?.dispatchSupportNotification(ticket.userId, notification);
+    }
+    return updated;
   }
 
   async mergeAdminTickets(
@@ -1612,7 +1799,7 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
 
     if (!returnRequest) throw new NotFoundException(`Return request #${id} not found`);
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const updateData: any = {
         status: dto.status,
         updatedAt: new Date(),
@@ -1680,6 +1867,15 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
 
       return updated;
     });
+
+    if (['APPROVED', 'REJECTED', 'PICKED_UP'].includes(dto.status)) {
+      await this.notificationService?.dispatchSupportNotification(returnRequest.userId, {
+        type: 'return-status',
+        returnNumber: returnRequest.returnNumber,
+        status: dto.status,
+      });
+    }
+    return updated;
   }
 
   async processAdminRefund(
@@ -1765,6 +1961,11 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
       return res;
     });
 
+    await this.notificationService?.dispatchSupportNotification(returnRequest.userId, {
+      type: 'refund-reference',
+      returnNumber: returnRequest.returnNumber,
+      reference: updated.manualRefundReference || updated.razorpayRefundId || 'Refund processed',
+    });
     return updated;
   }
 
@@ -1903,6 +2104,9 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
   async updateAdminHelpCategory(id: string, dto: UpdateHelpCategoryDto) {
     const cat = await this.prisma.helpCategory.findUnique({ where: { id } });
     if (!cat) throw new NotFoundException('Help category not found');
+    if (dto.isActive === false) {
+      throw new BadRequestException('Use the archive action to deactivate a category and unpublish its articles');
+    }
 
     const data: any = {};
     if (dto.title) data.title = dto.title.trim();
@@ -1917,19 +2121,21 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
     });
   }
 
-  async deleteAdminHelpCategory(id: string) {
-    const cat = await this.prisma.helpCategory.findUnique({
-      where: { id },
-      include: { _count: { select: { articles: true } } },
-    });
+  async archiveAdminHelpCategory(id: string) {
+    const cat = await this.prisma.helpCategory.findUnique({ where: { id } });
     if (!cat) throw new NotFoundException('Help category not found');
 
-    if (cat._count.articles > 0) {
-      throw new BadRequestException('Cannot delete category with associated articles. Reassign or delete articles first.');
-    }
-
-    await this.prisma.helpCategory.delete({ where: { id } });
-    return { success: true, message: 'Category deleted' };
+    await this.prisma.$transaction(async (tx) => {
+      await tx.helpArticle.updateMany({
+        where: { categoryId: id },
+        data: { isPublished: false },
+      });
+      await tx.helpCategory.update({
+        where: { id },
+        data: { isActive: false },
+      });
+    });
+    return { success: true, message: 'Category archived and its articles unpublished' };
   }
 
   async getAdminHelpArticles() {
@@ -1949,6 +2155,12 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
     if (!dto.slug?.trim()) throw new BadRequestException('Article slug is required');
     if (!dto.content?.trim()) throw new BadRequestException('Content markdown is required');
 
+    const category = await this.prisma.helpCategory.findUnique({
+      where: { id: dto.categoryId },
+      select: { isActive: true },
+    });
+    if (!category?.isActive) throw new BadRequestException('Articles can only be created in an active category');
+
     return this.prisma.helpArticle.create({
       data: {
         categoryId: dto.categoryId,
@@ -1967,6 +2179,14 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
     const article = await this.prisma.helpArticle.findUnique({ where: { id } });
     if (!article) throw new NotFoundException('Help article not found');
 
+    if (dto.isPublished) {
+      const category = await this.prisma.helpCategory.findUnique({
+        where: { id: dto.categoryId ?? article.categoryId },
+        select: { isActive: true },
+      });
+      if (!category?.isActive) throw new BadRequestException('Articles can only be published in an active category');
+    }
+
     const data: any = {};
     if (dto.categoryId) data.categoryId = dto.categoryId;
     if (dto.title) data.title = dto.title.trim();
@@ -1983,12 +2203,15 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
     });
   }
 
-  async deleteAdminHelpArticle(id: string) {
+  async archiveAdminHelpArticle(id: string) {
     const article = await this.prisma.helpArticle.findUnique({ where: { id } });
     if (!article) throw new NotFoundException('Help article not found');
 
-    await this.prisma.helpArticle.delete({ where: { id } });
-    return { success: true, message: 'Article deleted' };
+    await this.prisma.helpArticle.update({
+      where: { id },
+      data: { isPublished: false },
+    });
+    return { success: true, message: 'Article unpublished and retained' };
   }
 
   // ---------------------------------------------------------------------------
@@ -2132,4 +2355,3 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
     };
   }
 }
-

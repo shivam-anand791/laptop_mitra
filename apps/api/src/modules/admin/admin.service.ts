@@ -92,6 +92,60 @@ export class AdminService {
     };
   }
 
+  async getUserSupportHistory(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const [tickets, returns] = await Promise.all([
+      this.prisma.supportTicket.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          ticketNumber: true,
+          subject: true,
+          category: true,
+          status: true,
+          createdAt: true,
+          resolvedAt: true,
+          csatScore: true,
+          csatComment: true,
+        },
+      }),
+      this.prisma.returnRequest.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          returnNumber: true,
+          type: true,
+          status: true,
+          reason: true,
+          createdAt: true,
+          order: { select: { orderNumber: true } },
+          ticket: { select: { ticketNumber: true } },
+        },
+      }),
+    ]);
+
+    const categoryCounts = tickets.reduce<Record<string, number>>((counts, ticket) => {
+      counts[ticket.category] = (counts[ticket.category] || 0) + 1;
+      return counts;
+    }, {});
+
+    return {
+      user,
+      ticketCount: tickets.length,
+      returnCount: returns.length,
+      categoryCounts,
+      tickets,
+      returns,
+    };
+  }
+
   async updateUserStatus(userId: string, status: string, currentAdminId?: string) {
     if (!USER_STATUSES.includes(status as UserStatus)) {
       throw new BadRequestException(`Status must be one of: ${USER_STATUSES.join(', ')}`);
@@ -1498,4 +1552,3 @@ export class AdminService {
     });
   }
 }
-

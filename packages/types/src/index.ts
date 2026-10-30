@@ -579,6 +579,7 @@ export interface SupportTicket {
   mergedIntoId?: string | null;
   customerLastReadAt?: Date | string | null;
   staffLastReadAt?: Date | string | null;
+  hasUnread?: boolean;
   csatScore?: number | null;
   csatComment?: string | null;
   callbackSlot?: Date | string | null;
@@ -811,7 +812,6 @@ export interface SupportSettings {
   returnWindowDays: number;
   updatedAt: Date | string;
 }
-
 
 
 

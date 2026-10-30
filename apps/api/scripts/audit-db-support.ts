@@ -1,5 +1,8 @@
 import { PrismaClient } from '@prisma/client';
+import { assertSafeDatabaseTarget, loadDatabaseEnvironment } from '../src/common/database-safety';
 
+loadDatabaseEnvironment('development');
+assertSafeDatabaseTarget();
 const prisma = new PrismaClient();
 
 async function main() {

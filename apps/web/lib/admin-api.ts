@@ -13,6 +13,16 @@ import {
   CorporateInquiry,
 } from './types';
 
+async function downloadCsv(endpoint: string, filename: string) {
+  const csv = await request<string>(endpoint);
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /**
  * LaptopMitra Admin API Client
  * Maps 1:1 to real NestJS backend endpoints in AdminController and ProductController.
@@ -290,6 +300,44 @@ export const adminApi = {
     return await request<any[]>('/support/admin/staff');
   },
 
+  async getUserSupportHistory(userId: string): Promise<{
+    user: { id: string; name: string | null; email: string | null };
+    ticketCount: number;
+    returnCount: number;
+    categoryCounts: Record<string, number>;
+    tickets: Array<{
+      id: string;
+      ticketNumber: string;
+      subject: string;
+      category: string;
+      status: string;
+      createdAt: string;
+      resolvedAt: string | null;
+      csatScore: number | null;
+      csatComment: string | null;
+    }>;
+    returns: Array<{
+      id: string;
+      returnNumber: string;
+      type: string;
+      status: string;
+      reason: string;
+      createdAt: string;
+      order: { orderNumber: string };
+      ticket: { ticketNumber: string } | null;
+    }>;
+  }> {
+    return await request(`/admin/users/${encodeURIComponent(userId)}/support-history`);
+  },
+
+  async downloadSupportTicketsCsv() {
+    return downloadCsv('/support/admin/exports/tickets.csv', 'support-tickets.csv');
+  },
+
+  async downloadSupportReturnsCsv() {
+    return downloadCsv('/support/admin/exports/returns.csv', 'support-returns.csv');
+  },
+
   // ---------------------------------------------------------------------------
   // Returns & Refunds Workspace (Phase S5)
   // ---------------------------------------------------------------------------
@@ -393,9 +441,9 @@ export const adminApi = {
     });
   },
 
-  async deleteAdminHelpCategory(id: string): Promise<{ success: boolean }> {
-    return await request<any>(`/support/admin/help/categories/${id}`, {
-      method: 'DELETE',
+  async archiveAdminHelpCategory(id: string): Promise<{ success: boolean }> {
+    return await request<any>(`/support/admin/help/categories/${id}/archive`, {
+      method: 'PUT',
     });
   },
 
@@ -417,9 +465,9 @@ export const adminApi = {
     });
   },
 
-  async deleteAdminHelpArticle(id: string): Promise<{ success: boolean }> {
-    return await request<any>(`/support/admin/help/articles/${id}`, {
-      method: 'DELETE',
+  async archiveAdminHelpArticle(id: string): Promise<{ success: boolean }> {
+    return await request<any>(`/support/admin/help/articles/${id}/archive`, {
+      method: 'PUT',
     });
   },
 
@@ -442,4 +490,3 @@ export const adminApi = {
     return await request<any>('/support/admin/reports');
   },
 };
-

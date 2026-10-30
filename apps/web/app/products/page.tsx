@@ -32,6 +32,7 @@ function ProductsContent() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [productFilters, setProductFilters] = useState<ProductFilterFacets | null>(null);
   const [loading, setLoading] = useState(true);
+  const [usingMockProducts, setUsingMockProducts] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [sortBy, setSortBy] = useState<string>('featured');
 
@@ -59,6 +60,7 @@ function ProductsContent() {
         ]);
         setCategories(catRes);
         setProducts(prodRes.products);
+        setUsingMockProducts(prodRes.isMockFallback === true);
         if (filterRes) setProductFilters(filterRes);
       } catch {
         // Handled by api fallback
@@ -354,6 +356,12 @@ function ProductsContent() {
           )}
         </div>
       </div>
+
+      {usingMockProducts && process.env.NODE_ENV === 'development' && (
+        <div role="status" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          Development warning: showing mock products because the API returned no catalog. Run <code>pnpm db:dev:seed</code>.
+        </div>
+      )}
 
       {/* Mobile filter toggle button */}
       <div className="lg:hidden mb-4 sm:mb-6">

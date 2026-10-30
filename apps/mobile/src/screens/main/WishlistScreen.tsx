@@ -163,7 +163,6 @@ export default function WishlistScreen() {
             activeOpacity={0.8}
           >
             <View style={styles.badgeRow}>
-              <Badge variant="refurb" label="REFURB" />
               {product?.stock !== undefined && product.stock > 0 && (
                 <Badge variant="dispatch" label="In Stock" />
               )}

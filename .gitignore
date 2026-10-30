@@ -3,11 +3,14 @@ node_modules
 .turbo
 .next
 dist
+/public_htmlphp/
 *.tsbuildinfo
 coverage
 .env
 .env.*
 !.env.example
+!.env.development.example
+!.env.test.example
 .vercel
 *.log
 .playwright-mcp

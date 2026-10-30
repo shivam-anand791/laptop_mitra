@@ -10,6 +10,7 @@ import { SensitiveField } from '../../../components/admin/SensitiveField';
 import { adminApi } from '../../../lib/admin-api';
 import { useAuth } from '../../../lib/auth-context';
 import { formatDate, formatCurrency } from '../../../lib/format';
+import { useToast } from '../../../components/ui/Toast';
 
 const RETURN_STATUSES = [
   'ALL',
@@ -40,7 +41,21 @@ function ReturnsWorkspaceContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user } = useAuth();
+  const { addToast } = useToast();
   const isAdmin = user?.role === 'ADMIN';
+  const [exportingReturns, setExportingReturns] = useState(false);
+
+  const exportReturns = async () => {
+    setExportingReturns(true);
+    try {
+      await adminApi.downloadSupportReturnsCsv();
+      addToast('success', 'Return export downloaded.');
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to export returns.');
+    } finally {
+      setExportingReturns(false);
+    }
+  };
 
   const [returns, setReturns] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
@@ -167,6 +182,16 @@ function ReturnsWorkspaceContent() {
       <PageHeader
         title="Returns & RMA Management"
         description="Inspect return requests, schedule courier pickups, execute lab diagnostics, and disburse refunds"
+        actions={isAdmin ? (
+          <button
+            type="button"
+            onClick={() => void exportReturns()}
+            disabled={exportingReturns}
+            className="btn btn-secondary text-sm disabled:opacity-50"
+          >
+            {exportingReturns ? 'Exporting...' : 'Export returns CSV'}
+          </button>
+        ) : undefined}
       />
 
       {/* Summary Stat Cards */}

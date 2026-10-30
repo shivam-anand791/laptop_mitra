@@ -1,6 +1,10 @@
 import { PrismaClient } from '@prisma/client';
+import { assertSafeDatabaseTarget, loadDatabaseEnvironment } from '../src/common/database-safety';
 
 async function main() {
+  loadDatabaseEnvironment('development');
+  assertSafeDatabaseTarget();
+
   const emailArg = process.argv[2];
   const uidArg = process.argv[3];
 

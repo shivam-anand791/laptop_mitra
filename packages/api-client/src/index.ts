@@ -498,6 +498,13 @@ export class LaptopMitraApiClient {
     });
   }
 
+  async registerDeviceToken(token: string, platform?: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/notifications/register', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform }),
+    });
+  }
+
   // Addresses
   async getAddresses(): Promise<Address[]> {
     return this.request<Address[]>('/addresses');
@@ -735,5 +742,4 @@ export class LaptopMitraApiClient {
     });
   }
 }
-
 

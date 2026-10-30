@@ -23,6 +23,14 @@ import { MOCK_PRODUCTS, MOCK_CATEGORIES } from './mock-data';
 
 const API_BASE_URL = NEXT_PUBLIC_API_URL;
 
+function mockProductsFallback(reason: 'request failed' | 'no products') {
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(`[dev] Product API ${reason}; using mock products.`);
+    return { products: MOCK_PRODUCTS, total: MOCK_PRODUCTS.length, isMockFallback: true };
+  }
+  return { products: MOCK_PRODUCTS, total: MOCK_PRODUCTS.length };
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string, public data?: any) {
     super(message);
@@ -114,6 +122,9 @@ export async function request<T>(
       throw new ApiError(res.status, message, errData);
     }
 
+    if (res.headers.get('content-type')?.includes('text/csv')) {
+      return (await res.text()) as T;
+    }
     return await res.json();
   } catch (err: any) {
     if (err instanceof ApiError) throw err;
@@ -144,7 +155,7 @@ export const api = {
     stockOnly?: boolean;
     limit?: number;
     offset?: number;
-  }): Promise<{ products: Product[]; total: number }> {
+  }): Promise<{ products: Product[]; total: number; isMockFallback?: boolean }> {
     try {
       const searchParams = new URLSearchParams();
       if (params?.search) searchParams.set('search', params.search);
@@ -162,9 +173,9 @@ export const api = {
       if (res?.products && res.products.length > 0) {
         return res;
       }
-      return { products: MOCK_PRODUCTS, total: MOCK_PRODUCTS.length };
+      return mockProductsFallback('no products');
     } catch {
-      return { products: MOCK_PRODUCTS, total: MOCK_PRODUCTS.length };
+      return mockProductsFallback('request failed');
     }
   },
 
@@ -731,5 +742,3 @@ export const api = {
     return await request<any>(`/support/warranty/${orderItemId}`);
   },
 };
-
-
