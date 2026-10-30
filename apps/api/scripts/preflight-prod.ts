@@ -32,6 +32,12 @@ function isValidPostgresUrl(value = ''): boolean {
 const checks: Check[] = [
   { name: 'NODE_ENV', passed: process.env.NODE_ENV === 'production' },
   { name: 'RENDER', passed: process.env.RENDER === 'true' },
+  { name: 'DEPLOYMENT_ENV', passed: process.env.DEPLOYMENT_ENV === 'production' },
+  {
+    name: 'PRODUCTION_DATABASE_HOST',
+    passed: Boolean(process.env.PRODUCTION_DATABASE_HOST?.trim())
+      && !/[/:@]/.test(process.env.PRODUCTION_DATABASE_HOST?.trim() || ''),
+  },
 ];
 
 let databaseTargetIsSafe = false;

@@ -66,31 +66,61 @@ describe('database safety guard', () => {
   });
 
   describe('API runtime target policy', () => {
+    const renderEnvironment = {
+      NODE_ENV: 'production',
+      RENDER: 'true',
+      DEPLOYMENT_ENV: 'production',
+      PRODUCTION_DATABASE_HOST: 'aws-0-ap-northeast-2.pooler.supabase.com',
+      DATABASE_URL: 'postgresql://aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres',
+    };
+
+    it('requires an explicit deployment environment', () => {
+      expect(() => assertRuntimeDatabaseTarget({
+        NODE_ENV: 'production',
+        RENDER: 'true',
+        DATABASE_URL: renderEnvironment.DATABASE_URL,
+      }, runtimeProtectedHosts)).toThrow(/DEPLOYMENT_ENV must be/);
+    });
+
     it('refuses the protected host on a laptop even with NODE_ENV=production', () => {
       expect(() => assertRuntimeDatabaseTarget({
         NODE_ENV: 'production',
+        DEPLOYMENT_ENV: 'development',
         DATABASE_URL: 'postgresql://user:pass@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres',
       }, runtimeProtectedHosts)).toThrow(/protected database host/);
     });
 
     it('allows the protected host only on Render production', () => {
+      expect(() => assertRuntimeDatabaseTarget(renderEnvironment, runtimeProtectedHosts)).not.toThrow();
+    });
+
+    it('refuses a production URL that does not match the explicitly approved host', () => {
       expect(() => assertRuntimeDatabaseTarget({
-        NODE_ENV: 'production',
-        RENDER: 'true',
-        DATABASE_URL: 'postgresql://user:pass@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres',
-      }, runtimeProtectedHosts)).not.toThrow();
+        ...renderEnvironment,
+        DATABASE_URL: 'postgresql://other.example.com:5432/postgres',
+      }, runtimeProtectedHosts)).toThrow(/must match PRODUCTION_DATABASE_HOST/);
+    });
+
+    it('refuses production service configuration on a Render pull-request preview', () => {
+      expect(() => assertRuntimeDatabaseTarget({
+        ...renderEnvironment,
+        IS_PULL_REQUEST: 'true',
+      }, runtimeProtectedHosts)).toThrow(/non-preview Render service/);
+    });
+
+    it('requires DIRECT_URL to use the same explicitly approved production host', () => {
+      expect(() => assertRuntimeDatabaseTarget({
+        ...renderEnvironment,
+        DIRECT_URL: 'postgresql://other.example.com:5432/postgres',
+      }, runtimeProtectedHosts)).toThrow(/production DIRECT_URL must match PRODUCTION_DATABASE_HOST/);
     });
 
     it('logs the runtime classification with a masked host', () => {
       const log = jest.spyOn(console, 'info').mockImplementation();
       try {
-        assertRuntimeDatabaseTarget({
-          NODE_ENV: 'production',
-          RENDER: 'true',
-          DATABASE_URL: 'postgresql://user:pass@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres',
-        }, runtimeProtectedHosts);
+        assertRuntimeDatabaseTarget(renderEnvironment, runtimeProtectedHosts);
         expect(log).toHaveBeenCalledWith(
-          '[DatabaseSafety] environment=render-production host=aws***.pooler.supabase.com decision=allow',
+          '[DatabaseSafety] environment=production host=aws***.pooler.supabase.com decision=allow',
         );
       } finally {
         log.mockRestore();
@@ -101,14 +131,42 @@ describe('database safety guard', () => {
       expect(() => assertRuntimeDatabaseTarget({
         NODE_ENV: 'production',
         RENDER: 'true',
+        DEPLOYMENT_ENV: 'production',
+        PRODUCTION_DATABASE_HOST: '127.0.0.1',
         DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/postgres',
-      }, runtimeProtectedHosts)).toThrow(/production DATABASE_URL must not target a loopback host/);
+      }, runtimeProtectedHosts)).toThrow(/PRODUCTION_DATABASE_HOST must not be a loopback host/);
     });
 
     it('allows loopback database hosts in development', () => {
       expect(() => assertRuntimeDatabaseTarget({
         NODE_ENV: 'development',
+        DEPLOYMENT_ENV: 'development',
         DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/postgres',
+      }, runtimeProtectedHosts)).not.toThrow();
+    });
+
+    it('refuses the production host from a test runtime', () => {
+      expect(() => assertRuntimeDatabaseTarget({
+        NODE_ENV: 'test',
+        DEPLOYMENT_ENV: 'test',
+        DATABASE_URL: renderEnvironment.DATABASE_URL,
+      }, runtimeProtectedHosts)).toThrow(/protected database host/);
+    });
+
+    it('requires preview deployments to use a separately configured non-production host', () => {
+      expect(() => assertRuntimeDatabaseTarget({
+        NODE_ENV: 'production',
+        RENDER: 'true',
+        DEPLOYMENT_ENV: 'preview',
+        NONPRODUCTION_DATABASE_HOST: 'preview-db.example.com',
+        DATABASE_URL: renderEnvironment.DATABASE_URL,
+      }, runtimeProtectedHosts)).toThrow(/must match NONPRODUCTION_DATABASE_HOST/);
+      expect(() => assertRuntimeDatabaseTarget({
+        NODE_ENV: 'production',
+        RENDER: 'true',
+        DEPLOYMENT_ENV: 'preview',
+        NONPRODUCTION_DATABASE_HOST: 'preview-db.example.com',
+        DATABASE_URL: 'postgresql://preview-db.example.com:5432/app',
       }, runtimeProtectedHosts)).not.toThrow();
     });
   });

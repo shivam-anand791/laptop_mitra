@@ -38,6 +38,8 @@ These commands load `.env.development`; web requests use `http://localhost:3001`
 
 Database scripts and Jest global setup validate both `DATABASE_URL` and `DIRECT_URL` against `.db-protected-hosts`. A remote development database is rejected unless its exact host is listed in `ALLOWED_DEV_DB_HOST` in `.env.development`; test runs never accept that allowlist.
 
+API runtime database access is separately classified by `DEPLOYMENT_ENV` (`development`, `test`, `preview`, `staging`, or `production`). Render production must set `DEPLOYMENT_ENV=production`, `NODE_ENV=production`, and the platform-provided `RENDER=true`; `PRODUCTION_DATABASE_HOST` must match both database URLs and an entry in `.db-protected-hosts`. Preview/staging require their own `NONPRODUCTION_DATABASE_HOST` and may not use a protected production host. Missing or contradictory settings fail before Prisma connects. Never copy production database variables into local or test environments.
+
 ## 2.1 Proposed S7 Production Rollout — Approval Required
 
 The local-only migration `20261028120000_support_history_preservation` replaces destructive support/ledger foreign-key actions with `RESTRICT` and adds database triggers that reject `UPDATE` and `DELETE` on `TicketEvent` and `AuditLog`. It has **not** been applied to Supabase or any production database. Do not run these steps without explicit approval.

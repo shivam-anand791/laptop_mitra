@@ -11,6 +11,10 @@ services:
         value: "22"
       - key: NODE_ENV
         value: production
+      - key: DEPLOYMENT_ENV
+        value: production
+      - key: PRODUCTION_DATABASE_HOST
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS

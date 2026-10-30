@@ -56,6 +56,7 @@ The API service is configured via [`render.yaml`](../render.yaml) at the reposit
 
 Set the following secret environment variables in the Render dashboard (marked `sync: false` in `render.yaml`):
 - `DATABASE_URL` (PostgreSQL pooled or direct connection string)
+- `PRODUCTION_DATABASE_HOST` (Hostname only; must exactly match `DATABASE_URL` and be present in the repository's protected-host list)
 - `CORS_ORIGINS` (Comma-separated allowed origins, e.g. `https://laptopmitra.vercel.app,https://laptopmitra.com`)
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_CLIENT_EMAIL`
@@ -68,9 +69,11 @@ Set the following secret environment variables in the Render dashboard (marked `
 - `SUPABASE_URL` (Required only if `STORAGE_DRIVER=supabase`)
 - `SUPABASE_SERVICE_ROLE_KEY` (Required only if `STORAGE_DRIVER=supabase`)
 
-Before deployment, run `pnpm preflight:prod` in CI with the production environment variables available. It validates configuration formats and database-host policy without opening a database connection. It requires `STORAGE_DRIVER=supabase`; the current Render value is still `local`, so the preflight will fail until the storage policy and deployment settings are approved and updated.
+`render.yaml` sets `DEPLOYMENT_ENV=production`. The runtime requires this value together with `NODE_ENV=production`, Render's automatic `RENDER=true`, and `IS_PULL_REQUEST` not equal to `"true"` before permitting production database access. It also requires `PRODUCTION_DATABASE_HOST` to match the actual database URL host exactly and to be listed in `.db-protected-hosts`. The application never logs database credentials.
 
-The API runtime permits a protected database host only when both `NODE_ENV=production` and Render's automatically provided `RENDER=true` are present. It rejects loopback database hosts in that environment. Do not set `RENDER` on a developer machine; local runtimes continue to enforce the development database guard.
+Local development must use `DEPLOYMENT_ENV=development`; Jest uses `DEPLOYMENT_ENV=test` and `NODE_ENV=test`. Both continue to reject protected hosts. Render preview or staging services must set `DEPLOYMENT_ENV=preview` or `staging` and `NONPRODUCTION_DATABASE_HOST` to their dedicated non-production database hostname; production-protected hosts are rejected in those environments.
+
+Before deployment, run `pnpm preflight:prod` in CI with the production environment variables available. It validates configuration formats and database-host policy without opening a database connection. It also requires `STORAGE_DRIVER=supabase`; the current Render configuration still says `local`, so preflight will fail until the separately noted storage policy is resolved and Render storage settings are corrected.
 
 ---
 

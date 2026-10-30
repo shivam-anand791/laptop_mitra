@@ -20,6 +20,14 @@ export function loadDatabaseEnvironment(
     throw new Error(`Database safety error: could not load the ${environment} environment file.`);
   }
 
+  // The CLI-selected mode must be established before Nest reads runtime configuration.
+  // eslint-disable-next-line no-restricted-properties
+  if (process.env.DEPLOYMENT_ENV && process.env.DEPLOYMENT_ENV !== environment) {
+    throw new Error(`Database safety error: ${environment} command conflicts with DEPLOYMENT_ENV.`);
+  }
+  // eslint-disable-next-line no-restricted-properties
+  process.env.DEPLOYMENT_ENV = environment;
+
   if (environment === 'development') {
     if (allowDevSeed) process.env.ALLOW_DEV_SEED = 'true';
 
@@ -174,8 +182,9 @@ export function assertRuntimeDatabaseTarget(
   env: NodeJS.ProcessEnv = process.env,
   protectedHosts?: string[],
 ): void {
-  const isRenderProduction = env.NODE_ENV === 'production' && env.RENDER === 'true';
-  const environmentType = isRenderProduction ? 'render-production' : 'developer-runtime';
+  const deploymentEnvironment = env.DEPLOYMENT_ENV;
+  const environmentType = deploymentEnvironment || 'unconfigured';
+  const trustedHosts = protectedHosts ?? readProtectedHosts();
   let host = '<invalid>';
   try {
     if (env.DATABASE_URL) host = maskHost(getPostgresHost(env.DATABASE_URL, 'DATABASE_URL'));
@@ -184,7 +193,36 @@ export function assertRuntimeDatabaseTarget(
   }
 
   try {
-    if (isRenderProduction) {
+    if (!['development', 'test', 'preview', 'staging', 'production'].includes(environmentType)) {
+      throw new Error(
+        'Database safety error: DEPLOYMENT_ENV must be development, test, preview, staging, or production.',
+      );
+    }
+
+    if (deploymentEnvironment === 'test' && env.NODE_ENV !== 'test') {
+      throw new Error('Database safety error: test deployment requires NODE_ENV=test.');
+    }
+
+    if (deploymentEnvironment === 'production') {
+      if (env.NODE_ENV !== 'production' || env.RENDER !== 'true' || env.IS_PULL_REQUEST === 'true') {
+        throw new Error(
+          'Database safety error: production access requires NODE_ENV=production on a non-preview Render service.',
+        );
+      }
+
+      const expectedHost = env.PRODUCTION_DATABASE_HOST
+        ? normalizeHost(env.PRODUCTION_DATABASE_HOST.trim())
+        : '';
+      if (!expectedHost || expectedHost.includes('/') || expectedHost.includes(':')) {
+        throw new Error('Database safety error: PRODUCTION_DATABASE_HOST must be set to the authorized host.');
+      }
+      if (isLoopbackHost(expectedHost)) {
+        throw new Error('Database safety error: PRODUCTION_DATABASE_HOST must not be a loopback host.');
+      }
+      if (!trustedHosts.some((pattern) => hostMatchesPattern(expectedHost, pattern))) {
+        throw new Error('Database safety error: PRODUCTION_DATABASE_HOST is not in the protected-host list.');
+      }
+
       for (const variable of ['DATABASE_URL', 'DIRECT_URL'] as const) {
         const value = env[variable];
         if (!value) {
@@ -194,12 +232,48 @@ export function assertRuntimeDatabaseTarget(
           continue;
         }
 
-        if (isLoopbackHost(getPostgresHost(value, variable))) {
-          throw new Error(`Database safety error: production ${variable} must not target a loopback host.`);
+        const targetHost = getPostgresHost(value, variable);
+        if (isLoopbackHost(targetHost) || targetHost !== expectedHost) {
+          throw new Error(
+            `Database safety error: production ${variable} must match PRODUCTION_DATABASE_HOST and must not be loopback.`,
+          );
+        }
+      }
+    } else if (deploymentEnvironment === 'preview' || deploymentEnvironment === 'staging') {
+      if (env.NODE_ENV !== 'production' || env.RENDER !== 'true') {
+        throw new Error(
+          `Database safety error: ${deploymentEnvironment} requires NODE_ENV=production on Render.`,
+        );
+      }
+      const expectedHost = env.NONPRODUCTION_DATABASE_HOST
+        ? normalizeHost(env.NONPRODUCTION_DATABASE_HOST.trim())
+        : '';
+      if (!expectedHost || expectedHost.includes('/') || expectedHost.includes(':')) {
+        throw new Error(
+          'Database safety error: NONPRODUCTION_DATABASE_HOST must be set to the authorized host.',
+        );
+      }
+      if (trustedHosts.some((pattern) => hostMatchesPattern(expectedHost, pattern))) {
+        throw new Error(
+          'Database safety error: NONPRODUCTION_DATABASE_HOST must not match a protected host.',
+        );
+      }
+      for (const variable of ['DATABASE_URL', 'DIRECT_URL'] as const) {
+        const value = env[variable];
+        if (!value) {
+          if (variable === 'DATABASE_URL') {
+            throw new Error('Database safety error: DATABASE_URL is required.');
+          }
+          continue;
+        }
+        if (getPostgresHost(value, variable) !== expectedHost) {
+          throw new Error(
+            `Database safety error: ${deploymentEnvironment} ${variable} must match NONPRODUCTION_DATABASE_HOST.`,
+          );
         }
       }
     } else {
-      assertSafeDatabaseTarget(env, protectedHosts ?? readProtectedHosts());
+      assertSafeDatabaseTarget(env, trustedHosts);
     }
   } catch (error) {
     // eslint-disable-next-line no-console
