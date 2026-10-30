@@ -21,6 +21,7 @@
     "db:dev:history-check": "node scripts/db-command.cjs dev history-check",
     "test:db": "node scripts/db-command.cjs test test",
     "test:integration": "node scripts/db-command.cjs test integration",
+    "preflight:prod": "pnpm --filter api run preflight:prod",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "type-check": "turbo run type-check"

@@ -1,11 +1,13 @@
 import {
   assertDevelopmentCatalogCount,
   getDevelopmentDatabaseName,
+  assertRuntimeDatabaseTarget,
   assertSafeDatabaseTarget,
 } from '../../src/common/database-safety';
 
 describe('database safety guard', () => {
   const protectedHosts = ['supabase.example.com'];
+  const runtimeProtectedHosts = ['aws-0-ap-northeast-2.pooler.supabase.com'];
 
   it('allows loopback database URLs', () => {
     expect(() => assertSafeDatabaseTarget({
@@ -61,5 +63,53 @@ describe('database safety guard', () => {
     expect(getDevelopmentDatabaseName('dev.example.com')).toBeNull();
     expect(getDevelopmentDatabaseName('dev.example.com', 'laptopmitra_dev')).toBe('laptopmitra_dev');
     expect(() => getDevelopmentDatabaseName('localhost', 'bad-name')).toThrow(/PostgreSQL identifier/);
+  });
+
+  describe('API runtime target policy', () => {
+    it('refuses the protected host on a laptop even with NODE_ENV=production', () => {
+      expect(() => assertRuntimeDatabaseTarget({
+        NODE_ENV: 'production',
+        DATABASE_URL: 'postgresql://user:pass@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres',
+      }, runtimeProtectedHosts)).toThrow(/protected database host/);
+    });
+
+    it('allows the protected host only on Render production', () => {
+      expect(() => assertRuntimeDatabaseTarget({
+        NODE_ENV: 'production',
+        RENDER: 'true',
+        DATABASE_URL: 'postgresql://user:pass@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres',
+      }, runtimeProtectedHosts)).not.toThrow();
+    });
+
+    it('logs the runtime classification with a masked host', () => {
+      const log = jest.spyOn(console, 'info').mockImplementation();
+      try {
+        assertRuntimeDatabaseTarget({
+          NODE_ENV: 'production',
+          RENDER: 'true',
+          DATABASE_URL: 'postgresql://user:pass@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres',
+        }, runtimeProtectedHosts);
+        expect(log).toHaveBeenCalledWith(
+          '[DatabaseSafety] environment=render-production host=aws***.pooler.supabase.com decision=allow',
+        );
+      } finally {
+        log.mockRestore();
+      }
+    });
+
+    it('refuses loopback database hosts on Render production', () => {
+      expect(() => assertRuntimeDatabaseTarget({
+        NODE_ENV: 'production',
+        RENDER: 'true',
+        DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/postgres',
+      }, runtimeProtectedHosts)).toThrow(/production DATABASE_URL must not target a loopback host/);
+    });
+
+    it('allows loopback database hosts in development', () => {
+      expect(() => assertRuntimeDatabaseTarget({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5432/postgres',
+      }, runtimeProtectedHosts)).not.toThrow();
+    });
   });
 });

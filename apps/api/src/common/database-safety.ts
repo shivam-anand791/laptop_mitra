@@ -92,6 +92,28 @@ function normalizeHost(host: string): string {
   return host.toLowerCase().replace(/\.$/, '');
 }
 
+function isLoopbackHost(host: string): boolean {
+  return ['localhost', '127.0.0.1', '::1'].includes(host);
+}
+
+function getPostgresHost(value: string, variable: string): string {
+  try {
+    const url = new URL(value);
+    if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
+      throw new Error('Unsupported database protocol');
+    }
+    return normalizeHost(url.hostname.replace(/^\[|\]$/g, ''));
+  } catch {
+    throw new Error(`Database safety error: ${variable} is not a valid PostgreSQL URL.`);
+  }
+}
+
+function maskHost(host: string): string {
+  if (isLoopbackHost(host)) return host;
+  const [first, ...rest] = host.split('.');
+  return rest.length > 0 ? `${first.slice(0, 3)}***.${rest.join('.')}` : `${first.slice(0, 3)}***`;
+}
+
 function hostMatchesPattern(host: string, pattern: string): boolean {
   const normalizedPattern = normalizeHost(pattern);
   if (normalizedPattern.startsWith('*.')) {
@@ -132,25 +154,59 @@ export function assertSafeDatabaseTarget(
       continue;
     }
 
-    let host: string;
-    try {
-      const url = new URL(value);
-      if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
-        throw new Error('Unsupported database protocol');
-      }
-      host = normalizeHost(url.hostname.replace(/^\[|\]$/g, ''));
-    } catch {
-      throw new Error(`Database safety error: ${variable} is not a valid PostgreSQL URL.`);
-    }
+    const host = getPostgresHost(value, variable);
 
     if (protectedHosts.some((pattern) => hostMatchesPattern(host, pattern))) {
       throw new Error(`Database safety error: ${variable} targets a protected database host (${host}).`);
     }
 
-    if (!['localhost', '127.0.0.1', '::1'].includes(host) && !allowedHosts.includes(host)) {
+    if (!isLoopbackHost(host) && !allowedHosts.includes(host)) {
       throw new Error(
         `Database safety error: ${variable} host (${host}) is not local or explicitly listed in ALLOWED_DEV_DB_HOST.`,
       );
     }
   }
+}
+
+export function assertRuntimeDatabaseTarget(
+  // This guard must inspect raw variables before application config loads.
+  // eslint-disable-next-line no-restricted-properties
+  env: NodeJS.ProcessEnv = process.env,
+  protectedHosts?: string[],
+): void {
+  const isRenderProduction = env.NODE_ENV === 'production' && env.RENDER === 'true';
+  const environmentType = isRenderProduction ? 'render-production' : 'developer-runtime';
+  let host = '<invalid>';
+  try {
+    if (env.DATABASE_URL) host = maskHost(getPostgresHost(env.DATABASE_URL, 'DATABASE_URL'));
+  } catch {
+    // The full validation below reports the sanitized configuration error.
+  }
+
+  try {
+    if (isRenderProduction) {
+      for (const variable of ['DATABASE_URL', 'DIRECT_URL'] as const) {
+        const value = env[variable];
+        if (!value) {
+          if (variable === 'DATABASE_URL') {
+            throw new Error('Database safety error: DATABASE_URL is required.');
+          }
+          continue;
+        }
+
+        if (isLoopbackHost(getPostgresHost(value, variable))) {
+          throw new Error(`Database safety error: production ${variable} must not target a loopback host.`);
+        }
+      }
+    } else {
+      assertSafeDatabaseTarget(env, protectedHosts ?? readProtectedHosts());
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.info(`[DatabaseSafety] environment=${environmentType} host=${host} decision=refuse`);
+    throw error;
+  }
+
+  // eslint-disable-next-line no-console
+  console.info(`[DatabaseSafety] environment=${environmentType} host=${host} decision=allow`);
 }

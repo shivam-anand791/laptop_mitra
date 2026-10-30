@@ -68,6 +68,10 @@ Set the following secret environment variables in the Render dashboard (marked `
 - `SUPABASE_URL` (Required only if `STORAGE_DRIVER=supabase`)
 - `SUPABASE_SERVICE_ROLE_KEY` (Required only if `STORAGE_DRIVER=supabase`)
 
+Before deployment, run `pnpm preflight:prod` in CI with the production environment variables available. It validates configuration formats and database-host policy without opening a database connection. It requires `STORAGE_DRIVER=supabase`; the current Render value is still `local`, so the preflight will fail until the storage policy and deployment settings are approved and updated.
+
+The API runtime permits a protected database host only when both `NODE_ENV=production` and Render's automatically provided `RENDER=true` are present. It rejects loopback database hosts in that environment. Do not set `RENDER` on a developer machine; local runtimes continue to enforce the development database guard.
+
 ---
 
 ## 3. Firebase Authorized Domains

@@ -17,6 +17,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "prisma:generate": "prisma generate",
+    "preflight:prod": "ts-node scripts/preflight-prod.ts",
     "prisma:migrate:deploy": "node ../../scripts/db-command.cjs dev migrate",
     "prisma:push": "node ../../scripts/db-command.cjs dev push",
     "prisma:studio": "node ../../scripts/db-command.cjs dev studio",
