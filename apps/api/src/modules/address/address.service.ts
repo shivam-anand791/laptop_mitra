@@ -6,6 +6,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Optional } from '@nestjs/common';
+import { PincodeService } from '../shipping/pincode.service';
 import { Address } from '../../types';
 import { allowInMemoryFallback } from '../../common/fallback';
 
@@ -30,7 +32,10 @@ const inMemoryAddresses: Map<string, Address[]> = new Map();
 export class AddressService {
   private readonly logger = new Logger(AddressService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly pincodeService?: PincodeService,
+  ) {}
 
   async findAll(userId: string): Promise<Address[]> {
     try {
@@ -53,7 +58,7 @@ export class AddressService {
   }
 
   async create(userId: string, data: AddressDto): Promise<Address> {
-    this.validateAddressPayload(data);
+    await this.validateAddressPayload(data);
 
     const now = new Date().toISOString();
     const newAddress: Address = {
@@ -111,7 +116,7 @@ export class AddressService {
   }
 
   async update(userId: string, id: string, data: AddressDto): Promise<Address> {
-    this.validateAddressPayload(data, { allowEmpty: true });
+    await this.validateAddressPayload(data, { allowEmpty: true });
 
     try {
       const existing = await this.prisma.address.findFirst({
@@ -227,7 +232,7 @@ export class AddressService {
     };
   }
 
-  private validateAddressPayload(data: AddressDto, options: { allowEmpty?: boolean } = {}) {
+  private async validateAddressPayload(data: AddressDto, options: { allowEmpty?: boolean } = {}) {
     const requireAddress = !options.allowEmpty;
 
     if (requireAddress && !data.address?.trim()) {
@@ -236,6 +241,18 @@ export class AddressService {
 
     if (data.pincode && !/^\d{6}$/.test(data.pincode.trim())) {
       throw new BadRequestException('PIN code must be exactly 6 numeric digits (e.g. 560103)');
+    }
+
+    if (this.pincodeService && data.pincode) {
+      const pinResult = await this.pincodeService.verifyPincode(data.pincode);
+      if (!pinResult.valid) {
+        throw new BadRequestException(pinResult.message || 'Please enter a valid Indian pincode');
+      }
+      if (!pinResult.serviceable) {
+        throw new BadRequestException('Sorry, we currently do not deliver to this pincode');
+      }
+      data.city = data.city || pinResult.city;
+      data.state = data.state || pinResult.state;
     }
 
     if (data.gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i.test(data.gstin.trim())) {

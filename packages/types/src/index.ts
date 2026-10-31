@@ -307,9 +307,18 @@ export interface Order {
   updatedAt?: string;
 }
 
+export interface OrderCounts {
+  ALL: number;
+  IN_PROGRESS: number;
+  DELIVERED: number;
+  CANCELLED: number;
+  RETURNS: number;
+}
+
 export interface OrderListResponse {
   orders: Order[];
   total: number;
+  counts?: OrderCounts;
 }
 
 export interface UpdateOrderStatusPayload {
@@ -915,4 +924,17 @@ export function calculateRentalPlans(base12MonthRate: number): RentalPlanCalcula
       savingsVsShortTerm: (rate3 - rate24) * 24,
     },
   ];
+}
+
+export interface PincodeVerificationResult {
+  valid: boolean;
+  pincode: string;
+  city?: string;
+  district?: string;
+  state?: string;
+  postOffice?: string;
+  serviceable: boolean;
+  isDelhiNcr: boolean;
+  codAvailable: boolean;
+  message: string;
 }

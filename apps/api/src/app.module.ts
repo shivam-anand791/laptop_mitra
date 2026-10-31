@@ -23,6 +23,7 @@ import { FirebaseAuthGuard } from './auth/guards/firebase-auth.guard';
 import { PaymentEncryptionModule } from './common/encryption/payment-encryption.module';
 import { QrStorageModule } from './common/storage/qr-storage.module';
 import { MailModule } from './modules/mail/mail.module';
+import { ShippingModule } from './modules/shipping/shipping.module';
 
 const apiPackageRoot = resolve(__dirname, '..');
 const repoRoot = resolve(__dirname, '..', '..', '..');
@@ -61,6 +62,7 @@ const repoRoot = resolve(__dirname, '..', '..', '..');
     PaymentEncryptionModule,
     QrStorageModule,
     MailModule,
+    ShippingModule,
   ],
   controllers: [AppController],
   providers: [

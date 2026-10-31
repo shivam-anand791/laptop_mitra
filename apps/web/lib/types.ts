@@ -234,14 +234,24 @@ export interface Order {
   carrier?: string | null;
   returnStatus?: 'NONE' | 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'COMPLETED' | string;
   returnReason?: string | null;
+  deliveries?: any[];
   items?: OrderItem[];
   createdAt: string;
   updatedAt?: string;
 }
 
+export interface OrderCounts {
+  ALL: number;
+  IN_PROGRESS: number;
+  DELIVERED: number;
+  CANCELLED: number;
+  RETURNS: number;
+}
+
 export interface OrderListResponse {
   orders: Order[];
   total: number;
+  counts?: OrderCounts;
 }
 
 
@@ -479,5 +489,6 @@ export {
   type HelpArticle,
   type SavedReply,
   type SupportSettings,
+  type PincodeVerificationResult,
 } from '@laptopmitra/types';
 

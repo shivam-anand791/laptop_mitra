@@ -55,6 +55,28 @@ describe('AuthService Firebase user mapping', () => {
     expect(updateData).not.toHaveProperty('phone');
   });
 
+  it('reconciles an existing user when logging in with a new Firebase UID with the same verified email', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce(null);
+    prisma.user.findFirst.mockResolvedValueOnce(existingUser);
+    prisma.user.update.mockResolvedValue(existingUser);
+
+    await service.syncUser({
+      uid: 'firebase-new-uid',
+      email: 'existing@example.com',
+      email_verified: true,
+      firebase: { sign_in_provider: 'google.com' },
+    });
+
+    expect(prisma.user.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'local-1' },
+      data: expect.objectContaining({
+        firebaseUid: 'firebase-new-uid',
+        authProvider: 'google.com',
+      }),
+    }));
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
   it('does not replace a stored email with an unverified Firebase email', async () => {
     prisma.user.findUnique.mockResolvedValue(existingUser);
     prisma.user.update.mockResolvedValue(existingUser);

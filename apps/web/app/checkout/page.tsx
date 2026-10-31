@@ -8,7 +8,7 @@ import CustomerLayout from '../../components/CustomerLayout';
 import { useCart } from '../../lib/cart-context';
 import { useAuth } from '../../lib/auth-context';
 import { api } from '../../lib/api';
-import { Order } from '../../lib/types';
+import { Order, PincodeVerificationResult } from '../../lib/types';
 import { config, NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../lib/config';
 
 declare global {
@@ -49,6 +49,68 @@ export default function CheckoutPage() {
   // Payment & Order Status
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Pincode Verification & Delhi NCR COD State
+  const [pincodeVerification, setPincodeVerification] = useState<PincodeVerificationResult | null>(null);
+  const [isVerifyingPincode, setIsVerifyingPincode] = useState(false);
+  const [pincodeError, setPincodeError] = useState<string | null>(null);
+
+  // Debounced Pincode Verification Effect
+  useEffect(() => {
+    const cleanPin = formData.pincode?.trim() || '';
+
+    if (!cleanPin) {
+      setPincodeVerification(null);
+      setPincodeError(null);
+      setIsVerifyingPincode(false);
+      return;
+    }
+
+    if (cleanPin.length !== 6 || !/^\d{6}$/.test(cleanPin)) {
+      setPincodeVerification(null);
+      if (cleanPin.length >= 6) {
+        setPincodeError('Please enter a valid 6-digit Indian postal PIN code.');
+      } else {
+        setPincodeError(null);
+      }
+      setIsVerifyingPincode(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsVerifyingPincode(true);
+      setPincodeError(null);
+      try {
+        const result = await api.verifyPincode(cleanPin);
+        setPincodeVerification(result);
+
+        if (result.valid && result.serviceable) {
+          // Auto-fill city and state if absent or from detection
+          setFormData((prev) => ({
+            ...prev,
+            city: prev.city || result.city || '',
+            state: prev.state || result.state || '',
+          }));
+          // If customer has selected COD but location is outside Delhi NCR, auto-switch to prepaid
+          if (!result.isDelhiNcr && paymentMethod === 'cod') {
+            setPaymentMethod('razorpay');
+          }
+        } else if (!result.valid) {
+          setPincodeError(result.message || 'Please enter a valid Indian pincode.');
+          if (paymentMethod === 'cod') setPaymentMethod('razorpay');
+        } else if (!result.serviceable) {
+          setPincodeError('Sorry, we currently do not deliver to this pincode.');
+          if (paymentMethod === 'cod') setPaymentMethod('razorpay');
+        }
+      } catch (err: any) {
+        setPincodeError('Pincode verification is temporarily unavailable. Please try again.');
+      } finally {
+        setIsVerifyingPincode(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [formData.pincode, paymentMethod]);
+
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
 
   // Autofill user information if logged in

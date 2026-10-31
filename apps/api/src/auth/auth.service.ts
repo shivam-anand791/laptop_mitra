@@ -70,13 +70,14 @@ export class AuthService {
         where: { firebaseUid: identity.uid },
       });
 
-      // 2. Email-based linking only if email_verified is TRUE and existing row has NO firebaseUid yet (seeded admin)
+      // 2. Safe email-based identity reconciliation:
+      // When email_verified is TRUE, link cleanly to existing user to prevent duplicate empty rows and preserve history
       if (!existingUser && cleanEmail && identity.email_verified === true) {
         const userByEmail = await this.prisma.user.findFirst({
           where: { email: cleanEmail },
         });
 
-        if (userByEmail && !userByEmail.firebaseUid) {
+        if (userByEmail) {
           existingUser = await this.prisma.user.update({
             where: { id: userByEmail.id },
             data: {
@@ -105,14 +106,20 @@ export class AuthService {
             ...(cleanEmail && (identity.email_verified === true || !existingUser.email)
               ? { email: cleanEmail }
               : {}),
-            ...(identity.email_verified === true
-              ? { emailVerified: existingUser.emailVerified ?? new Date() }
+            ...(cleanEmail
+              ? identity.email_verified === true
+                ? { emailVerified: existingUser.emailVerified ?? new Date() }
+                : identity.email_verified === false
+                ? { emailVerified: null }
+                : {}
               : {}),
             authProvider: signInProvider,
             isGuest: existingUser.isGuest && !isGuest ? false : existingUser.isGuest,
             ...(name !== undefined ? { name } : {}),
             ...(phone !== undefined && phone.length > 0 ? { phone } : {}),
-            ...(existingUser.isGuest && !isGuest ? { role: 'CUSTOMER' } : {}),
+            ...(existingUser.isGuest && !isGuest && existingUser.role === 'GUEST'
+              ? { role: 'CUSTOMER' }
+              : {}),
           },
           select: {
             id: true,
@@ -136,18 +143,21 @@ export class AuthService {
 
       // 3. First-time registration with verified Firebase token
       try {
+        const candidateUsername = name ?? identity.name?.trim() ?? (cleanEmail ? cleanEmail.split('@')[0] : null);
+        const uniqueReferralCode = await this.generateUniqueReferralCode(candidateUsername, identity.uid);
+
         return await this.prisma.user.create({
           data: {
             firebaseUid: identity.uid,
             name: name ?? identity.name?.trim() ?? (cleanEmail ? cleanEmail.split('@')[0].toUpperCase() : 'Guest Customer'),
             email: cleanEmail,
-            emailVerified: identity.email_verified ? new Date() : null,
+            emailVerified: identity.email_verified === true ? new Date() : null,
             authProvider: signInProvider,
             isGuest,
             role: isGuest ? 'GUEST' : 'CUSTOMER',
             phone: phone ?? null,
             status: 'ACTIVE',
-            referralCode: this.randomService.generateReferralCode(),
+            referralCode: uniqueReferralCode,
           },
           select: {
             id: true,
@@ -220,6 +230,7 @@ export class AuthService {
           role: true,
           status: true,
           imageUrl: true,
+          dob: true,
           emailVerified: true,
           authProvider: true,
           isGuest: true,
@@ -247,9 +258,9 @@ export class AuthService {
 
   async updateUserProfile(
     userId: string,
-    data: { name?: string; phone?: string },
+    data: { name?: string; phone?: string; dob?: string | null },
   ) {
-    const updates: { name?: string; phone?: string | null } = {};
+    const updates: { name?: string; phone?: string | null; dob?: Date | null } = {};
 
     if (data.name !== undefined) {
       const trimmedName = data.name.trim();
@@ -261,6 +272,18 @@ export class AuthService {
 
     if (data.phone !== undefined) {
       updates.phone = data.phone?.trim() || null;
+    }
+
+    if (data.dob !== undefined) {
+      if (data.dob === null || data.dob === '') {
+        updates.dob = null;
+      } else {
+        const parsedDob = new Date(data.dob);
+        if (isNaN(parsedDob.getTime())) {
+          throw new BadRequestException('Invalid date of birth format');
+        }
+        updates.dob = parsedDob;
+      }
     }
 
     if (Object.keys(updates).length === 0) {
@@ -321,6 +344,21 @@ export class AuthService {
     }
 
     return { success: true, message: 'Account deleted and personal information anonymized' };
+  }
+
+
+  async generateUniqueReferralCode(rawUsername?: string | null, fallbackId?: string | null): Promise<string> {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const code = this.randomService.generateReferralCode(rawUsername, fallbackId);
+      const exists = await this.prisma.user.findFirst({
+        where: { referralCode: code },
+        select: { id: true },
+      });
+      if (!exists) {
+        return code;
+      }
+    }
+    return this.randomService.generateReferralCode(rawUsername, fallbackId);
   }
 
   async linkGuestAccount(_userId: string, _data: { email: string; password?: string; name?: string }) {

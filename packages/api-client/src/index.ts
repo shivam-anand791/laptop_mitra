@@ -6,6 +6,7 @@ import type {
   WishlistItem,
   User,
   Order,
+  OrderCounts,
   OrderListResponse,
   Address,
   Category,
@@ -26,6 +27,7 @@ import type {
   NotificationPreferences,
   CorporateInquiry,
   CreateCorporateInquiryDto,
+  PincodeVerificationResult,
 } from '@laptopmitra/types';
 
 
@@ -113,6 +115,12 @@ export class LaptopMitraApiClient {
     return this.request<{ user: User }>('/auth/sync', {
       method: 'POST',
       body: JSON.stringify(data || {}),
+    });
+  }
+
+  async sendVerificationEmail(): Promise<{ sent: boolean; alreadyVerified: boolean }> {
+    return this.request<{ sent: boolean; alreadyVerified: boolean }>('/auth/email-verification', {
+      method: 'POST',
     });
   }
 
@@ -226,6 +234,10 @@ export class LaptopMitraApiClient {
   async getOrders(params?: { status?: string; page?: number; limit?: number }): Promise<Order[] | OrderListResponse> {
     const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
     return this.request<Order[] | OrderListResponse>(`/orders${query}`);
+  }
+
+  async getOrderCounts(): Promise<OrderCounts> {
+    return this.request<OrderCounts>('/orders/counts');
   }
 
   async getOrder(id: string): Promise<Order> {
@@ -504,6 +516,12 @@ export class LaptopMitraApiClient {
       method: 'POST',
       body: JSON.stringify({ token, platform }),
     });
+  }
+
+
+  // Shipping & Pincode Verification
+  async verifyPincode(pincode: string): Promise<PincodeVerificationResult> {
+    return this.request<PincodeVerificationResult>(`/shipping/pincode/${encodeURIComponent(pincode)}`);
   }
 
   // Addresses

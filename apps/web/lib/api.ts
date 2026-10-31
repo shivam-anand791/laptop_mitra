@@ -6,6 +6,7 @@ import {
   Cart,
   WishlistItem,
   Order,
+  OrderCounts,
   Address,
   CreateAddressDto,
   PaymentRecord,
@@ -15,6 +16,7 @@ import {
   AdminAnalyticsResponse,
   CorporateInquiry,
   CreateCorporateInquiryDto,
+  PincodeVerificationResult,
 } from './types';
 
 import { NEXT_PUBLIC_API_URL } from './config';
@@ -213,6 +215,10 @@ export const api = {
     return { user };
   },
 
+  async sendVerificationEmail(): Promise<{ sent: boolean; alreadyVerified: boolean }> {
+    return await request('/auth/email-verification', { method: 'POST' });
+  },
+
   async getProfile(): Promise<User> {
     const res = await request<User>('/auth/profile');
     return res;
@@ -296,6 +302,11 @@ export const api = {
     });
   },
 
+  // Shipping & Pincode Verification
+  async verifyPincode(pincode: string): Promise<PincodeVerificationResult> {
+    return await request<PincodeVerificationResult>(`/shipping/pincode/${encodeURIComponent(pincode)}`);
+  },
+
   // Addresses
   async getAddresses(): Promise<Address[]> {
     return await request<Address[]>('/addresses');
@@ -346,6 +357,10 @@ export const api = {
   async getOrders(status?: string): Promise<Order[]> {
     const query = status && status !== 'ALL' ? `?status=${encodeURIComponent(status)}` : '';
     return await request<Order[]>(`/orders${query}`);
+  },
+
+  async getOrderCounts(): Promise<OrderCounts> {
+    return await request<OrderCounts>('/orders/counts');
   },
 
   async getOrder(id: string): Promise<Order> {
@@ -720,6 +735,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  async getReturns(): Promise<any[]> {
+    return await request<any[]>('/support/returns');
   },
 
   async getReturnRequest(id: string): Promise<any> {

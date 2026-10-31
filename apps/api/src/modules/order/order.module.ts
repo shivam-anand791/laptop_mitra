@@ -8,9 +8,10 @@ import { RolesGuard } from '../../guards/roles.guard';
 import { DiscountModule } from '../discount/discount.module';
 import { PaymentsModule } from '../payments/payment.module';
 import { AdminModule } from '../admin/admin.module';
+import { ShippingModule } from '../shipping/shipping.module';
 
 @Module({
-  imports: [CartModule, ProductModule, NotificationModule, DiscountModule, PaymentsModule, AdminModule],
+  imports: [CartModule, ProductModule, NotificationModule, DiscountModule, PaymentsModule, AdminModule, ShippingModule],
   controllers: [OrderController],
   providers: [OrderService, RolesGuard],
   exports: [OrderService],

@@ -18,6 +18,7 @@ import { Order, OrderItem } from '../../types';
 import { DiscountService } from '../discount/discount.service';
 import { PaymentService } from '../payments/payment.service';
 import { AdminService } from '../admin/admin.service';
+import { PincodeService } from '../shipping/pincode.service';
 import { allowInMemoryFallback } from '../../common/fallback';
 
 // In-memory orders for fallback
@@ -37,6 +38,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     private discountService: DiscountService,
     private paymentService?: PaymentService,
     @Optional() private adminService?: AdminService,
+    @Optional() private pincodeService?: PincodeService,
   ) {}
 
   onModuleInit() {
@@ -104,8 +106,9 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
       ? (() => { try { return JSON.parse(o.shippingAddress); } catch { return null; } })()
       : (o.shippingAddress && typeof o.shippingAddress === 'object' ? o.shippingAddress : null);
 
-    const returnStatus = o.returnStatus || parsedShipping?.returnStatus || 'NONE';
-    const returnReason = o.returnReason || parsedShipping?.returnReason || null;
+    const returnReq = Array.isArray(o.returnRequests) && o.returnRequests.length > 0 ? o.returnRequests[0] : null;
+    const returnStatus = o.returnStatus || returnReq?.status || parsedShipping?.returnStatus || 'NONE';
+    const returnReason = o.returnReason || returnReq?.reason || parsedShipping?.returnReason || null;
 
     return {
       id: o.id,
@@ -161,6 +164,14 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Unsupported payment method');
     }
 
+    // Backend Pincode verification & Delhi NCR COD enforcement
+    if (this.pincodeService && shippingAddress && (shippingAddress.pincode || paymentMethod === 'cod')) {
+      const pinCheck = await this.pincodeService.validateOrderShipping(shippingAddress, paymentMethod);
+      shippingAddress.city = shippingAddress.city || pinCheck.city;
+      shippingAddress.state = shippingAddress.state || pinCheck.state;
+      shippingAddress.pincode = pinCheck.pincode;
+    }
+
     if (idempotencyKey?.trim()) {
       const cleanKey = idempotencyKey.trim();
       try {
@@ -169,7 +180,15 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
           orderBy: { createdAt: 'desc' },
           take: 10,
           include: {
-            items: { include: { product: true } },
+            items: {
+            include: {
+              product: {
+                include: {
+                  images: { where: { isPrimary: true }, take: 1 },
+                },
+              },
+            },
+          },
             deliveries: true,
             payments: true,
           },
@@ -416,14 +435,32 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     try {
       const where: any = { userId };
       if (status && status !== 'ALL') {
-        where.status = status;
+        if (status === 'IN_PROGRESS') {
+          where.status = { in: ['PENDING', 'CONFIRMED', 'SHIPPING'] };
+        } else if (status === 'RETURNS') {
+          where.OR = [
+            { returnRequests: { some: {} } },
+            { status: 'REFUNDED' },
+          ];
+        } else {
+          where.status = status;
+        }
       }
       const dbOrders = await this.prisma.order.findMany({
         where,
         include: {
-          items: { include: { product: true } },
+          items: {
+            include: {
+              product: {
+                include: {
+                  images: { where: { isPrimary: true }, take: 1 },
+                },
+              },
+            },
+          },
           deliveries: true,
           payments: true,
+          returnRequests: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -444,14 +481,76 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     return memory;
   }
 
+  async getOrderCountsByUser(userId: string): Promise<{
+    ALL: number;
+    IN_PROGRESS: number;
+    DELIVERED: number;
+    CANCELLED: number;
+    RETURNS: number;
+  }> {
+    try {
+      const orders = await this.prisma.order.findMany({
+        where: { userId },
+        select: {
+          status: true,
+          returnRequests: { select: { id: true, status: true }, take: 1 },
+        },
+      });
+
+      const counts = {
+        ALL: orders.length,
+        IN_PROGRESS: 0,
+        DELIVERED: 0,
+        CANCELLED: 0,
+        RETURNS: 0,
+      };
+
+      for (const o of orders) {
+        if (['PENDING', 'CONFIRMED', 'SHIPPING'].includes(o.status)) {
+          counts.IN_PROGRESS += 1;
+        } else if (o.status === 'DELIVERED') {
+          counts.DELIVERED += 1;
+        } else if (o.status === 'CANCELLED') {
+          counts.CANCELLED += 1;
+        }
+
+        const hasReturn = (o.returnRequests && o.returnRequests.length > 0) || o.status === 'REFUNDED';
+        if (hasReturn) {
+          counts.RETURNS += 1;
+        }
+      }
+
+      return counts;
+    } catch (error: any) {
+      this.logger.error(`Database error getting order counts: ${error?.message || error}`);
+      const memory = inMemoryOrders.get(userId) || [];
+      return {
+        ALL: memory.length,
+        IN_PROGRESS: memory.filter((o) => ['PENDING', 'CONFIRMED', 'SHIPPING'].includes(o.status)).length,
+        DELIVERED: memory.filter((o) => o.status === 'DELIVERED').length,
+        CANCELLED: memory.filter((o) => o.status === 'CANCELLED').length,
+        RETURNS: memory.filter((o) => (o.returnStatus && o.returnStatus !== 'NONE') || o.status === 'REFUNDED').length,
+      };
+    }
+  }
+
   async findOne(id: string, userId: string, userRole?: string): Promise<Order> {
     try {
       const dbOrder = await this.prisma.order.findUnique({
         where: { id },
         include: {
-          items: { include: { product: true } },
+          items: {
+            include: {
+              product: {
+                include: {
+                  images: { where: { isPrimary: true }, take: 1 },
+                },
+              },
+            },
+          },
           deliveries: true,
           payments: true,
+          returnRequests: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
       });
       if (dbOrder) {
@@ -479,12 +578,18 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     return found;
   }
 
-  async updateStatus(id: string, status: string, userId: string, userRole: string): Promise<Order> {
+  async updateStatus(
+    id: string,
+    status: string,
+    userId: string,
+    userRole: string,
+    courierData?: { courierName?: string; trackingNumber?: string },
+  ): Promise<Order> {
     if (userRole !== 'ADMIN') {
       throw new ForbiddenException('Insufficient permissions');
     }
     if (this.adminService) {
-      const updated = await this.adminService.updateOrderStatus(id, status, userId);
+      const updated = await this.adminService.updateOrderStatus(id, status, userId, courierData);
       return this.normalizeOrder(updated);
     }
     const order = await this.findOne(id, userId, userRole);
