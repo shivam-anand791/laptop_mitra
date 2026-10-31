@@ -146,4 +146,14 @@ describe('FirebaseService', () => {
 
     expect(verifyIdToken).toHaveBeenCalledWith('sensitive-operation-token', true);
   });
+
+  it('rejects an ID token issued for a different project with TOKEN_WRONG_PROJECT', async () => {
+    configValues.FIREBASE_SERVICE_ACCOUNT_PATH = './secrets/firebase-service-account.json';
+    const service = new FirebaseService(createConfig());
+    verifyIdToken.mockResolvedValue({ uid: 'foreign-user', aud: 'foreign-project' });
+
+    await expect(service.verifyIdToken('foreign-token')).rejects.toMatchObject({
+      code: 'TOKEN_WRONG_PROJECT',
+    });
+  });
 });

@@ -20,7 +20,7 @@
   - Frontend: React Context (`AuthContext`, `CartContext`, `WishlistContext`), custom React hooks with dual local storage caching and backend synchronization.
   - Backend: Prisma Client 6.4.1 targeting PostgreSQL (`DATABASE_URL`).
 - **Authentication & Security:**
-  - Client: Firebase Auth (Web SDK 10.8) with Google OAuth and Email/Password flows.
+  - Client: Firebase Auth (Web SDK 10.8) with Email/Password and Anonymous guest flows (Google sign-in is not implemented in the UI).
   - Server: `RolesGuard` validating Firebase decoded Bearer ID tokens, provisioning local `User` entities with roles (`CUSTOMER`, `ADMIN`, `MODERATOR`, `GUEST`).
 - **Payment Processing:**
   - Server-side Razorpay SDK (`razorpay ^2.9.2`) creating orders and verifying cryptographic HMAC SHA-256 signatures via webhook and callback endpoints.

@@ -24,8 +24,18 @@ function getFirebaseConfig() {
     appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID ?? extra.FIREBASE_APP_ID,
   };
 
-  if (Object.values(config).some((value) => !value?.trim())) {
-    throw new Error('Firebase client configuration is missing. Set the EXPO_PUBLIC_FIREBASE_* values.');
+  const missingVars: string[] = [];
+  if (!config.apiKey?.trim()) missingVars.push('EXPO_PUBLIC_FIREBASE_API_KEY');
+  if (!config.authDomain?.trim()) missingVars.push('EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN');
+  if (!config.projectId?.trim()) missingVars.push('EXPO_PUBLIC_FIREBASE_PROJECT_ID');
+  if (!config.storageBucket?.trim()) missingVars.push('EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET');
+  if (!config.messagingSenderId?.trim()) missingVars.push('EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID');
+  if (!config.appId?.trim()) missingVars.push('EXPO_PUBLIC_FIREBASE_APP_ID');
+
+  if (missingVars.length > 0) {
+    throw new Error(
+      'Firebase client configuration is missing required environment variables: ' + missingVars.join(', '),
+    );
   }
   return config as {
     apiKey: string;

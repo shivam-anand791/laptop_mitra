@@ -116,8 +116,30 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     async function loadProduct() {
       try {
         const prod = await api.getProduct(resolvedParams.id);
+        const rawVariants = prod.variants?.filter((variant) => variant.isActive) || [];
+        const activeVariants = rawVariants.length > 0
+          ? rawVariants
+          : [
+              {
+                id: `var-${prod.id}-base`,
+                productId: prod.id,
+                sku: prod.sku,
+                name: `${prod.metadata?.ram || '8GB RAM'} / ${prod.metadata?.storage || '256GB SSD'}`,
+                price: Number(prod.price),
+                compareAtPrice: prod.compareAtPrice ? Number(prod.compareAtPrice) : null,
+                stock: prod.stock ?? 10,
+                isActive: true,
+                isDefault: true,
+                attributes: {
+                  ram: prod.metadata?.ram ? String(prod.metadata.ram).split(' ')[0] : '8GB',
+                  storage: prod.metadata?.storage ? String(prod.metadata.storage).split(' ')[0] : '256GB SSD',
+                  processor: prod.metadata?.processor ? String(prod.metadata.processor).split(' ')[0] : 'Standard',
+                },
+                images: [],
+              } as ProductVariant,
+            ];
+        prod.variants = activeVariants;
         setProduct(prod);
-        const activeVariants = prod.variants?.filter((variant) => variant.isActive) || [];
         const defaultVariant =
           activeVariants.find((variant) => variant.isDefault && (variant.stock > 0 || variant.allowBackorder)) ||
           activeVariants.find((variant) => variant.stock > 0 || variant.allowBackorder) ||
@@ -210,8 +232,29 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
   const isWish = isInWishlist(product.id);
   const isLease = procurementModel === 'lease';
-  const selectedVariant = product.variants?.find((variant) => variant.id === selectedVariantId && variant.isActive);
-  const activeVariants = product.variants?.filter((variant) => variant.isActive) || [];
+  const rawVariants = product.variants?.filter((variant) => variant.isActive) || [];
+  const activeVariants = rawVariants.length > 0
+    ? rawVariants
+    : [
+        {
+          id: `var-${product.id}-base`,
+          productId: product.id,
+          sku: product.sku,
+          name: `${product.metadata?.ram || '8GB RAM'} / ${product.metadata?.storage || '256GB SSD'}`,
+          price: Number(product.price),
+          compareAtPrice: product.compareAtPrice ? Number(product.compareAtPrice) : null,
+          stock: product.stock ?? 10,
+          isActive: true,
+          isDefault: true,
+          attributes: {
+            ram: product.metadata?.ram ? String(product.metadata.ram).split(' ')[0] : '8GB',
+            storage: product.metadata?.storage ? String(product.metadata.storage).split(' ')[0] : '256GB SSD',
+            processor: product.metadata?.processor ? String(product.metadata.processor).split(' ')[0] : 'Standard',
+          },
+          images: [],
+        } as ProductVariant,
+      ];
+  const selectedVariant = product.variants?.find((variant) => variant.id === selectedVariantId && variant.isActive) || activeVariants[0];
   const availableStock = selectedVariant?.stock ?? product.stock;
   const allowBackorder = selectedVariant?.allowBackorder ?? product.allowBackorder ?? false;
   const outOfStock = availableStock <= 0 && !allowBackorder;
@@ -435,7 +478,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-start">
             
             {/* LEFT COLUMN: Gallery & Certification (7 cols) */}
-            <div className="lg:col-span-6 xl:col-span-7 space-y-4">
+            <div className="lg:col-span-6 xl:col-span-7 space-y-3.5 lg:sticky lg:top-24 self-start">
               {/* Main Hero Image in Clean Blue-and-White Frame */}
               <div className="relative aspect-[16/10] max-h-[380px] rounded-3xl overflow-hidden bg-white border border-[#E2E8F0] shadow-sm flex items-center justify-center p-6 group">
                 <div className="relative w-full h-full">
@@ -504,39 +547,59 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               )}
 
+              {/* Trust Badges Strip (Under Gallery) */}
+              <div className="p-3 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs grid grid-cols-4 gap-2 text-center text-[10px]">
+                <div className="flex flex-col items-center gap-1">
+                  <Truck size={15} className="text-[#2563EB]" />
+                  <span className="font-bold text-slate-700 leading-tight">Free Air<br/>Shipping</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <ShieldCheck size={15} className="text-[#2563EB]" />
+                  <span className="font-bold text-slate-700 leading-tight">1-Yr Doorstep<br/>Warranty</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <RotateCcw size={15} className="text-[#2563EB]" />
+                  <span className="font-bold text-slate-700 leading-tight">7-Day Free<br/>Replacement</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <FileText size={15} className="text-[#2563EB]" />
+                  <span className="font-bold text-slate-700 leading-tight">18% GST<br/>Tax Invoice</span>
+                </div>
+              </div>
+
               {/* 32-Point Quality Checklist Card */}
-              <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-3">
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold">
-                      <Check size={16} strokeWidth={2.5} />
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold">
+                      <Check size={14} strokeWidth={2.5} />
                     </div>
                     <div>
                       <h4 className="text-xs font-extrabold text-[#0B1F4B]">
-                        32-Point Quality Check — All Passed ✓
+                        32-Point Quality Inspection — 100% Passed
                       </h4>
-                      <p className="text-[11px] text-slate-500">Every unit fully tested, cleaned, and ready to use</p>
+                      <p className="text-[10px] text-slate-500">Every unit bench-tested, cleaned, and certified</p>
                     </div>
                   </div>
-                  <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                    100% Passed
+                  <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    Grade A+
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                  <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                  <div className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
                     <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">Battery Health</span>
                     <span className="font-extrabold text-emerald-700 block truncate">{activeBattery}</span>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                  <div className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
                     <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">Thermals</span>
                     <span className="font-extrabold text-[#0B1F4B] block">Fresh Arctic MX-4</span>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                  <div className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
                     <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">Display</span>
                     <span className="font-extrabold text-[#0B1F4B] block">Zero Dead Pixels</span>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                  <div className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
                     <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">Warranty</span>
                     <span className="font-extrabold text-[#2563EB] block">1-Year Doorstep</span>
                   </div>
@@ -544,38 +607,38 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               </div>
 
               {/* What's In The Sealed Box Card */}
-              <div className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-2.5">
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-2">
                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <ShieldCheck size={14} className="text-[#2563EB]" />
-                  What's in the box
+                  <ShieldCheck size={13} className="text-[#2563EB]" />
+                  What's in the sealed box
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                    <span className="text-lg">💻</span>
+                  <div className="flex items-center gap-2 p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                    <span className="text-base sm:text-lg">💻</span>
                     <div>
                       <span className="font-extrabold text-slate-900 block leading-tight">Laptop</span>
                       <span className="text-[9px] text-slate-500">Grade A+</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                    <span className="text-lg">⚡</span>
+                  <div className="flex items-center gap-2 p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                    <span className="text-base sm:text-lg">⚡</span>
                     <div>
                       <span className="font-extrabold text-slate-900 block leading-tight">OEM Charger</span>
                       <span className="text-[9px] text-slate-500">Original</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                    <span className="text-lg">📜</span>
+                  <div className="flex items-center gap-2 p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                    <span className="text-base sm:text-lg">📜</span>
                     <div>
-                      <span className="font-extrabold text-slate-900 block leading-tight">QC Certificate</span>
-                      <span className="text-[9px] text-slate-500">32-Point</span>
+                      <span className="font-extrabold text-slate-900 block leading-tight">Certificate</span>
+                      <span className="text-[9px] text-slate-500">32-Point QC</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                    <span className="text-lg">🛡️</span>
+                  <div className="flex items-center gap-2 p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                    <span className="text-base sm:text-lg">🛡️</span>
                     <div>
                       <span className="font-extrabold text-slate-900 block leading-tight">Warranty</span>
-                      <span className="text-[9px] text-slate-500">1-Year</span>
+                      <span className="text-[9px] text-slate-500">1-Year Doorstep</span>
                     </div>
                   </div>
                 </div>
@@ -583,10 +646,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             </div>
 
             {/* RIGHT COLUMN: Product Header, Buy Box, Pricing & Actions (5 cols) */}
-            <div className="lg:col-span-6 xl:col-span-5 space-y-3 lg:sticky lg:top-24 self-start">
+            <div className="lg:col-span-6 xl:col-span-5 space-y-3">
               
-              {/* Product Header (Cleanly integrated on Top of Purchase Column) */}
-              <div className="space-y-1.5 pb-1">
+              {/* Product Header */}
+              <div className="space-y-1.5">
                 <div className="flex flex-wrap items-center gap-1.5">
                   {product.category && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-[#2563EB] border border-blue-200">
@@ -627,17 +690,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               
               {/* Procurement Model Selector (Buy vs Lease) */}
               <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Select Purchase or Rental Plan
-                </label>
                 <div className="grid grid-cols-2 gap-1.5 bg-[#F1F5F9] p-1 rounded-xl border border-[#E2E8F0]">
                   <button
                     type="button"
                     aria-pressed={procurementModel === 'buy'}
                     onClick={() => setProcurementModel('buy')}
-                    className={`h-9 px-4 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    className={`h-8.5 px-3 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                       procurementModel === 'buy'
-                        ? 'bg-white text-[#0B1F4B] shadow-sm border border-slate-200'
+                        ? 'bg-white text-[#0B1F4B] shadow-xs border border-slate-200'
                         : 'text-slate-500 hover:text-slate-900'
                     }`}
                   >
@@ -647,9 +707,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     type="button"
                     aria-pressed={procurementModel === 'lease'}
                     onClick={() => setProcurementModel('lease')}
-                    className={`h-9 px-4 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    className={`h-8.5 px-3 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                       procurementModel === 'lease'
-                        ? 'bg-white text-[#0B1F4B] shadow-sm border border-slate-200'
+                        ? 'bg-white text-[#0B1F4B] shadow-xs border border-slate-200'
                         : 'text-slate-500 hover:text-slate-900'
                     }`}
                   >
@@ -658,53 +718,53 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               </div>
 
-              {/* Pricing Box in Clean Blue-and-White Aesthetic */}
-              <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 shadow-sm space-y-2.5">
+              {/* Pricing Box */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-blue-50/70 border border-blue-200 shadow-xs space-y-2">
                 {!isLease ? (
                   <>
                     <div className="flex flex-wrap items-baseline gap-2.5">
-                      <span className="text-3xl font-black text-[#0B1F4B] tabular-nums tracking-tight">
+                      <span className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tabular-nums tracking-tight">
                         ₹{currentUnitPrice?.toLocaleString('en-IN')}
                       </span>
                       {compareNum && currentUnitPrice && compareNum > currentUnitPrice && (
-                        <span className="text-base sm:text-lg line-through text-slate-400 font-semibold tabular-nums">
+                        <span className="text-sm sm:text-base line-through text-slate-400 font-semibold tabular-nums">
                           ₹{compareNum.toLocaleString('en-IN')}
                         </span>
                       )}
                       {discountPercent > 0 && (
-                        <span className="px-3 py-1 rounded-xl text-xs font-black bg-[#EF4444] text-white shadow-xs">
+                        <span className="px-2.5 py-0.5 rounded-lg text-xs font-black bg-[#EF4444] text-white shadow-2xs">
                           Save {discountPercent}%
                         </span>
                       )}
                     </div>
 
-                    {savings > 0 && (
-                      <div className="text-xs text-emerald-800 font-bold bg-emerald-100/70 px-3.5 py-1.5 rounded-xl border border-emerald-300 inline-flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-emerald-700" />
-                        <span>You save ₹{savings.toLocaleString('en-IN')} vs Indian launch MRP!</span>
-                      </div>
-                    )}
-
-                    {/* Trust signal */}
-                    <div className="text-xs text-slate-600 font-semibold flex items-center gap-1.5">
-                      <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                      <span>Trusted by 1,200+ happy buyers in Delhi NCR</span>
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      {savings > 0 && (
+                        <span className="text-[11px] text-emerald-800 font-bold bg-emerald-100/70 px-2.5 py-0.5 rounded-lg border border-emerald-300 inline-flex items-center gap-1">
+                          <Sparkles size={12} className="text-emerald-700" />
+                          <span>Save ₹{savings.toLocaleString('en-IN')} vs launch MRP</span>
+                        </span>
+                      )}
+                      <span className="text-[11px] text-slate-600 font-semibold flex items-center gap-1">
+                        <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                        <span>1,200+ verified NCR buyers</span>
+                      </span>
                     </div>
 
-                    <div className="pt-3 border-t border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs text-slate-700">
+                    <div className="pt-2 border-t border-blue-200/80 flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-700">
                       <div>
                         💳 No-Cost EMI from <strong className="text-[#0B1F4B] font-bold tabular-nums">₹{Math.round((currentUnitPrice || priceNum) / 12).toLocaleString('en-IN')}/mo</strong>
                       </div>
-                      <div className="text-[11px] text-slate-500 font-semibold">
-                        18% GST Input Tax Credit Eligible
+                      <div className="text-slate-500 font-semibold">
+                        18% GST Input Credit Eligible
                       </div>
                     </div>
                   </>
                 ) : hasLeasePrice && activeRentalPlan ? (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {/* Rate Display */}
                     <div className="flex flex-wrap items-baseline gap-2">
-                      <span className="text-3xl font-black text-[#0B1F4B] tabular-nums tracking-tight">
+                      <span className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tabular-nums tracking-tight">
                         ₹{activeRentalPlan.monthlyRate.toLocaleString('en-IN')}
                       </span>
                       <span className="text-xs font-bold text-slate-500">/ month + 18% GST</span>
@@ -716,9 +776,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     </div>
 
                     {/* Interactive Rental Duration Selector */}
-                    <div className="space-y-1.5 pt-1">
+                    <div className="space-y-1">
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-extrabold text-[#0B1F4B]">Choose Rental Tenure:</span>
+                        <span className="font-extrabold text-[#0B1F4B]">Rental Tenure:</span>
                         <span className="text-[10px] text-[#2563EB] font-bold">Doorstep Service Included</span>
                       </div>
                       <div className="grid grid-cols-4 gap-1.5">
@@ -729,15 +789,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                               key={plan.tenureMonths}
                               type="button"
                               onClick={() => setSelectedRentalTenure(plan.tenureMonths)}
-                              className={`relative py-2 px-1 rounded-xl text-center transition-all cursor-pointer border ${
+                              className={`relative py-1.5 px-1 rounded-xl text-center transition-all cursor-pointer border ${
                                 isSelected
-                                  ? 'bg-white border-[#2563EB] ring-2 ring-blue-500/20 shadow-sm'
+                                  ? 'bg-white border-[#2563EB] ring-2 ring-blue-500/20 shadow-xs'
                                   : 'bg-white/60 border-blue-200/70 hover:bg-white hover:border-blue-300'
                               }`}
                             >
                               {plan.isBestValue && (
-                                <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-[#2563EB] text-white text-[8px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider whitespace-nowrap shadow-2xs">
-                                  Best Value
+                                <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 bg-[#2563EB] text-white text-[7px] font-black px-1 rounded-full uppercase tracking-wider whitespace-nowrap shadow-2xs">
+                                  Best
                                 </span>
                               )}
                               <span className="block text-xs font-black text-[#0B1F4B]">{plan.tenureMonths}m</span>
@@ -749,44 +809,38 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     </div>
 
                     {/* Rental Details Grid */}
-                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-2 border-t border-blue-200">
-                      <div className="p-2 rounded-xl bg-white/70 border border-blue-100">
-                        <span className="text-[10px] text-slate-500 block font-semibold">Total Rent Commitment</span>
+                    <div className="grid grid-cols-2 gap-2 text-[10px] pt-1.5 border-t border-blue-200">
+                      <div className="p-1.5 rounded-lg bg-white/70 border border-blue-100">
+                        <span className="text-slate-500 block">Total Commitment</span>
                         <span className="font-extrabold text-[#0B1F4B] tabular-nums">
                           ₹{activeRentalPlan.totalRent.toLocaleString('en-IN')}
                         </span>
-                        <span className="text-[9px] text-slate-400 block">for {activeRentalPlan.tenureMonths} months</span>
                       </div>
-                      <div className="p-2 rounded-xl bg-white/70 border border-blue-100">
-                        <span className="text-[10px] text-slate-500 block font-semibold">Refundable Security Deposit</span>
+                      <div className="p-1.5 rounded-lg bg-white/70 border border-blue-100">
+                        <span className="text-slate-500 block">Refundable Deposit</span>
                         <span className="font-extrabold text-emerald-700 tabular-nums">
                           ₹{activeRentalPlan.refundableDeposit.toLocaleString('en-IN')}
                         </span>
-                        <span className="text-[9px] text-slate-400 block">100% returned upon return</span>
                       </div>
                     </div>
-
-                    <p className="text-[11px] text-slate-600 leading-relaxed bg-white/60 p-2.5 rounded-xl border border-blue-100/80">
-                      🛡️ Includes quarterly preventative servicing, hardware fault swaps, and doorstep return pickup.
-                    </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-2xl font-black text-[#0B1F4B]">
+                      <span className="text-xl font-black text-[#0B1F4B]">
                         Custom Corporate Lease
                       </span>
-                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
                         Quote Required
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600">
-                      Rental terms for this enterprise configuration are tailored based on deployment volume and tenure.
+                    <p className="text-[11px] text-slate-600">
+                      Tailored based on deployment volume and tenure.
                     </p>
                     <button
                       type="button"
                       onClick={() => setCorporateModalOpen(true)}
-                      className="w-full py-2.5 px-4 bg-[#0B1F4B] hover:bg-[#162D66] text-white text-xs font-extrabold rounded-xl transition shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                      className="w-full py-2 px-3 bg-[#0B1F4B] hover:bg-[#162D66] text-white text-xs font-extrabold rounded-lg transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       Request Rental Quote →
                     </button>
@@ -794,23 +848,23 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 )}
               </div>
 
-              {/* DYNAMIC VARIANT CONFIGURATION SELECTORS (PHASE 6 REDESIGN) */}
+              {/* DYNAMIC VARIANT CONFIGURATION SELECTORS */}
               {activeVariants.length > 0 && (
-                <section aria-labelledby="configuration-title" className="p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-sm space-y-4">
-                  <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
-                    <div className="flex items-center gap-2">
-                      <SlidersHorizontal size={18} className="text-[#2563EB]" />
-                      <h3 id="configuration-title" className="text-sm font-extrabold text-[#0B1F4B]">
-                        Choose Your Configuration
+                <section aria-labelledby="configuration-title" className="p-3.5 sm:p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-2">
+                    <div className="flex items-center gap-1.5">
+                      <SlidersHorizontal size={15} className="text-[#2563EB]" />
+                      <h3 id="configuration-title" className="text-xs font-extrabold text-[#0B1F4B]">
+                        Choose Configuration
                       </h3>
                     </div>
-                    <span className="text-xs font-bold text-[#2563EB] bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
-                      {activeVariants.length} verified tiers
+                    <span className="text-[10px] font-bold text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                      {activeVariants.length} tiers
                     </span>
                   </div>
 
                   {/* Attribute-by-Attribute Interactive Chips */}
-                  <div className="space-y-4">
+                  <div className="space-y-2.5">
                     {variantAttributeKeys.map((attributeKey) => {
                       const distinctValues = Array.from(
                         new Set(
@@ -827,15 +881,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                         : String(selectedVariant.attributes[attributeKey]);
 
                       return (
-                        <div key={attributeKey} className="space-y-2">
-                          <div className="flex items-center justify-between text-xs">
+                        <div key={attributeKey} className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px]">
                             <span className="font-extrabold text-slate-800">
                               {formatAttributeLabel(attributeKey)}:
                             </span>
-                            <span className="text-[#2563EB] font-bold text-xs">{selectedValue}</span>
+                            <span className="text-[#2563EB] font-bold text-[11px]">{selectedValue}</span>
                           </div>
 
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             {distinctValues.map((val) => {
                               const isSelected = selectedValue === val;
                               const matchingVariants = activeVariants.filter(
@@ -851,17 +905,17 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                                   type="button"
                                   disabled={!hasStock}
                                   onClick={() => chooseVariantForAttribute(attributeKey, val)}
-                                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all duration-150 cursor-pointer flex items-center gap-1.5 ${
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all duration-150 cursor-pointer flex items-center gap-1 ${
                                     isSelected
-                                      ? 'bg-blue-50 border-2 border-[#2563EB] text-[#0B1F4B] ring-2 ring-blue-500/20 shadow-sm scale-105'
+                                      ? 'bg-blue-50 border-2 border-[#2563EB] text-[#0B1F4B] ring-2 ring-blue-500/20 shadow-xs'
                                       : !hasStock
                                       ? 'bg-slate-100 border border-slate-200 text-slate-400 line-through cursor-not-allowed opacity-50'
-                                      : 'bg-white border border-[#CBD5E1] text-slate-700 hover:border-blue-300 hover:bg-blue-50/30 hover:scale-105'
+                                      : 'bg-white border border-[#CBD5E1] text-slate-700 hover:border-blue-300 hover:bg-blue-50/30'
                                   }`}
                                 >
-                                  {isSelected && <Check size={14} className="text-[#2563EB] stroke-[3]" />}
+                                  {isSelected && <Check size={12} className="text-[#2563EB] stroke-[3]" />}
                                   <span>{val}</span>
-                                  {!hasStock && <span className="text-[10px] text-rose-500">(Sold Out)</span>}
+                                  {!hasStock && <span className="text-[9px] text-rose-500">(Sold Out)</span>}
                                 </button>
                               );
                             })}
@@ -871,147 +925,129 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     })}
                   </div>
 
-                  {/* Active Selected Tier Confirmation Card */}
+                  {/* Active Selected Tier Confirmation Strip */}
                   {selectedVariant && (
-                    <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 text-xs text-slate-800 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-extrabold text-[#0B1F4B] text-sm">
+                    <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-2.5 text-[11px] text-slate-800 flex flex-wrap items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-extrabold text-[#0B1F4B] truncate">
                           {selectedVariant.name}
                         </span>
-                        <span className="font-mono text-[11px] text-[#2563EB] bg-white px-2.5 py-0.5 rounded-lg border border-blue-200 font-bold">
+                        <span className="font-mono text-[9px] text-[#2563EB] bg-white px-1.5 py-0.5 rounded border border-blue-200 font-bold shrink-0">
                           {selectedVariant.sku}
                         </span>
                       </div>
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
-                        <span className="text-slate-600">
-                          {Object.entries(selectedVariant.attributes)
-                            .map(([k, v]) => `${String(v)}`)
-                            .join(' • ')}
-                        </span>
-                        <span className="font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
-                          {availableStock > 0 ? `${availableStock} units available` : allowBackorder ? 'Backorder' : 'Sold Out'}
-                        </span>
-                      </div>
+                      <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 shrink-0 text-[10px]">
+                        {availableStock > 0 ? `${availableStock} in stock` : allowBackorder ? 'Backorder' : 'Sold Out'}
+                      </span>
                     </div>
                   )}
                 </section>
               )}
 
-              {/* Extended Warranty Protection Selector */}
-              <div className="p-3.5 rounded-xl bg-white border border-[#E2E8F0] shadow-sm space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <ShieldCheck size={15} className="text-[#2563EB]" />
-                    <span className="text-xs font-extrabold text-[#0B1F4B]">Warranty Protection</span>
+              {/* Warranty & Delivery Availability in Compact Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Extended Warranty Protection */}
+                <div className="p-2.5 rounded-xl bg-white border border-[#E2E8F0] shadow-xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[11px] mb-1">
+                    <span className="font-extrabold text-[#0B1F4B] flex items-center gap-1">
+                      <ShieldCheck size={13} className="text-[#2563EB]" /> Warranty
+                    </span>
+                    <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                      1 Year Free
+                    </span>
                   </div>
-                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                    {isLease ? 'Included in Lease' : '1 Year Free'}
-                  </span>
+                  {isLease ? (
+                    <span className="text-[10px] text-slate-500">Quarterly maintenance & swaps included.</span>
+                  ) : (
+                    <label className="flex items-center gap-2 cursor-pointer pt-0.5">
+                      <input
+                        type="checkbox"
+                        checked={hasWarranty}
+                        onChange={(e) => setHasWarranty(e.target.checked)}
+                        className="w-3.5 h-3.5 rounded text-[#2563EB] focus:ring-[#2563EB] border-slate-300"
+                      />
+                      <span className="text-[10px] text-slate-700 leading-tight">
+                        +2nd Yr Coverage (<strong className="text-[#2563EB]">₹3,499</strong>)
+                      </span>
+                    </label>
+                  )}
                 </div>
 
-                {isLease ? (
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Quarterly maintenance, thermal repasting & hardware defect replacements fully included on all leases.
-                  </p>
-                ) : (
-                  <label className="flex items-center gap-2.5 p-2.5 rounded-lg border border-blue-100 bg-blue-50/30 cursor-pointer hover:bg-blue-50/60 transition">
-                    <input
-                      type="checkbox"
-                      checked={hasWarranty}
-                      onChange={(e) => setHasWarranty(e.target.checked)}
-                      className="w-4 h-4 rounded text-[#2563EB] focus:ring-[#2563EB] border-slate-300 shrink-0"
-                    />
-                    <div className="text-[11px]">
-                      <span className="font-extrabold text-[#0B1F4B]">Add 2nd-Year Extended Warranty (+₹3,499)</span>
-                      <span className="text-slate-500 block">Doorstep pickup coverage for 24 full months.</span>
-                    </div>
-                  </label>
-                )}
-              </div>
-
-              {/* Delivery Pincode Estimator */}
-              <div className="p-3.5 rounded-xl bg-white border border-[#E2E8F0] shadow-sm space-y-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Check Delivery Availability
-                </span>
-                <form onSubmit={handlePincodeCheck} className="flex gap-2">
-                  <input
-                    type="text"
-                    aria-label="Delivery pincode"
-                    maxLength={6}
-                    value={pincode}
-                    onChange={(e) => {
-                      setPincode(e.target.value.replace(/\D/g, ''));
-                      setPincodeChecked(false);
-                    }}
-                    placeholder="6-digit Pincode (e.g. 110001)"
-                    className="h-9 w-full px-3 rounded-lg bg-[#F8FAFC] border border-[#CBD5E1] text-xs font-mono placeholder:text-slate-400 focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-blue-500/15"
-                  />
-                  <button
-                    type="submit"
-                    className="h-9 px-4 rounded-lg bg-[#0B1F4B] text-white text-xs font-extrabold hover:bg-[#162D66] transition-colors cursor-pointer shrink-0 flex items-center justify-center shadow-sm"
-                  >
-                    Check
-                  </button>
-                </form>
-                {pincodeChecked && (
-                  <div className="text-[11px] text-emerald-800 font-extrabold flex items-center gap-1.5 bg-emerald-50 px-2.5 py-2 rounded-lg border border-emerald-200">
-                    <Check size={13} className="text-emerald-700 shrink-0" />
-                    <span>2-3 Day BlueDart Air Dispatch to {pincode}</span>
+                {/* Delivery Pincode */}
+                <div className="p-2.5 rounded-xl bg-white border border-[#E2E8F0] shadow-xs space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-extrabold text-[#0B1F4B] flex items-center gap-1">
+                      <Truck size={13} className="text-[#2563EB]" /> Check Pincode
+                    </span>
+                    {pincodeChecked && (
+                      <span className="text-[9px] text-emerald-700 font-bold">2-3 Day Dispatch</span>
+                    )}
                   </div>
-                )}
+                  <form onSubmit={handlePincodeCheck} className="flex gap-1.5">
+                    <input
+                      type="text"
+                      aria-label="Delivery pincode"
+                      maxLength={6}
+                      value={pincode}
+                      onChange={(e) => {
+                        setPincode(e.target.value.replace(/\D/g, ''));
+                        setPincodeChecked(false);
+                      }}
+                      placeholder="6-digit Pincode"
+                      className="h-7 w-full px-2 rounded-lg bg-[#F8FAFC] border border-[#CBD5E1] text-[11px] font-mono placeholder:text-slate-400 focus:outline-none focus:border-[#2563EB]"
+                    />
+                    <button
+                      type="submit"
+                      className="h-7 px-2.5 rounded-lg bg-[#0B1F4B] text-white text-[11px] font-extrabold hover:bg-[#162D66] transition-colors cursor-pointer shrink-0"
+                    >
+                      Check
+                    </button>
+                  </form>
+                </div>
               </div>
 
-              {/* Quantity Selector + CTAs — compact action block */}
-              <div className="space-y-2.5">
-                {/* Qty row */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-xs font-extrabold text-slate-800">Qty:</span>
-                    <div className="flex items-center border border-[#CBD5E1] rounded-lg overflow-hidden bg-white shadow-xs h-9">
+              {/* Quantity Selector + CTAs — Action Block */}
+              <div className="space-y-2">
+                {isLease && !hasLeasePrice ? (
+                  <button
+                    type="button"
+                    onClick={() => setCorporateModalOpen(true)}
+                    className="w-full h-10 px-6 rounded-xl text-xs font-extrabold bg-[#0B1F4B] hover:bg-[#162D66] text-white shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <span>Request Rental Terms &amp; Quote →</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {/* Compact Qty */}
+                    <div className="flex items-center border border-[#CBD5E1] rounded-xl overflow-hidden bg-white shadow-xs h-10 shrink-0">
                       <button
                         type="button"
                         aria-label="Decrease quantity"
                         onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        className="px-3 h-full text-sm font-bold hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer flex items-center justify-center"
+                        className="px-2.5 h-full text-xs font-bold hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
                         disabled={outOfStock}
                       >
                         -
                       </button>
-                      <span aria-live="polite" className="px-3 h-full flex items-center justify-center text-sm font-black min-w-[32px] text-center text-[#0B1F4B] tabular-nums">
+                      <span aria-live="polite" className="px-2 h-full flex items-center justify-center text-xs font-black min-w-[24px] text-center text-[#0B1F4B] tabular-nums">
                         {quantity}
                       </span>
                       <button
                         type="button"
                         aria-label="Increase quantity"
                         onClick={() => setQuantity(allowBackorder ? quantity + 1 : Math.min(availableStock || 1, quantity + 1))}
-                        className="px-3 h-full text-sm font-bold hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer flex items-center justify-center"
+                        className="px-2.5 h-full text-xs font-bold hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
                         disabled={outOfStock || (!allowBackorder && quantity >= availableStock)}
                       >
                         +
                       </button>
                     </div>
-                  </div>
-                  <span className="text-[11px] text-slate-500 font-semibold tabular-nums">
-                    {allowBackorder ? 'Backorders accepted' : `${availableStock} units in stock`}
-                  </span>
-                </div>
 
-                {/* Action CTAs: Add to Cart & Buy Now */}
-                {isLease && !hasLeasePrice ? (
-                  <button
-                    type="button"
-                    onClick={() => setCorporateModalOpen(true)}
-                    className="w-full h-11 px-6 rounded-xl text-xs font-extrabold bg-[#0B1F4B] hover:bg-[#162D66] text-white shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
-                  >
-                    <span>Request Rental Terms &amp; Quote →</span>
-                  </button>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2.5">
+                    {/* Add to Cart */}
                     <button
                       onClick={handleAddToCart}
                       disabled={outOfStock}
-                      className={`h-11 px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm ${
+                      className={`h-10 flex-1 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs ${
                         outOfStock
                           ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           : added
@@ -1019,21 +1055,22 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                           : 'bg-white hover:bg-blue-50 text-[#2563EB] border-2 border-[#2563EB]'
                       }`}
                     >
-                      <ShoppingCart size={15} />
+                      <ShoppingCart size={14} />
                       <span>{added ? 'Added!' : 'Add to Cart'}</span>
                     </button>
 
+                    {/* Buy Now */}
                     <button
                       onClick={handleBuyNow}
                       disabled={outOfStock}
-                      className={`h-11 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md ${
+                      className={`h-10 flex-1 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm ${
                         outOfStock
                           ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                          : 'bg-[#2563EB] hover:bg-[#1D4ED8] text-white hover:shadow-lg'
+                          : 'bg-[#2563EB] hover:bg-[#1D4ED8] text-white hover:shadow-md'
                       }`}
                     >
                       <span>{isLease ? 'Rent Now' : 'Buy Now'}</span>
-                      <ArrowRight size={15} />
+                      <ArrowRight size={14} />
                     </button>
                   </div>
                 )}
@@ -1043,89 +1080,67 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra,%20I%20am%20interested%20in%20buying%20${encodeURIComponent(product.name)}%20(SKU:%20${selectedVariant?.sku || product.sku},%20Price:%20₹${priceNum.toLocaleString('en-IN')}).%20Please%20confirm%20availability.`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full h-10 px-4 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer"
+                  className="w-full h-9 px-4 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
                 >
-                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
                     <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.274.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.1.824zm-3.423-14.416c-6.627 0-12 5.373-12 12 0 2.112.551 4.095 1.517 5.823l-1.611 5.888 6.069-1.591c1.667.91 3.57 1.432 5.597 1.432 6.627 0 12-5.373 12-12s-5.373-12-12-12z" />
                   </svg>
                   <span>Chat on WhatsApp</span>
                 </a>
               </div>
 
-              {/* Guaranteed Buyback Card — compact */}
-              {buybackPlans.length > 0 && (
-                <button
-                  type="button"
-                  ref={buybackTriggerRef}
-                  onClick={() => setBuybackModalOpen(true)}
-                  className="w-full text-left p-3.5 rounded-xl bg-sky-50/70 border border-sky-200 hover:border-sky-300 transition-all cursor-pointer shadow-xs group"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-[#0B1F4B] flex items-center gap-1.5">
-                      <HandCoins size={14} className="text-[#2563EB]" />
-                      Assured Buyback Guarantee
-                    </span>
-                    <span className="rounded-full bg-emerald-100 text-emerald-800 px-2.5 py-0.5 text-[10px] font-black">
-                      Up to {Math.max(...buybackPlans.map((plan) => plan.percentage))}% Value
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[11px] text-slate-500 leading-relaxed">
-                    Sell it back to us when you upgrade — guaranteed price, no haggling.
-                  </p>
-                  <div className="mt-2 flex items-center justify-between text-[11px] font-bold text-[#2563EB]">
-                    <span>See how much you'll get back</span>
-                    <span className="transition-transform group-hover:translate-x-1">→</span>
-                  </div>
-                </button>
-              )}
-
-              {/* Wholesale / Bulk Quote Card — compact */}
-              <div className="p-3.5 rounded-xl bg-white border border-[#E2E8F0] shadow-sm space-y-2">
-                <div className="flex items-center justify-between text-xs font-extrabold text-[#0B1F4B]">
-                  <span>Bulk Procurement (5+ Machines)</span>
-                  <span className="text-[10px] text-[#2563EB] font-bold bg-blue-50 px-2 py-0.5 rounded">Via Quote</span>
-                </div>
-                {bulkPrice ? (
-                  <div className="flex items-center justify-between text-xs bg-blue-50/60 border border-blue-200 rounded-lg px-3 py-2">
-                    <div>
-                      <span className="text-[10px] text-slate-500 block">Bulk Unit Rate</span>
-                      <span className="font-extrabold text-[#0B1F4B] tabular-nums">
-                        ₹{bulkPrice.toLocaleString('en-IN')} {isLease ? '/ month' : ''}
+              {/* Side-by-Side Secondary Commercial Cards (Buyback & Bulk) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                {/* Guaranteed Buyback Card */}
+                {buybackPlans.length > 0 && (
+                  <button
+                    type="button"
+                    ref={buybackTriggerRef}
+                    onClick={() => setBuybackModalOpen(true)}
+                    className="p-2.5 rounded-xl bg-sky-50/70 border border-sky-200 hover:border-sky-300 transition-all text-left group cursor-pointer shadow-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-extrabold text-[#0B1F4B] flex items-center gap-1">
+                        <HandCoins size={13} className="text-[#2563EB]" />
+                        Buyback Guarantee
+                      </span>
+                      <span className="rounded-full bg-emerald-100 text-emerald-800 px-1.5 py-0.2 text-[9px] font-black">
+                        Up to {Math.max(...buybackPlans.map((plan) => plan.percentage))}%
                       </span>
                     </div>
-                    <span className="text-[10px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-md">Special Rate</span>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-500">Custom discounts with GST Tax Invoice for teams & startups.</p>
+                    <p className="mt-1 text-[10px] text-slate-500 leading-tight">
+                      Guaranteed upgrade price, no haggling.
+                    </p>
+                    <span className="mt-1 text-[10px] font-bold text-[#2563EB] flex items-center gap-0.5 group-hover:underline">
+                      Check valuation →
+                    </span>
+                  </button>
                 )}
+
+                {/* Wholesale / Bulk Quote Card */}
                 <button
                   type="button"
                   onClick={() => setCorporateModalOpen(true)}
-                  className="w-full py-2 px-4 bg-blue-50 hover:bg-blue-100/70 text-[#2563EB] font-extrabold text-xs rounded-lg border border-blue-200 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  className="p-2.5 rounded-xl bg-white border border-[#E2E8F0] hover:border-blue-300 transition-all text-left group cursor-pointer shadow-xs"
                 >
-                  <span>Request Fleet / Corporate Quote →</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-extrabold text-[#0B1F4B] flex items-center gap-1">
+                      <Laptop size={13} className="text-[#2563EB]" />
+                      Bulk Fleet (5+)
+                    </span>
+                    <span className="text-[9px] font-bold text-[#2563EB] bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                      Via Quote
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[10px] text-slate-500 leading-tight">
+                    Custom discounts with GST Tax Invoice.
+                  </p>
+                  <span className="mt-1 text-[10px] font-bold text-[#2563EB] flex items-center gap-0.5 group-hover:underline">
+                    Request quote →
+                  </span>
                 </button>
               </div>
 
-              {/* Trust Badges Strip — compact inline row */}
-              <div className="border-t border-[#E2E8F0] pt-3 grid grid-cols-4 gap-2 text-center text-[10px]">
-                <div className="flex flex-col items-center gap-1">
-                  <Truck size={15} className="text-[#2563EB]" />
-                  <span className="font-bold text-slate-700 leading-tight">Free<br/>Shipping</span>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <ShieldCheck size={15} className="text-[#2563EB]" />
-                  <span className="font-bold text-slate-700 leading-tight">1-Yr<br/>Warranty</span>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <RotateCcw size={15} className="text-[#2563EB]" />
-                  <span className="font-bold text-slate-700 leading-tight">7-Day<br/>Return</span>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <FileText size={15} className="text-[#2563EB]" />
-                  <span className="font-bold text-slate-700 leading-tight">18% GST<br/>Credit</span>
-                </div>
-              </div>
             </div>
           </div>
 

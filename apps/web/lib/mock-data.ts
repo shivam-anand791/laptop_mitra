@@ -40,7 +40,63 @@ export const MOCK_PRODUCTS: Product[] = [
       warranty: '1 Year LaptopMitra Replacement & Service Warranty',
       batteryHealth: '98% Original Capacity (Tested 42 Cycles)',
       os: 'macOS Sequoia Pre-installed'
-    }
+    },
+    variants: [
+      {
+            "id": "421c71c6-7848-42b6-affc-4c87bdc993df",
+            "productId": "prod-macbook-pro-16",
+            "sku": "LM-MBP16-M2P-16-512",
+            "name": "16GB Unified RAM / 512GB SSD / M2 Pro (12-Core)",
+            "price": 154999,
+            "compareAtPrice": 249900,
+            "stock": 8,
+            "isActive": true,
+            "isDefault": true,
+            "attributes": {
+                  "ram": "16GB",
+                  "storage": "512GB SSD",
+                  "graphics": "Apple 19-Core GPU",
+                  "processor": "Apple M2 Pro (12-Core)"
+            },
+            "images": []
+      },
+      {
+            "id": "51b8336f-2529-4733-8d92-ce804020418f",
+            "productId": "prod-macbook-pro-16",
+            "sku": "LM-MBP16-M2P-32-2TB",
+            "name": "32GB Unified RAM / 2TB SSD / M2 Pro (12-Core)",
+            "price": 219999,
+            "compareAtPrice": 329900,
+            "stock": 3,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "32GB",
+                  "storage": "2TB SSD",
+                  "graphics": "Apple 19-Core GPU",
+                  "processor": "Apple M2 Pro (12-Core)"
+            },
+            "images": []
+      },
+      {
+            "id": "72ee2744-d7c4-4469-ab14-171b3b7ca6ae",
+            "productId": "prod-macbook-pro-16",
+            "sku": "LM-MBP16-M2P-32-1TB",
+            "name": "32GB Unified RAM / 1TB SSD / M2 Pro (12-Core)",
+            "price": 189999,
+            "compareAtPrice": 289900,
+            "stock": 5,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "32GB",
+                  "storage": "1TB SSD",
+                  "graphics": "Apple 19-Core GPU",
+                  "processor": "Apple M2 Pro (12-Core)"
+            },
+            "images": []
+      }
+]
   },
   {
     id: 'prod-thinkpad-x1-carbon-g10',
@@ -72,7 +128,63 @@ export const MOCK_PRODUCTS: Product[] = [
       warranty: '1 Year Full On-site Warranty',
       batteryHealth: '95% Healthy, Up to 9 Hours Backup',
       os: 'Windows 11 Pro Genuine License'
-    }
+    },
+    variants: [
+      {
+            "id": "7b66243b-03fd-4abf-a8ee-f4d1d5ede677",
+            "productId": "prod-thinkpad-x1-carbon-g10",
+            "sku": "LM-TP-X1C10-I5-16-512",
+            "name": "16GB LPDDR5 / 512GB SSD / Intel Core i5-1240P",
+            "price": 56999,
+            "compareAtPrice": 135000,
+            "stock": 6,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "16GB",
+                  "storage": "512GB SSD",
+                  "graphics": "Intel Iris Xe Graphics",
+                  "processor": "Intel Core i5-1240P"
+            },
+            "images": []
+      },
+      {
+            "id": "d733550b-ffe0-456e-b76c-695acf5d87c6",
+            "productId": "prod-thinkpad-x1-carbon-g10",
+            "sku": "LM-TP-X1C10-I7-16-512",
+            "name": "16GB LPDDR5 / 512GB SSD / Intel Core i7-1260P",
+            "price": 64999,
+            "compareAtPrice": 148000,
+            "stock": 14,
+            "isActive": true,
+            "isDefault": true,
+            "attributes": {
+                  "ram": "16GB",
+                  "storage": "512GB SSD",
+                  "graphics": "Intel Iris Xe Graphics",
+                  "processor": "Intel Core i7-1260P"
+            },
+            "images": []
+      },
+      {
+            "id": "a3fd7537-c110-492b-be21-6b9f5bfe8735",
+            "productId": "prod-thinkpad-x1-carbon-g10",
+            "sku": "LM-TP-X1C10-I7-32-1TB",
+            "name": "32GB LPDDR5 / 1TB SSD / Intel Core i7-1260P",
+            "price": 79999,
+            "compareAtPrice": 175000,
+            "stock": 5,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "32GB",
+                  "storage": "1TB SSD",
+                  "graphics": "Intel Iris Xe Graphics",
+                  "processor": "Intel Core i7-1260P"
+            },
+            "images": []
+      }
+]
   },
   {
     id: 'prod-dell-xps-15-9520',
@@ -104,7 +216,63 @@ export const MOCK_PRODUCTS: Product[] = [
       warranty: '1 Year LaptopMitra Warranty',
       batteryHealth: '92% Battery Health (86Whr)',
       os: 'Windows 11 Pro 64-bit'
-    }
+    },
+    variants: [
+      {
+            "id": "75e1c423-df76-4240-b102-21c3cd45673d",
+            "productId": "prod-dell-xps-15-9520",
+            "sku": "LM-XPS15-9520-32-1TB-3050TI",
+            "name": "32GB DDR5 / 1TB SSD / RTX 3050 Ti 4GB / 15.6\" FHD+",
+            "price": 94999,
+            "compareAtPrice": 185000,
+            "stock": 9,
+            "isActive": true,
+            "isDefault": true,
+            "attributes": {
+                  "ram": "32GB",
+                  "storage": "1TB SSD",
+                  "graphics": "NVIDIA GeForce RTX 3050 Ti 4GB",
+                  "processor": "Intel Core i7-12700H"
+            },
+            "images": []
+      },
+      {
+            "id": "46ebc085-3415-4926-baf3-45f5e0363844",
+            "productId": "prod-dell-xps-15-9520",
+            "sku": "LM-XPS15-9520-16-512-3050",
+            "name": "16GB DDR5 / 512GB SSD / RTX 3050 4GB / 15.6\" FHD+",
+            "price": 78999,
+            "compareAtPrice": 145000,
+            "stock": 5,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "16GB",
+                  "storage": "512GB SSD",
+                  "graphics": "NVIDIA GeForce RTX 3050 4GB",
+                  "processor": "Intel Core i7-12700H"
+            },
+            "images": []
+      },
+      {
+            "id": "5956bbfa-b2a5-434a-8536-4938267bbf6e",
+            "productId": "prod-dell-xps-15-9520",
+            "sku": "LM-XPS15-9520-64-2TB-OLED",
+            "name": "64GB DDR5 / 2TB SSD / RTX 3050 Ti 4GB / 15.6\" 3.5K OLED",
+            "price": 124999,
+            "compareAtPrice": 235000,
+            "stock": 3,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "64GB",
+                  "storage": "2TB SSD",
+                  "graphics": "NVIDIA GeForce RTX 3050 Ti 4GB",
+                  "processor": "Intel Core i7-12700H"
+            },
+            "images": []
+      }
+]
   },
   {
     id: 'prod-asus-rog-zephyrus-g14',
@@ -136,7 +304,63 @@ export const MOCK_PRODUCTS: Product[] = [
       warranty: '1 Year Comprehensive Protection',
       batteryHealth: '94% Original Capacity (76Whr)',
       os: 'Windows 11 Home Genuine'
-    }
+    },
+    variants: [
+      {
+            "id": "02a7223b-8a94-48cc-9649-8f04ae2d3e86",
+            "productId": "prod-asus-rog-zephyrus-g14",
+            "sku": "LM-ROG-G14-6900-16-512",
+            "name": "16GB DDR5 / 512GB SSD / Radeon RX 6700S 8GB",
+            "price": 74999,
+            "compareAtPrice": 139990,
+            "stock": 4,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "16GB",
+                  "storage": "512GB SSD",
+                  "graphics": "AMD Radeon RX 6700S 8GB",
+                  "processor": "AMD Ryzen 9 6900HS"
+            },
+            "images": []
+      },
+      {
+            "id": "3b5c7270-f356-4bd9-a00a-00eab067105c",
+            "productId": "prod-asus-rog-zephyrus-g14",
+            "sku": "LM-ROG-G14-6900-16-1TB",
+            "name": "16GB DDR5 / 1TB SSD / Radeon RX 6700S 8GB",
+            "price": 82999,
+            "compareAtPrice": 159990,
+            "stock": 11,
+            "isActive": true,
+            "isDefault": true,
+            "attributes": {
+                  "ram": "16GB",
+                  "storage": "1TB SSD",
+                  "graphics": "AMD Radeon RX 6700S 8GB",
+                  "processor": "AMD Ryzen 9 6900HS"
+            },
+            "images": []
+      },
+      {
+            "id": "f17a743f-8964-4420-bc87-8cc871ef2687",
+            "productId": "prod-asus-rog-zephyrus-g14",
+            "sku": "LM-ROG-G14-6900-24-1TB",
+            "name": "24GB DDR5 / 1TB SSD / Radeon RX 6700S 8GB",
+            "price": 92999,
+            "compareAtPrice": 174990,
+            "stock": 4,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "24GB",
+                  "storage": "1TB SSD",
+                  "graphics": "AMD Radeon RX 6700S 8GB",
+                  "processor": "AMD Ryzen 9 6900HS"
+            },
+            "images": []
+      }
+]
   },
   {
     id: 'prod-hp-elitebook-840-g8',
@@ -168,7 +392,81 @@ export const MOCK_PRODUCTS: Product[] = [
       warranty: '1 Year Warranty with Free Doorstep Pickup',
       batteryHealth: '91% (Up to 7.5 hours battery life)',
       os: 'Windows 11 Pro Genuine'
-    }
+    },
+    variants: [
+      {
+            "id": "2d4f2111-847d-4da0-90da-e42c264f9056",
+            "productId": "prod-hp-elitebook-840-g8",
+            "sku": "LM-HP-EB840G8-I5-8-256",
+            "name": "8GB DDR4 / 256GB SSD / Intel Core i5-1135G7",
+            "price": 32999,
+            "compareAtPrice": 78000,
+            "stock": 8,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "8GB",
+                  "storage": "256GB SSD",
+                  "graphics": "Intel Iris Xe Graphics",
+                  "processor": "Intel Core i5-1135G7"
+            },
+            "images": []
+      },
+      {
+            "id": "efdf5b2a-7db4-46d5-a984-e2b7d3f4c5dc",
+            "productId": "prod-hp-elitebook-840-g8",
+            "sku": "LM-HP-EB840G8-I5-16-512",
+            "name": "16GB DDR4 / 512GB SSD / Intel Core i5-1135G7",
+            "price": 38999,
+            "compareAtPrice": 92000,
+            "stock": 19,
+            "isActive": true,
+            "isDefault": true,
+            "attributes": {
+                  "ram": "16GB",
+                  "storage": "512GB SSD",
+                  "graphics": "Intel Iris Xe Graphics",
+                  "processor": "Intel Core i5-1135G7"
+            },
+            "images": []
+      },
+      {
+            "id": "235e28b3-2111-44be-8b1e-26314518691f",
+            "productId": "prod-hp-elitebook-840-g8",
+            "sku": "LM-HP-EB840G8-I7-16-512",
+            "name": "16GB DDR4 / 512GB SSD / Intel Core i7-1165G7",
+            "price": 44999,
+            "compareAtPrice": 108000,
+            "stock": 6,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "16GB",
+                  "storage": "512GB SSD",
+                  "graphics": "Intel Iris Xe Graphics",
+                  "processor": "Intel Core i7-1165G7"
+            },
+            "images": []
+      },
+      {
+            "id": "28ebfa9a-2e57-470f-85da-2a78b20f6dd4",
+            "productId": "prod-hp-elitebook-840-g8",
+            "sku": "LM-HP-EB840G8-I7-32-1TB",
+            "name": "32GB DDR4 / 1TB SSD / Intel Core i7-1165G7",
+            "price": 52999,
+            "compareAtPrice": 125000,
+            "stock": 4,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "32GB",
+                  "storage": "1TB SSD",
+                  "graphics": "Intel Iris Xe Graphics",
+                  "processor": "Intel Core i7-1165G7"
+            },
+            "images": []
+      }
+]
   },
   {
     id: 'prod-macbook-air-m1',
@@ -200,7 +498,63 @@ export const MOCK_PRODUCTS: Product[] = [
       warranty: '1 Year Comprehensive Warranty',
       batteryHealth: '96% (Tested 54 cycles, 14+ hours backup)',
       os: 'macOS Sonoma'
-    }
+    },
+    variants: [
+      {
+            "id": "de3771e4-f593-46da-a3d9-8efdfa51ea28",
+            "productId": "prod-macbook-air-m1",
+            "sku": "LM-MBA-M1-8-256-GLD",
+            "name": "8GB Unified RAM / 256GB SSD / Apple 7-Core GPU",
+            "price": 51999,
+            "compareAtPrice": 92900,
+            "stock": 12,
+            "isActive": true,
+            "isDefault": true,
+            "attributes": {
+                  "ram": "8GB",
+                  "storage": "256GB SSD",
+                  "graphics": "Apple 7-Core GPU",
+                  "processor": "Apple M1 (8-Core CPU)"
+            },
+            "images": []
+      },
+      {
+            "id": "b1097065-7713-40c9-b692-f9ddcfdc649d",
+            "productId": "prod-macbook-air-m1",
+            "sku": "LM-MBA-M1-8-512-GRY",
+            "name": "8GB Unified RAM / 512GB SSD / Apple 8-Core GPU",
+            "price": 61999,
+            "compareAtPrice": 112900,
+            "stock": 6,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "8GB",
+                  "storage": "512GB SSD",
+                  "graphics": "Apple 8-Core GPU",
+                  "processor": "Apple M1 (8-Core CPU)"
+            },
+            "images": []
+      },
+      {
+            "id": "e6c03abc-1e8a-44d2-a2fc-6edc058129a9",
+            "productId": "prod-macbook-air-m1",
+            "sku": "LM-MBA-M1-16-512-GRY",
+            "name": "16GB Unified RAM / 512GB SSD / Apple 8-Core GPU",
+            "price": 74999,
+            "compareAtPrice": 132900,
+            "stock": 4,
+            "isActive": true,
+            "isDefault": false,
+            "attributes": {
+                  "ram": "16GB",
+                  "storage": "512GB SSD",
+                  "graphics": "Apple 8-Core GPU",
+                  "processor": "Apple M1 (8-Core CPU)"
+            },
+            "images": []
+      }
+]
   }
 ];
 

@@ -46,6 +46,7 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
       } catch (err: any) {
         if (!active) return;
         if (err?.status === 401) {
+          await logout();
           router.replace('/login?next=/admin');
         } else {
           // Any profile fetch failure strictly denies access to prevent client-side localStorage spoofing

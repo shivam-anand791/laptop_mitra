@@ -6,6 +6,7 @@ import { AuthProvider } from '../lib/auth-context';
 import { CartProvider } from '../lib/cart-context';
 import { WishlistProvider } from '../lib/wishlist-context';
 import { ToastProvider } from '../components/ui/Toast';
+import { SyncRecoveryBanner } from '../components/SyncRecoveryBanner';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -25,6 +26,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <AuthProvider>
+          <SyncRecoveryBanner />
           <CartProvider>
             <WishlistProvider>
               {children}

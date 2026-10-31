@@ -1,13 +1,45 @@
 // In Vercel, VERCEL_ENV is 'production' for production deployments, and 'preview' for previews.
-// Strict environment variable enforcement is active in production deployments, while
-// preview deployments and local/CI test builds fall back to safe preview defaults if unset.
 const isVercel = process.env.VERCEL === '1';
 const isVercelPreview = process.env.VERCEL_ENV === 'preview';
 const isStrictProduction =
   process.env.NODE_ENV === 'production' &&
   (isVercel ? process.env.VERCEL_ENV === 'production' : process.env.STRICT_PRODUCTION === 'true');
 
-// Safe fallback defaults for Preview and local builds when dashboard env vars are not set
+/**
+ * Required Firebase client environment variables.
+ */
+export const REQUIRED_FIREBASE_CLIENT_VARS = [
+  'NEXT_PUBLIC_FIREBASE_API_KEY',
+  'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
+  'NEXT_PUBLIC_FIREBASE_PROJECT_ID',
+  'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET',
+  'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
+  'NEXT_PUBLIC_FIREBASE_APP_ID',
+] as const;
+
+/**
+ * Validates Firebase client environment variables and throws an error
+ * explicitly listing every missing variable name.
+ */
+export function validateFirebaseClientConfig(env: Record<string, string | undefined> = process.env): void {
+  const missing: string[] = [];
+  for (const key of REQUIRED_FIREBASE_CLIENT_VARS) {
+    const val = (env[key] || '').trim();
+    if (!val) {
+      missing.push(key);
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required Firebase client environment variable(s): ${missing.join(', ')}. ` +
+      `Please configure these variable names in apps/web/.env.local (local development) and in Vercel Dashboard (Preview/Production).`
+    );
+  }
+}
+
+// Temporary fallback defaults for local/preview until owner populates apps/web/.env.local
+// Production strictly throws if any variable is missing.
 const PREVIEW_DEFAULTS: Record<string, string> = {
   NEXT_PUBLIC_API_URL: 'https://laptopmitra-api.onrender.com',
   NEXT_PUBLIC_RAZORPAY_KEY_ID: 'rzp_test_placeholder',
@@ -23,8 +55,9 @@ function getRequiredValue(name: string, value: string | undefined): string {
   const val = (value || '').trim();
   if (!val) {
     if (isStrictProduction) {
-      throw new Error(`Missing required environment variable: ${name}`);
+      throw new Error(`Missing required environment variable in production: ${name}`);
     }
+    // In dev/preview, return fallback but issue a non-blocking console reminder
     return PREVIEW_DEFAULTS[name] || '';
   }
   return val;

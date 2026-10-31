@@ -199,7 +199,12 @@ export class AuthService {
         throw err;
       }
       this.logger.error(`Database error during user sync: ${err?.message || err}`);
-      throw new ServiceUnavailableException('Authentication service temporarily unavailable');
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        error: 'Service Unavailable',
+        message: 'The server database is temporarily unavailable. Please try again shortly.',
+        code: 'DATABASE_UNAVAILABLE',
+      });
     }
   }
 

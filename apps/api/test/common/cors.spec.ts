@@ -87,4 +87,14 @@ describe('CORS Security & Allowlist Tests', () => {
       });
     });
   });
+
+    it('supports specific wildcard subdomain patterns when explicitly configured in non-production or preview', () => {
+      const previewConfig = {
+        configuredOrigins: ['https://*.vercel.app'],
+        isProduction: false,
+      };
+      expect(isAllowedOrigin('https://laptopmitra-preview-123.vercel.app', previewConfig)).toBe(true);
+      expect(isAllowedOrigin('https://evil-site.com', previewConfig)).toBe(false);
+      expect(isAllowedOrigin('https://vercel.app.attacker.com', previewConfig)).toBe(false);
+    });
 });

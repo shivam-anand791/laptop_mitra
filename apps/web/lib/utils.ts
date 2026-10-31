@@ -7,6 +7,22 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatAuthError(err: any): string {
   if (!err) return 'An unexpected error occurred. Please try again.';
+
+  // Check structured backend error codes first
+  const backendCode = (err.code || err.error || '').toString().toUpperCase();
+  if (backendCode === 'DATABASE_UNAVAILABLE' || backendCode === 'DATABASE_ERROR') {
+    return 'The database is temporarily unavailable. Please try again in a few moments.';
+  }
+  if (backendCode === 'FIREBASE_UNCONFIGURED' || backendCode === 'FIREBASE_UNAVAILABLE') {
+    return 'Authentication service is temporarily unavailable. Please try again shortly.';
+  }
+  if (backendCode === 'TOKEN_WRONG_PROJECT') {
+    return 'Authentication token was issued for a different environment. Please sign out and sign in again.';
+  }
+  if (backendCode === 'TOKEN_EXPIRED') {
+    return 'Your session has expired. Please sign in again.';
+  }
+
   const code = (err.code || (typeof err.message === 'string' ? err.message : '')).toLowerCase();
 
   if (
