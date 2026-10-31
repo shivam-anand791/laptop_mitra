@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { NotificationPreferences } from '@/lib/types';
-import { Bell, Mail, MessageSquare, Smartphone, Check, AlertCircle, RefreshCw, Save } from 'lucide-react';
+import { Bell, Mail, Smartphone, Check, AlertCircle, RefreshCw, Save } from 'lucide-react';
 
 export default function NotificationsPage() {
   const [preferences, setPreferences] = useState<NotificationPreferences>({
@@ -71,7 +71,7 @@ export default function NotificationsPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Notification Preferences</h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Choose what alerts and updates you want to receive via Email, SMS, and Mobile Push Notifications.
+          Choose what alerts and updates you want to receive via Email and Mobile Push Notifications.
         </p>
       </div>
 
@@ -151,47 +151,6 @@ export default function NotificationsPage() {
                   onClick={() => handleToggle('emailPromotions')}
                   className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ${
                     preferences.emailPromotions ? 'bg-blue-600 justify-end' : 'bg-slate-300 dark:bg-slate-700 justify-start'
-                  }`}
-                >
-                  <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* SMS Notifications Section */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 sm:p-6 space-y-4">
-            <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800 text-slate-900 dark:text-white font-bold text-base">
-              <MessageSquare className="w-5 h-5 text-emerald-600" /> SMS & WhatsApp Alerts
-            </div>
-
-            <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              <div className="py-3.5 flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">Order & Delivery OTPs</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">Real-time SMS dispatch and delivery verification OTPs</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleToggle('smsOrderUpdates')}
-                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ${
-                    preferences.smsOrderUpdates ? 'bg-blue-600 justify-end' : 'bg-slate-300 dark:bg-slate-700 justify-start'
-                  }`}
-                >
-                  <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
-                </button>
-              </div>
-
-              <div className="py-3.5 flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">Promotional SMS</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">Special seasonal discounts and festive clearance sales</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleToggle('smsPromotions')}
-                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ${
-                    preferences.smsPromotions ? 'bg-blue-600 justify-end' : 'bg-slate-300 dark:bg-slate-700 justify-start'
                   }`}
                 >
                   <div className="w-4 h-4 rounded-full bg-white shadow-sm" />

@@ -11,7 +11,14 @@ import CorporateQuoteModal from '../../components/CorporateQuoteModal';
 export default function AccountScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
   const { data: profile, isLoading } = useProfile();
-  const { logout, isGuest, linkGuestAccount } = useAuth();
+  const {
+    logout,
+    isGuest,
+    linkGuestAccount,
+    firebaseUser,
+    sendVerificationEmail,
+    refreshAuthenticatedUser,
+  } = useAuth();
 
   const signoutEverywhere = useSignoutEverywhere();
   const deleteAccount = useDeleteAccount();
@@ -23,10 +30,34 @@ export default function AccountScreen() {
   const [linkName, setLinkName] = useState('');
   const [isLinking, setIsLinking] = useState(false);
   const [corporateModalVisible, setCorporateModalVisible] = useState(false);
+  const [isVerificationPending, setIsVerificationPending] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
 
   // Delete confirmation modal (cross-platform alternative to Alert.prompt)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
+  const handleVerificationAction = async (action: 'resend' | 'refresh') => {
+    setIsVerificationPending(true);
+    setVerificationMessage(null);
+    try {
+      if (action === 'refresh') {
+        await refreshAuthenticatedUser();
+        setVerificationMessage('Email verification status updated.');
+      } else {
+        const result = await sendVerificationEmail();
+        setVerificationMessage(
+          result.alreadyVerified
+            ? 'Your email is already verified.'
+            : 'Verification email sent to ' + firebaseUser?.email + '.',
+        );
+      }
+    } catch (error) {
+      setVerificationMessage(error instanceof Error ? error.message : 'Please try again shortly.');
+    } finally {
+      setIsVerificationPending(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to log out of this device?', [
@@ -117,16 +148,16 @@ export default function AccountScreen() {
 
   const menuSections = [
     {
-      title: 'Orders & Shopping',
+      title: 'Orders',
       items: [
-        { icon: 'receipt-outline' as const, label: 'My Orders & Invoices', route: 'OrderHistory' as const },
+        { icon: 'receipt-outline' as const, label: 'My Orders', route: 'OrderHistory' as const },
         { icon: 'location-outline' as const, label: 'Saved Addresses', route: 'AddressBook' as const },
       ],
     },
     {
-      title: 'Mitra Partner',
+      title: 'Rewards',
       items: [
-        { icon: 'wallet-outline' as const, label: 'Mitra Affiliate & Referral Earnings', route: 'MitraDashboard' as const },
+        { icon: 'wallet-outline' as const, label: 'Mitra Affiliate Program', route: 'MitraDashboard' as const },
       ],
     },
     {
@@ -208,6 +239,34 @@ export default function AccountScreen() {
         </View>
       )}
 
+      {!!firebaseUser?.email && !firebaseUser.emailVerified && (
+        <View style={styles.verificationBanner}>
+          <Text style={styles.verificationTitle}>Verify your email</Text>
+          <Text style={styles.verificationSubtitle}>
+            We will send the verification link to {firebaseUser.email}.
+          </Text>
+          {verificationMessage ? <Text style={styles.verificationMessage}>{verificationMessage}</Text> : null}
+          <View style={styles.verificationActions}>
+            <TouchableOpacity
+              style={styles.verificationButton}
+              onPress={() => void handleVerificationAction('resend')}
+              disabled={isVerificationPending}
+            >
+              {isVerificationPending
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.verificationButtonText}>Resend email</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.verificationRefreshButton}
+              onPress={() => void handleVerificationAction('refresh')}
+              disabled={isVerificationPending}
+            >
+              <Text style={styles.verificationRefreshText}>I've verified</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Profile Summary Card */}
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
@@ -217,6 +276,11 @@ export default function AccountScreen() {
           <Text style={styles.profileName}>{profile?.name || (isGuest ? 'Guest Shopper' : 'User')}</Text>
           <Text style={styles.profileEmail}>{profile?.email || (isGuest ? 'Guest session' : '')}</Text>
           {profile?.phone ? <Text style={styles.profilePhone}>{profile.phone}</Text> : null}
+          <View style={styles.tierPill}>
+            <Text style={styles.tierPillText}>
+              {profile?.referralTier ? `${profile.referralTier} Mitra Affiliate` : 'Mitra Affiliate'}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -439,6 +503,62 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
   },
+  verificationBanner: {
+    backgroundColor: '#fff8e7',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  verificationTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400e',
+  },
+  verificationSubtitle: {
+    fontSize: 12,
+    color: '#76501b',
+    marginTop: 4,
+  },
+  verificationMessage: {
+    fontSize: 12,
+    color: '#334155',
+    marginTop: 8,
+  },
+  verificationActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  verificationButton: {
+    minWidth: 110,
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: '#1d6ff2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  verificationButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  verificationRefreshButton: {
+    height: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d97706',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  verificationRefreshText: {
+    color: '#92400e',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   guestBannerLeft: {
     flex: 1,
     flexDirection: 'row',
@@ -507,6 +627,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748b',
     marginTop: 2,
+  },
+  tierPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: 6,
+  },
+  tierPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#334155',
   },
   profilePhone: {
     fontSize: 14,

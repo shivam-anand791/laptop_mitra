@@ -14,8 +14,16 @@ export class MailService implements OnModuleInit {
 
   constructor(@Optional() private readonly configService?: ConfigService) {}
 
-  onModuleInit() {
+  async onModuleInit() {
     this.initializeTransport();
+    if (this.activeProvider === 'smtp') {
+      try {
+        await this.smtpTransporter?.verify();
+        this.logger.log('[MailService:SMTP] SMTP connection verified.');
+      } catch (err: any) {
+        this.logger.error(`[MailService:SMTP] Connection verification failed: ${err?.message || err}`);
+      }
+    }
   }
 
   private getEnv(key: string): string | undefined {
@@ -58,17 +66,10 @@ export class MailService implements OnModuleInit {
       }
     }
 
-    if (smtpHost && smtpUser && smtpPass) {
+    if (mailDriver === 'smtp' && smtpHost && smtpUser && smtpPass) {
       try {
-        this.smtpTransporter = nodemailer.createTransport({
-          host: smtpHost,
-          port: smtpPort,
-          secure: smtpPort === 465,
-          auth: {
-            user: smtpUser,
-            pass: smtpPass,
-          },
-        });
+        this.smtpTransporter = this.createSmtpTransporter();
+        if (this.getEnv('SMTP_FROM')) this.defaultFrom = this.getEnv('SMTP_FROM')!;
         this.activeProvider = 'smtp';
         this.logger.log(`[MailService] Initialized with SMTP provider (${smtpHost}:${smtpPort}, Default From: "${this.defaultFrom}")`);
         return;
@@ -88,12 +89,72 @@ export class MailService implements OnModuleInit {
     );
   }
 
+  private createSmtpTransporter(): nodemailer.Transporter {
+    const host = this.getEnv('SMTP_HOST');
+    const user = this.getEnv('SMTP_USER');
+    const pass = this.getEnv('SMTP_PASS');
+    const port = Number(this.getEnv('SMTP_PORT') || 587);
+    const secureValue = this.getEnv('SMTP_SECURE')?.toLowerCase();
+
+    if (!host || !user || !pass || !Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error('SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS must be configured.');
+    }
+    if (secureValue && secureValue !== 'true' && secureValue !== 'false') {
+      throw new Error('SMTP_SECURE must be true or false.');
+    }
+
+    return nodemailer.createTransport({
+      host,
+      port,
+      secure: secureValue ? secureValue === 'true' : port === 465,
+      auth: { user, pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 20000,
+    });
+  }
+
   getActiveProvider(): 'resend' | 'smtp' | 'stdout' {
     return this.activeProvider;
   }
 
   getDefaultFrom(): string {
     return this.defaultFrom;
+  }
+
+  async verifySmtpConnection(): Promise<void> {
+    if (this.getEnv('MAIL_DRIVER') !== 'smtp' || this.getEnv('ALLOW_REAL_EMAILS') !== 'true') {
+      throw new Error('SMTP delivery is not enabled. Set MAIL_DRIVER=smtp and ALLOW_REAL_EMAILS=true.');
+    }
+    if (!this.smtpTransporter) this.smtpTransporter = this.createSmtpTransporter();
+    await this.smtpTransporter.verify();
+  }
+
+  async sendSmtpMail(options: SendMailOptions): Promise<MailSendResult> {
+    if (this.getEnv('MAIL_DRIVER') !== 'smtp' || this.getEnv('ALLOW_REAL_EMAILS') !== 'true') {
+      return { provider: 'smtp', success: false, error: 'SMTP delivery is not enabled.' };
+    }
+
+    const from = this.getEnv('SMTP_FROM');
+    if (!from) {
+      return { provider: 'smtp', success: false, error: 'SMTP_FROM is not configured.' };
+    }
+
+    try {
+      if (!this.smtpTransporter) this.smtpTransporter = this.createSmtpTransporter();
+      const info = await this.smtpTransporter.sendMail({
+        from: options.from || from,
+        to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
+        subject: options.subject,
+        text: options.text || '',
+        html: options.html,
+      });
+      this.logger.log(`[MailService:SMTP] Email sent (MessageId: ${info.messageId})`);
+      return { provider: 'smtp', messageId: info.messageId, success: true };
+    } catch (err: any) {
+      this.logger.error(`[MailService:SMTP] Delivery failed: ${err?.message || err}`);
+      return { provider: 'smtp', success: false, error: err?.message || String(err) };
+    }
   }
 
   async sendMail(options: SendMailOptions): Promise<MailSendResult> {

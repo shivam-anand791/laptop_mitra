@@ -16,7 +16,7 @@ type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginScreen() {
   const navigation = useNavigation<AuthNavigationProp>();
-  const { login: authLogin, guestLogin: authGuestLogin } = useAuth();
+  const { login: authLogin, guestLogin: authGuestLogin, sendVerificationEmail } = useAuth();
   const [isPending, setIsPending] = useState(false);
   const [isGuestPending, setIsGuestPending] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -39,6 +39,31 @@ export default function LoginScreen() {
     setIsPending(true);
     try {
       await authLogin(data.email, data.password);
+      const currentUser = (await import('../../firebase/firebase')).getFirebaseAuth().currentUser;
+      if (currentUser && !currentUser.emailVerified) {
+        Alert.alert(
+          'Verify your email',
+          'Your account email (' + (currentUser.email || data.email) + ') is not verified yet.',
+          [
+            { text: 'Later', style: 'cancel' },
+            {
+              text: 'Resend email',
+              onPress: () => {
+                void sendVerificationEmail().then(
+                  (result) => Alert.alert(
+                    result.alreadyVerified ? 'Email verified' : 'Email sent',
+                    result.alreadyVerified ? 'Your email is already verified.' : 'Check your inbox for the new link.',
+                  ),
+                  (error: unknown) => Alert.alert(
+                    'Could not send email',
+                    error instanceof Error ? error.message : 'Please try again later.',
+                  ),
+                );
+              },
+            },
+          ],
+        );
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Invalid credentials. Please try again.';
       setAuthError(message);

@@ -31,6 +31,8 @@ interface AuthContextType {
   guestLogin: () => Promise<User>;
   register: (data: { name: string; email: string; password: string; referralCode?: string; phone?: string }) => Promise<User>;
   retrySync: (data?: { name?: string; phone?: string; referralCode?: string }) => Promise<User>;
+  sendVerificationEmail: () => Promise<{ sent: boolean; alreadyVerified: boolean }>;
+  refreshAuthenticatedUser: () => Promise<User>;
   cancelSyncAndSignOut: () => Promise<void>;
   clearSyncError: () => void;
   logout: () => Promise<void>;
@@ -277,6 +279,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return await syncCurrentUser(data);
   };
 
+  const sendVerificationEmail = useCallback(async () => await api.sendVerificationEmail(), []);
+
+  const refreshAuthenticatedUser = useCallback(async (): Promise<User> => {
+    const current = auth.currentUser;
+    if (!current) throw new Error('Sign in before refreshing your account.');
+    await current.reload();
+    await current.getIdToken(true);
+    return await syncCurrentUser();
+  }, [syncCurrentUser]);
+
   const cancelSyncAndSignOut = async (): Promise<void> => {
     try {
       await signOut(auth);
@@ -315,6 +327,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         guestLogin,
         register,
         retrySync,
+        sendVerificationEmail,
+        refreshAuthenticatedUser,
         cancelSyncAndSignOut,
         clearSyncError,
         logout,

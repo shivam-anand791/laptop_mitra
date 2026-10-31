@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { App, cert, getApps, initializeApp } from 'firebase-admin/app';
-import { Auth, DecodedIdToken, getAuth } from 'firebase-admin/auth';
+import { getAuth, type ActionCodeSettings, type Auth, type DecodedIdToken, type UserRecord } from 'firebase-admin/auth';
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
@@ -93,6 +93,14 @@ export class FirebaseService {
 
   getProjectId(): string {
     return this.projectId;
+  }
+
+  getUserRecord(uid: string): Promise<UserRecord> {
+    return this.auth.getUser(uid);
+  }
+
+  generateEmailVerificationLink(email: string, settings: ActionCodeSettings): Promise<string> {
+    return this.auth.generateEmailVerificationLink(email, settings);
   }
 
   createCustomToken(uid: string, developerClaims?: object): Promise<string> {

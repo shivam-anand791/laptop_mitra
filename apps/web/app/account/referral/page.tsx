@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useId } from 'react';
 import { api } from '@/lib/api';
+import { formatIndianRupees } from '@/lib/account-helpers';
 import {
   Share2,
   Copy,
@@ -135,7 +136,7 @@ export default function ReferralPage() {
     : `https://laptopmitra.com/register?ref=${stats?.referralCode || 'MITRA'}`;
 
   const formatCurrency = (amt: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amt);
+    return formatIndianRupees(amt);
   };
 
   const handleSavePayoutDetails = async (e: React.FormEvent) => {
@@ -245,7 +246,7 @@ export default function ReferralPage() {
       {/* Header & Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mitra Referral & Affiliate Program</h1>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mitra Affiliate Program</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             Earn rewards by inviting friends, manage your wallet, and request bank payouts.
           </p>
@@ -309,10 +310,10 @@ export default function ReferralPage() {
           {activeTab === 'overview' && (
             <div className="space-y-6">
               {/* Referral Banner & Code Share */}
-              <div className="p-6 sm:p-8 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white shadow-xl relative overflow-hidden">
+              <div className="p-6 sm:p-8 rounded-2xl bg-blue-600 text-white shadow-xs relative overflow-hidden">
                 <div className="relative z-10 max-w-2xl">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/20 text-white backdrop-blur-md mb-3">
-                    <Award className="w-3.5 h-3.5" /> Mitra Tier: {stats.referralTier || 'BRONZE'} Partner
+                    <Award className="w-3.5 h-3.5" /> Mitra Affiliate Tier: {stats.referralTier || 'BRONZE'}
                   </span>
                   <h2 className="text-xl sm:text-2xl font-black leading-tight">
                     Invite Friends. They Get ₹500 Off, You Earn ₹500 per Laptop!

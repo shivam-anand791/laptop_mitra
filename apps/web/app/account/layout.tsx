@@ -1,179 +1,278 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { api } from '@/lib/api';
 import {
-  LayoutDashboard,
+  Package,
   User,
   MapPin,
-  Package,
-  Heart,
-  CreditCard,
-  ShieldCheck,
-  Share2,
-  Bell,
   Lock,
-  LogOut,
-  Sparkles,
-  ArrowRight,
-  CheckCircle2,
+  Bell,
+  Share2,
+  Heart,
   LifeBuoy,
+  RotateCcw,
   HelpCircle,
+  LogOut,
+  ChevronRight,
+  ShieldCheck,
+  Menu,
+  X,
 } from 'lucide-react';
 
-const NAV_ITEMS = [
-  { href: '/account', label: 'Dashboard & Overview', icon: LayoutDashboard },
-  { href: '/account/profile', label: 'My Profile', icon: User },
-  { href: '/account/addresses', label: 'Manage Addresses', icon: MapPin },
-  { href: '/account/orders', label: 'Orders & Returns', icon: Package },
-  { href: '/account/tickets', label: 'My Support Tickets', icon: LifeBuoy },
-  { href: '/help', label: 'Help & Support Hub', icon: HelpCircle },
-  { href: '/account/wishlist', label: 'Wishlist', icon: Heart },
-  { href: '/account/payments', label: 'Payment History', icon: CreditCard },
-  { href: '/account/warranty-support', label: 'Warranty Claims', icon: ShieldCheck },
-  { href: '/account/referral', label: 'Mitra Partner & Rewards', icon: Share2 },
-  { href: '/account/notifications', label: 'Notification Settings', icon: Bell },
-  { href: '/account/security', label: 'Security & Privacy', icon: Lock },
-];
+interface NavGroup {
+  title: string;
+  items: Array<{
+    href: string;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badgeCount?: number;
+  }>;
+}
 
 export default function AccountLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isAuthenticated, isGuest, logout } = useAuth();
-  const [showUpgradeModal, setShowUpgradeModal] = React.useState(false);
+  const { user, isAuthenticated, isGuest, isLoading, logout } = useAuth();
+  const [unreadTicketsCount, setUnreadTicketsCount] = useState<number>(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Route guard with ?next= query parameter
+  useEffect(() => {
+    if (!isLoading && !user) {
+      const current = pathname || '/account/orders';
+      router.push(`/login?next=${encodeURIComponent(current)}`);
+    }
+  }, [isLoading, user, pathname, router]);
+
+  // Support tickets unread count
+  useEffect(() => {
+    let isMounted = true;
+    async function loadUnreadCount() {
+      if (!user) return;
+      try {
+        const tickets = await api.getTickets();
+        if (isMounted && Array.isArray(tickets)) {
+          const unread = tickets.filter((t: any) => t.hasUnread).length;
+          setUnreadTicketsCount(unread);
+        }
+      } catch {
+        // Fallback silently if offline
+      }
+    }
+    loadUnreadCount();
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   const handleLogout = async () => {
     await logout();
     router.push('/');
   };
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* Top Breadcrumb & Hero */}
-      <div className="bg-slate-900 border-b border-slate-800 text-white py-8 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-400 mb-1">
-              <Link href="/" className="hover:text-white transition">Home</Link>
-              <span>/</span>
-              <span className="text-blue-400">My Account</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
-              Account Hub
-              <span className="text-xs bg-blue-500/20 text-blue-300 font-semibold px-2.5 py-1 rounded-full border border-blue-500/30">
-                {isGuest ? 'Guest Session' : 'Verified Member'}
-              </span>
-            </h1>
-            <p className="text-sm text-slate-400 mt-1">
-              Manage your orders, certified warranty claims, addresses, and Mitra affiliate earnings.
-            </p>
-          </div>
+  const navGroups: NavGroup[] = [
+    {
+      title: 'Orders',
+      items: [
+        { href: '/account/orders', label: 'My Orders', icon: Package },
+      ],
+    },
+    {
+      title: 'Account Settings',
+      items: [
+        { href: '/account/profile', label: 'Profile Information', icon: User },
+        { href: '/account/addresses', label: 'Manage Addresses', icon: MapPin },
+        { href: '/account/security', label: 'Security & Password', icon: Lock },
+        { href: '/account/notifications', label: 'Notification Settings', icon: Bell },
+      ],
+    },
+    {
+      title: 'Rewards',
+      items: [
+        { href: '/account/referral', label: 'Mitra Affiliate Program', icon: Share2 },
+      ],
+    },
+    {
+      title: 'Saved',
+      items: [
+        { href: '/account/wishlist', label: 'Wishlist', icon: Heart },
+      ],
+    },
+    {
+      title: 'Help and Support',
+      items: [
+        {
+          href: '/account/tickets',
+          label: 'My Support Tickets',
+          icon: LifeBuoy,
+          badgeCount: unreadTicketsCount,
+        },
+        { href: '/account/returns', label: 'Returns & Replacements', icon: RotateCcw },
+        { href: '/help', label: 'Help Center', icon: HelpCircle },
+      ],
+    },
+  ];
 
-          {isGuest && (
-            <button
-              onClick={() => router.push('/register')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-blue-500/25 transition transform hover:-translate-y-0.5"
-            >
-              <Sparkles className="w-4 h-4" />
-              Save Account & Orders
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          )}
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-6 text-slate-500 text-xs font-semibold">
+        Loading your account...
+      </div>
+    );
+  }
+
+  const avatarInitial = user?.name
+    ? user.name.charAt(0).toUpperCase()
+    : user?.email
+    ? user.email.charAt(0).toUpperCase()
+    : 'U';
+
+  const tierLabel = user?.referralTier ? `${user.referralTier} Mitra Affiliate` : 'Mitra Affiliate';
+
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+      {/* ── Compact Sub-Header / Breadcrumbs (No giant gradient!) ── */}
+      <div className="bg-white border-b border-[#E2E8F0] px-4 sm:px-6 lg:px-8 py-3.5">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <nav className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+            <Link href="/" className="hover:text-slate-900 transition">
+              Home
+            </Link>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            <Link href="/account/orders" className="hover:text-slate-900 transition">
+              My Account
+            </Link>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-[#2563EB]">
+              {pathname === '/account/orders'
+                ? 'Orders'
+                : pathname === '/account/profile'
+                ? 'Profile'
+                : pathname === '/account/addresses'
+                ? 'Addresses'
+                : pathname === '/account/referral'
+                ? 'Mitra Affiliate Program'
+                : pathname === '/account/wishlist'
+                ? 'Wishlist'
+                : pathname === '/account/tickets'
+                ? 'Support Tickets'
+                : pathname === '/account/returns'
+                ? 'Returns & Replacements'
+                : 'Account Hub'}
+            </span>
+          </nav>
+
+          {/* Mobile menu toggle button */}
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="lg:hidden p-2 text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition"
+            aria-label="Toggle Account Navigation Menu"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
       </div>
 
-      {/* Guest Warning Banner if in Guest Mode */}
-      {isGuest && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-3 text-amber-900 text-xs sm:text-sm font-medium">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-600 flex-shrink-0" />
-              <span>You are browsing as a guest. Create an account to permanently retain your purchase history, GST invoices, and addresses.</span>
-            </div>
-            <Link href="/register" className="text-amber-700 font-bold hover:underline whitespace-nowrap">
-              Link Account →
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* Main Layout Container */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Sidebar Navigation */}
-          <aside className="lg:col-span-1 space-y-6">
-            {/* User Profile Card */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xl shadow-md shadow-blue-600/20">
-                  {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+      {/* ── Main Layout Body ── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:gap-8 items-start">
+          {/* ── Left Sidebar Shell ── */}
+          <aside
+            className={`lg:col-span-1 space-y-4 ${
+              mobileMenuOpen ? 'block' : 'hidden lg:block'
+            }`}
+          >
+            {/* Compact Profile Header (No gradient) */}
+            <div className="bg-white rounded-2xl p-4 border border-[#E2E8F0] shadow-2xs">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-[#2563EB] text-white flex items-center justify-center font-bold text-lg flex-shrink-0">
+                  {avatarInitial}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-slate-900 truncate">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-bold text-[#111827] truncate">
                     {user?.name || (isGuest ? 'Guest Customer' : 'Valued Customer')}
                   </h3>
-                  <p className="text-xs text-slate-500 truncate">{user?.email || 'guest@laptopmitra.local'}</p>
-                  <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-semibold mt-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Certified Buyer</span>
+                  <p className="text-xs text-slate-500 truncate">{user?.email || user?.phone || 'Guest session'}</p>
+                  <div className="mt-1">
+                    <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                      {tierLabel}
+                    </span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Navigation Menu */}
-            <nav className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-2 space-y-1">
-              {NAV_ITEMS.map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition ${
-                      isActive
-                        ? 'bg-blue-50 text-blue-600 font-bold shadow-sm'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
-                    <span className="flex-1">{item.label}</span>
-                  </Link>
-                );
-              })}
+            {/* Grouped Left Account Menu */}
+            <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xs divide-y divide-slate-100 overflow-hidden">
+              {navGroups.map((group) => (
+                <div key={group.title} className="p-2 space-y-0.5">
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {group.title}
+                  </div>
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                          isActive
+                            ? 'bg-[#EFF6FF] text-[#2563EB] font-bold'
+                            : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 truncate">
+                          <Icon
+                            className={`w-4 h-4 flex-shrink-0 ${
+                              isActive ? 'text-[#2563EB]' : 'text-slate-400'
+                            }`}
+                          />
+                          <span className="truncate">{item.label}</span>
+                        </div>
+                        {item.badgeCount && item.badgeCount > 0 ? (
+                          <span className="ml-2 px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[10px] font-bold">
+                            {item.badgeCount}
+                          </span>
+                        ) : null}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ))}
 
-              <div className="pt-2 mt-2 border-t border-slate-100">
+              {/* Sign Out Action */}
+              <div className="p-2">
                 <button
+                  type="button"
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-rose-600 hover:bg-rose-50 transition text-left"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 transition text-left cursor-pointer"
                 >
-                  <LogOut className="w-4 h-4 text-rose-500" />
+                  <LogOut className="w-4 h-4 flex-shrink-0 text-rose-500" />
                   <span>Sign Out</span>
                 </button>
               </div>
-            </nav>
+            </div>
 
-            {/* Support Quick Contact Box */}
-            <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-5 border border-slate-700 shadow-md">
-              <h4 className="font-bold text-sm text-white flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                32-Point Assured Care
-              </h4>
-              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                Need on-site diagnostics or priority warranty claim assistance?
+            {/* Trust Assurance Badge */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-600 space-y-1.5">
+              <div className="flex items-center gap-2 font-bold text-slate-800">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>32-Point Assured Quality</span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                6-Month standard hardware warranty, verified battery health, and dedicated support.
               </p>
-              <Link
-                href="/account/warranty-support"
-                className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-blue-400 hover:text-blue-300"
-              >
-                Raise Support Ticket →
-              </Link>
             </div>
           </aside>
 
-          {/* Main Content Area */}
+          {/* ── Main Working Canvas ── */}
           <main className="lg:col-span-3 min-w-0">
             {children}
           </main>

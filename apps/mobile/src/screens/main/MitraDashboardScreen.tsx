@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useProfile } from '../../hooks/useApi';
+import { formatIndianRupees } from '../../utils/account-helpers';
 
 const TIER_CONFIG = {
   BASIC: { label: 'Basic', color: '#64748b', bgColor: '#f1f5f9', icon: 'star-outline' as const },
@@ -72,7 +73,7 @@ export default function MitraDashboardScreen() {
       <View style={[styles.tierCard, { backgroundColor: tierConfig.bgColor }]}>
         <Ionicons name={tierConfig.icon} size={28} color={tierConfig.color} />
         <View style={styles.tierInfo}>
-          <Text style={[styles.tierLabel, { color: tierConfig.color }]}>Mitra Tier</Text>
+          <Text style={[styles.tierLabel, { color: tierConfig.color }]}>Mitra Affiliate Tier</Text>
           <Text style={[styles.tierName, { color: tierConfig.color }]}>{tierConfig.label}</Text>
         </View>
       </View>
@@ -80,7 +81,7 @@ export default function MitraDashboardScreen() {
       {/* Stats Grid */}
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>₹{earnings.toLocaleString('en-IN')}</Text>
+          <Text style={styles.statValue}>{formatIndianRupees(earnings)}</Text>
           <Text style={styles.statLabel}>Total Earned</Text>
         </View>
         <View style={styles.statCard}>
@@ -116,7 +117,7 @@ export default function MitraDashboardScreen() {
           </View>
           <View style={styles.howContent}>
             <Text style={styles.howItemTitle}>Earn Rewards</Text>
-            <Text style={styles.howItemDesc}>Get commission on every purchase your referrals make</Text>
+            <Text style={styles.howItemDesc}>Earn ₹500 per laptop purchased. Commissions mature after the 7-day return window.</Text>
           </View>
         </View>
       </View>

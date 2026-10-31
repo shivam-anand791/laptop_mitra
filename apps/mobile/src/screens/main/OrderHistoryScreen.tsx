@@ -5,23 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useOrders } from '../../hooks/useApi';
 import { Order } from '@laptopmitra/types';
 import { MainStackNavigationProp } from '../../navigation/types';
-
-const STATUS_COLORS: Record<string, { bg: string; text: string; icon: string }> = {
-  PENDING: { bg: '#fef3c7', text: '#92400e', icon: 'time-outline' },
-  CONFIRMED: { bg: '#dbeafe', text: '#1e40af', icon: 'checkmark-circle-outline' },
-  PROCESSING: { bg: '#ede9fe', text: '#5b21b6', icon: 'cog-outline' },
-  SHIPPING: { bg: '#e0e7ff', text: '#3730a3', icon: 'car-outline' },
-  DELIVERED: { bg: '#dcfce7', text: '#166534', icon: 'checkmark-done-circle-outline' },
-  CANCELLED: { bg: '#fee2e2', text: '#991b1b', icon: 'close-circle-outline' },
-  REFUNDED: { bg: '#fef3c7', text: '#92400e', icon: 'return-down-back-outline' },
-};
-
-const getDefaultStatus = () => ({ bg: '#f1f5f9', text: '#64748b', icon: 'help-circle-outline' });
-
-const formatPrice = (price: number | string) => {
-  const num = typeof price === 'string' ? parseFloat(price) : price;
-  return `₹${num.toLocaleString('en-IN')}`;
-};
+import { getMobileStatusLabel, formatIndianRupees, getDeliveryEstimateText } from '../../utils/account-helpers';
 
 const formatDate = (dateStr: string) => {
   const date = new Date(dateStr);
@@ -39,8 +23,10 @@ export default function OrderHistoryScreen() {
   );
 
   const renderOrder = ({ item }: { item: Order }) => {
-    const status = STATUS_COLORS[item.status] ?? getDefaultStatus();
+    const statusCfg = getMobileStatusLabel(item.status, item.paymentStatus, item.returnStatus);
     const itemCount = item.items?.length ?? 0;
+    const firstItem = item.items?.[0];
+    const estimateText = getDeliveryEstimateText((item as any).estimatedDelivery);
 
     return (
       <TouchableOpacity
@@ -53,16 +39,33 @@ export default function OrderHistoryScreen() {
             <Text style={styles.orderNumber}>#{item.orderNumber}</Text>
             <Text style={styles.orderDate}>{formatDate(item.createdAt)}</Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-            <Ionicons name={status.icon as any} size={12} color={status.text} />
-            <Text style={[styles.statusBadgeText, { color: status.text }]}>{item.status}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: statusCfg.bg }]}>
+            <Ionicons name={statusCfg.icon as any} size={12} color={statusCfg.text} />
+            <Text style={[styles.statusBadgeText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
           </View>
         </View>
+
+        {firstItem && (
+          <View style={styles.itemSummary}>
+            <Text style={styles.itemTitle} numberOfLines={1}>
+              {firstItem.product?.name || firstItem.variantName || 'Laptop Item'}
+            </Text>
+            {itemCount > 1 && (
+              <Text style={styles.itemExtra}>+{itemCount - 1} more item{itemCount - 1 !== 1 ? 's' : ''}</Text>
+            )}
+          </View>
+        )}
+
+        <View style={styles.estimateRow}>
+          <Ionicons name="calendar-outline" size={13} color="#64748b" />
+          <Text style={styles.estimateText}>{estimateText}</Text>
+        </View>
+
         <View style={styles.orderFooter}>
           <Text style={styles.orderItems}>
             {itemCount} item{itemCount !== 1 ? 's' : ''}
           </Text>
-          <Text style={styles.orderTotal}>{formatPrice(item.finalAmount)}</Text>
+          <Text style={styles.orderTotal}>{formatIndianRupees(item.finalAmount)}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -121,13 +124,14 @@ const styles = StyleSheet.create({
   },
   orderCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#f1f5f9',
+    borderColor: '#e2e8f0',
+    gap: 10,
     shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
@@ -137,12 +141,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   orderNumber: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#0f172a',
   },
   orderDate: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#64748b',
     marginTop: 2,
   },
@@ -150,40 +154,71 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 4,
-    borderRadius: 999,
+    borderRadius: 8,
   },
   statusBadgeText: {
     fontSize: 12,
+    fontWeight: '700',
+  },
+  itemSummary: {
+    backgroundColor: '#f8fafc',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  itemTitle: {
+    fontSize: 13,
     fontWeight: '600',
+    color: '#1e293b',
+  },
+  itemExtra: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  estimateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  estimateText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
   },
   orderFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 12,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9',
   },
   orderItems: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748b',
+    fontWeight: '500',
   },
   orderTotal: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#0f172a',
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#64748b',
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0f172a',
     marginTop: 8,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: '#94a3b8',
+    fontSize: 13,
+    color: '#64748b',
   },
 });

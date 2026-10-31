@@ -186,6 +186,16 @@ export class SupportController {
     return this.supportService.createReturnRequest(user.id, dto);
   }
 
+  @Get('returns')
+  @ApiBearerAuth()
+  @UseGuards(RolesGuard)
+  @Roles('CUSTOMER', 'SUPPORT', 'ADMIN')
+  @ApiOperation({ summary: 'Get all return requests for current user' })
+  @ApiResponse({ status: 200, description: 'List of returns' })
+  async getReturns(@GetUser() user: any) {
+    return this.supportService.getUserReturns(user.id);
+  }
+
   @Get('returns/:id')
   @ApiBearerAuth()
   @UseGuards(RolesGuard)

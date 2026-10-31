@@ -54,6 +54,13 @@ export class OrderController {
     return this.orderService.findByUser(user.id, status);
   }
 
+  @Get('counts')
+  @ApiOperation({ summary: 'Get order counts grouped by status tabs for authenticated user' })
+  @ApiResponse({ status: 200 })
+  async getOrderCounts(@GetUser() user: any) {
+    return this.orderService.getOrderCountsByUser(user.id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get order by ID (ownership checked)' })
   @ApiParam({ name: 'id', type: String })
@@ -74,7 +81,12 @@ export class OrderController {
     @Body() dto: UpdateOrderStatusDto | any,
   ) {
     const status = typeof dto === 'string' ? dto : dto?.status;
-    return this.orderService.updateStatus(id, status, user?.id, user?.role);
+    const courierData = typeof dto === 'object' && (dto.courierName || dto.trackingNumber)
+      ? { courierName: dto.courierName, trackingNumber: dto.trackingNumber }
+      : undefined;
+    return courierData !== undefined
+      ? this.orderService.updateStatus(id, status, user?.id, user?.role, courierData)
+      : this.orderService.updateStatus(id, status, user?.id, user?.role);
   }
 
   @Patch(':id/cancel')

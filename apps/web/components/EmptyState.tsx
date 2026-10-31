@@ -75,7 +75,7 @@ const configs: Record<EmptyVariant, {
     title: 'No referrals yet',
     description: 'Share your unique referral code with friends. They get ₹500 off, you earn 10% commission on every purchase!',
     defaultActionLabel: 'Share Your Code',
-    defaultActionHref: '/profile#referral',
+    defaultActionHref: '/account/referral',
   },
 };
 

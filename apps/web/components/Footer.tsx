@@ -145,13 +145,13 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/profile#orders" className="hover:text-white transition-colors">
+                <Link href="/account/orders" className="hover:text-white transition-colors">
                   Track My Order
                 </Link>
               </li>
               <li>
-                <Link href="/profile#referral" className="hover:text-white transition-colors">
-                  Mitra Partner Program (10% Cash)
+                <Link href="/account/referral" className="hover:text-white transition-colors">
+                  Mitra Affiliate Program
                 </Link>
               </li>
               <li>

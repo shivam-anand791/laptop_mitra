@@ -1,19 +1,20 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { SkeletonList, ErrorState } from '@/components/account';
+import { getTicketStatusConfig } from '@/lib/account-helpers';
 import {
   LifeBuoy,
   Plus,
   MessageSquare,
   Clock,
-  CheckCircle2,
-  AlertCircle,
   ChevronRight,
-  Filter,
-  RefreshCw,
+  Search,
+  X,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 
 interface TicketListItem {
@@ -34,17 +35,30 @@ interface TicketListItem {
   updatedAt: string;
 }
 
+type TicketFilterTab = 'ALL' | 'ACTIVE' | 'RESOLVED';
+
+const TABS: { id: TicketFilterTab; label: string }[] = [
+  { id: 'ALL', label: 'All Tickets' },
+  { id: 'ACTIVE', label: 'Active Inquiries' },
+  { id: 'RESOLVED', label: 'Resolved' },
+];
+
 export default function MyTicketsPage() {
   const [tickets, setTickets] = useState<TicketListItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterTab, setFilterTab] = useState<'ALL' | 'ACTIVE' | 'RESOLVED'>('ALL');
+  const [error, setError] = useState<string | null>(null);
+
+  const [selectedTab, setSelectedTab] = useState<TicketFilterTab>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchTickets = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await api.getTickets();
       setTickets((data as any) || []);
-    } catch {
+    } catch (err: any) {
+      setError(err?.message || 'Unable to load support tickets. Please check your connection.');
       setTickets([]);
     } finally {
       setLoading(false);
@@ -55,189 +69,273 @@ export default function MyTicketsPage() {
     fetchTickets();
   }, []);
 
-  const filteredTickets = tickets.filter((t) => {
-    if (filterTab === 'ACTIVE') {
-      return t.status !== 'RESOLVED' && t.status !== 'CLOSED';
-    }
-    if (filterTab === 'RESOLVED') {
-      return t.status === 'RESOLVED' || t.status === 'CLOSED';
-    }
-    return true;
-  });
-  const unreadCount = tickets.filter((ticket) => ticket.hasUnread).length;
+  const counts = useMemo(() => {
+    const c: Record<TicketFilterTab, number> = {
+      ALL: tickets.length,
+      ACTIVE: 0,
+      RESOLVED: 0,
+    };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'NEW':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'OPEN':
-        return 'bg-amber-100 text-amber-800 border-amber-200';
-      case 'WAITING_ON_CUSTOMER':
-        return 'bg-purple-100 text-purple-800 border-purple-200';
-      case 'IN_PROGRESS':
-        return 'bg-indigo-100 text-indigo-800 border-indigo-200';
-      case 'RESOLVED':
-        return 'bg-emerald-100 text-emerald-800 border-emerald-200';
-      case 'REOPENED':
-        return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'CLOSED':
-        return 'bg-slate-100 text-slate-800 border-slate-200';
-      default:
-        return 'bg-slate-100 text-slate-800 border-slate-200';
+    for (const t of tickets) {
+      const s = (t.status || '').toUpperCase();
+      if (s === 'RESOLVED' || s === 'CLOSED') {
+        c.RESOLVED += 1;
+      } else {
+        c.ACTIVE += 1;
+      }
     }
-  };
+
+    return c;
+  }, [tickets]);
+
+  const unreadCount = useMemo(() => {
+    return tickets.filter((t) => t.hasUnread).length;
+  }, [tickets]);
+
+  const filteredTickets = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+
+    return tickets.filter((t) => {
+      const s = (t.status || '').toUpperCase();
+
+      // 1. Tab filter
+      if (selectedTab === 'ACTIVE' && (s === 'RESOLVED' || s === 'CLOSED')) return false;
+      if (selectedTab === 'RESOLVED' && !(s === 'RESOLVED' || s === 'CLOSED')) return false;
+
+      // 2. Search query
+      if (q) {
+        const num = (t.ticketNumber || '').toLowerCase();
+        const subj = (t.subject || '').toLowerCase();
+        const cat = (t.category || '').toLowerCase();
+        const ord = (t.orderId || '').toLowerCase();
+        if (!num.includes(q) && !subj.includes(q) && !cat.includes(q) && !ord.includes(q)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [tickets, selectedTab, searchQuery]);
 
   return (
     <div className="space-y-6">
-      {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <LifeBuoy className="w-5 h-5 text-blue-600" />
-            My Support Tickets
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Track inquiries, warranty claims, and conversation threads with our support team.
-            {unreadCount > 0 && (
-              <span className="ml-2 font-semibold text-blue-700" role="status">
-                {unreadCount} unread {unreadCount === 1 ? 'update' : 'updates'}
-              </span>
-            )}
-          </p>
+      {/* Header Container */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7 shadow-2xs space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+              <LifeBuoy className="w-5 h-5 text-blue-600" />
+              Customer Support &amp; Care
+            </h1>
+            <p className="text-xs text-slate-500 mt-1">
+              Track technical diagnostic tickets, warranty claims, and staff conversation threads.
+              {unreadCount > 0 && (
+                <span className="ml-2 font-semibold text-blue-600 inline-flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                  {unreadCount} unread {unreadCount === 1 ? 'update' : 'updates'}
+                </span>
+              )}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5 self-start md:self-center">
+            <button
+              type="button"
+              onClick={fetchTickets}
+              disabled={loading}
+              className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl transition cursor-pointer"
+              title="Refresh tickets"
+              aria-label="Refresh tickets"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
+            </button>
+
+            <Link
+              href="/help/guided-flow"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shadow-xs cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> Raise Ticket
+            </Link>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={fetchTickets}
-            className="p-2 bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition shadow-xs"
-            title="Refresh list"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
-          </button>
+        {/* Filter Bar: Search and Tabs */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            {TABS.map((tab) => {
+              const isSelected = selectedTab === tab.id;
+              const count = counts[tab.id];
+
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setSelectedTab(tab.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition whitespace-nowrap inline-flex items-center gap-1.5 cursor-pointer ${
+                    isSelected
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 bg-slate-50 border border-slate-200/60'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      isSelected
+                        ? 'bg-slate-800 text-slate-200'
+                        : 'bg-slate-200/80 text-slate-600'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search bar */}
+          <div className="relative min-w-[240px]">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by ticket # or subject..."
+              className="w-full pl-8 pr-8 py-1.5 rounded-xl border border-slate-200 text-xs focus:border-blue-600 outline-none transition bg-slate-50/50 hover:bg-white"
+              aria-label="Search tickets"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5"
+                aria-label="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main List */}
+      {loading ? (
+        <SkeletonList count={3} />
+      ) : error ? (
+        <ErrorState
+          title="Unable to load tickets"
+          message={error}
+          onRetry={fetchTickets}
+        />
+      ) : tickets.length === 0 ? (
+        /* Empty State: Zero tickets */
+        <div className="text-center py-16 px-4 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 mx-auto">
+            <MessageSquare className="w-7 h-7" />
+          </div>
+          <div className="space-y-1 max-w-sm mx-auto">
+            <h3 className="text-base font-bold text-slate-900">No Support Tickets</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              You haven&apos;t raised any support tickets or warranty claims yet. If you need hardware assistance, our certified engineers are here to help.
+            </p>
+          </div>
           <Link
             href="/help/guided-flow"
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm shadow-blue-500/20"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs"
           >
-            <Plus className="w-4 h-4" />
-            Raise New Ticket
+            <Plus className="w-4 h-4" /> Start Guided Help Flow
           </Link>
-        </div>
-      </div>
-
-      {/* ── Filter Tabs ── */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-        <button
-          onClick={() => setFilterTab('ALL')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-            filterTab === 'ALL'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          All Tickets ({tickets.length})
-        </button>
-        <button
-          onClick={() => setFilterTab('ACTIVE')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-            filterTab === 'ACTIVE'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          Active ({tickets.filter((t) => t.status !== 'RESOLVED' && t.status !== 'CLOSED').length})
-        </button>
-        <button
-          onClick={() => setFilterTab('RESOLVED')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-            filterTab === 'RESOLVED'
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          Resolved ({tickets.filter((t) => t.status === 'RESOLVED' || t.status === 'CLOSED').length})
-        </button>
-      </div>
-
-      {/* ── Tickets List ── */}
-      {loading ? (
-        <div className="py-16 flex justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
         </div>
       ) : filteredTickets.length === 0 ? (
-        <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 shadow-sm">
-          <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+        /* Empty Filter State */
+        <div className="text-center py-14 px-4 bg-white rounded-2xl border border-dashed border-slate-300 shadow-2xs space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-500 mx-auto">
             <MessageSquare className="w-6 h-6" />
           </div>
-          <h3 className="font-bold text-slate-800 text-base mb-1">No Tickets Found</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto mb-6">
-            {filterTab === 'ALL'
-              ? 'You have not raised any support inquiries or warranty claims yet.'
-              : `No tickets matching filter '${filterTab.toLowerCase()}'.`}
-          </p>
-          <Link
-            href="/help/guided-flow"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+          <div className="space-y-1 max-w-sm mx-auto">
+            <h3 className="text-sm font-bold text-slate-900">No matching tickets</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              No tickets matched your search query or selected filter tab.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedTab('ALL');
+              setSearchQuery('');
+            }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition cursor-pointer"
           >
-            <Plus className="w-4 h-4" /> Start Guided Support Flow
-          </Link>
+            Clear Filters
+          </button>
         </div>
       ) : (
+        /* Rendered Ticket Cards */
         <div className="space-y-3">
-          {filteredTickets.map((t) => (
-            <Link
-              key={t.id}
-              href={`/account/tickets/${t.id}`}
-              className="block bg-white rounded-2xl p-5 border border-slate-200 hover:border-blue-400 hover:shadow-md transition group"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                    {t.ticketNumber}
-                  </span>
-                  <span
-                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${getStatusBadge(
-                      t.status,
-                    )}`}
-                  >
-                    {t.status.replace(/_/g, ' ')}
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    {t.category.replace(/_/g, ' ')}
-                  </span>
+          {filteredTickets.map((t) => {
+            const statusConfig = getTicketStatusConfig(t.status);
+            const dateStr = t.updatedAt || t.createdAt
+              ? new Date(t.updatedAt || t.createdAt).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })
+              : '';
+
+            return (
+              <Link
+                key={t.id}
+                href={`/account/tickets/${t.id}`}
+                className="block bg-white rounded-2xl p-5 border border-slate-200 hover:border-slate-300 hover:shadow-sm transition group shadow-2xs space-y-3"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                      {t.ticketNumber}
+                    </span>
+                    <span
+                      className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border ${statusConfig.colorClasses}`}
+                    >
+                      {statusConfig.label}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      {t.category?.replace(/_/g, ' ') || 'General Support'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Updated {dateStr}</span>
+                    {t.hasUnread && (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse ml-1"
+                        title="New reply from support team"
+                      />
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>
-                    Updated {new Date(t.updatedAt || t.createdAt).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                    })}
-                  </span>
-                  {t.hasUnread && (
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" title="New staff reply" />
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 group-hover:text-blue-600 transition">
+                    {t.subject}
+                  </h3>
+                  {t.lastMessage && (
+                    <p className="text-xs text-slate-500 mt-1 line-clamp-1">
+                      {t.lastMessage}
+                    </p>
                   )}
                 </div>
-              </div>
 
-              <h3 className="font-bold text-sm text-slate-900 group-hover:text-blue-700 transition">
-                {t.subject}
-              </h3>
-
-              {t.lastMessage && (
-                <p className="text-xs text-slate-500 mt-1 line-clamp-1">
-                  {t.lastMessage}
-                </p>
-              )}
-
-              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                <span>{t.messageCount} {t.messageCount === 1 ? 'message' : 'messages'}</span>
-                <span className="text-blue-600 font-bold group-hover:underline flex items-center gap-1">
-                  View Thread <ChevronRight className="w-3.5 h-3.5" />
-                </span>
-              </div>
-            </Link>
-          ))}
+                <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                  <span>
+                    {t.messageCount} {t.messageCount === 1 ? 'message' : 'messages'}
+                  </span>
+                  <span className="text-blue-600 font-semibold group-hover:translate-x-0.5 transition inline-flex items-center gap-1">
+                    View Conversation <ChevronRight className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

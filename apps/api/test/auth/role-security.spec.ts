@@ -147,6 +147,29 @@ describe('Role Security & Privilege Escalation Prevention', () => {
       expect(updateData.firebaseUid).toBeUndefined();
     });
 
+    it('syncUser clears stale verification state when Firebase says the email is unverified', async () => {
+      const existingAdmin = {
+        id: 'user-1',
+        firebaseUid: 'real-uid',
+        email: 'user@example.com',
+        role: 'ADMIN',
+        status: 'ACTIVE',
+        isGuest: false,
+        emailVerified: new Date(),
+      };
+      userFindUnique.mockResolvedValue(existingAdmin);
+      userUpdate.mockImplementation(async ({ data }) => ({ ...existingAdmin, ...data }));
+
+      const synced = await authService.syncUser(
+        { uid: 'real-uid', email: 'user@example.com', email_verified: false },
+        { role: 'CUSTOMER' } as any,
+      );
+
+      expect(userUpdate.mock.calls[0][0].data.emailVerified).toBeNull();
+      expect(userUpdate.mock.calls[0][0].data).not.toHaveProperty('role');
+      expect(synced.role).toBe('ADMIN');
+    });
+
     it('updateUserProfile in AuthService cannot modify role, status, or firebaseUid', async () => {
       userFindUnique.mockResolvedValue({
         id: 'user-1',
@@ -246,6 +269,36 @@ describe('Role Security & Privilege Escalation Prevention', () => {
       expect(upgraded.id).toBe('guest-user-1');
       expect(upgraded.role).toBe('CUSTOMER');
       expect(upgraded.isGuest).toBe(false);
+    });
+
+    it('preserves an existing ADMIN role when clearing a stale guest flag', async () => {
+      const adminUser = {
+        id: 'admin-user-1',
+        firebaseUid: 'admin-uid',
+        email: 'admin@example.com',
+        name: 'Admin',
+        role: 'ADMIN',
+        status: 'ACTIVE',
+        isGuest: true,
+        referralCode: 'ADMINREF',
+        referralEarnings: 0,
+        createdAt: new Date('2026-01-01'),
+      };
+
+      userFindUnique.mockResolvedValue(adminUser);
+      userUpdate.mockImplementation(async ({ data }) => ({ ...adminUser, ...data }));
+
+      const upgraded = await authService.syncUser({
+        uid: 'admin-uid',
+        email: 'admin@example.com',
+        email_verified: true,
+        firebase: { sign_in_provider: 'password' },
+      });
+
+      const updateData = userUpdate.mock.calls[0][0].data;
+      expect(updateData).toMatchObject({ isGuest: false });
+      expect(updateData).not.toHaveProperty('role');
+      expect(upgraded.role).toBe('ADMIN');
     });
   });
 

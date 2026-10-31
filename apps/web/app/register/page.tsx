@@ -12,7 +12,16 @@ import { getSafeRedirectUrl } from '../../lib/redirect';
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { register, retrySync, user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const {
+    register,
+    retrySync,
+    sendVerificationEmail,
+    refreshAuthenticatedUser,
+    firebaseUser,
+    user,
+    isAuthenticated,
+    isLoading: authLoading,
+  } = useAuth();
 
   const redirectParam = searchParams.get('redirect') || searchParams.get('returnUrl');
   const refParam = searchParams.get('ref') || '';
@@ -33,11 +42,11 @@ function RegisterForm() {
 
   // If already authenticated with an authoritative non-guest account, redirect immediately
   useEffect(() => {
-    if (!authLoading && isAuthenticated && user && !user.isGuest) {
+    if (!authLoading && isAuthenticated && user && !user.isGuest && firebaseUser?.emailVerified) {
       const destination = getSafeRedirectUrl(redirectParam, user.role);
       router.replace(destination);
     }
-  }, [authLoading, isAuthenticated, user, redirectParam, router]);
+  }, [authLoading, isAuthenticated, user, firebaseUser?.emailVerified, redirectParam, router]);
 
   // Sync ref param if passed
   useEffect(() => {
@@ -63,7 +72,7 @@ function RegisterForm() {
     setIsSubmitting(true);
 
     try {
-      const syncedUser = await register({
+      await register({
         name: formData.name.trim(),
         email: formData.email.trim(),
         phone: formData.phone.trim() || undefined,
@@ -71,9 +80,17 @@ function RegisterForm() {
         referralCode: formData.referralCode.trim() || undefined,
       });
 
-      // Successful registration & authoritative backend sync: redirect to destination
-      const destination = getSafeRedirectUrl(redirectParam, syncedUser.role);
-      router.replace(destination);
+      try {
+        const verification = await sendVerificationEmail();
+        if (verification.alreadyVerified) {
+          const refreshedUser = await refreshAuthenticatedUser();
+          router.replace(getSafeRedirectUrl(redirectParam, refreshedUser.role));
+        } else {
+          router.replace('/verify-email?sent=1');
+        }
+      } catch {
+        router.replace('/verify-email?sendFailed=1');
+      }
     } catch (err: any) {
       if (err?.isSyncFailure) {
         setIsSyncFailure(true);
@@ -98,13 +115,22 @@ function RegisterForm() {
     setError(null);
     setIsSubmitting(true);
     try {
-      const syncedUser = await retrySync({
+      await retrySync({
         name: formData.name.trim(),
         phone: formData.phone.trim() || undefined,
         referralCode: formData.referralCode.trim() || undefined,
       });
-      const destination = getSafeRedirectUrl(redirectParam, syncedUser.role);
-      router.replace(destination);
+      try {
+        const verification = await sendVerificationEmail();
+        if (verification.alreadyVerified) {
+          const refreshedUser = await refreshAuthenticatedUser();
+          router.replace(getSafeRedirectUrl(redirectParam, refreshedUser.role));
+        } else {
+          router.replace('/verify-email?sent=1');
+        }
+      } catch {
+        router.replace('/verify-email?sendFailed=1');
+      }
     } catch (err: any) {
       setError(formatAuthError(err));
     } finally {

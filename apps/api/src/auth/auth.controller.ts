@@ -6,12 +6,16 @@ import { AllowUnlinkedFirebaseUser } from '../decorators/allow-firebase-sync.dec
 import { Public } from '../decorators/public.decorator';
 import { SyncUserDto } from './dto/sync-user.dto';
 import { CheckFirebaseRevocation } from '../decorators/check-firebase-revocation.decorator';
+import { EmailVerificationService } from './email-verification.service';
 
 @ApiTags('Authentication')
 @ApiBearerAuth()
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly emailVerificationService: EmailVerificationService,
+  ) {}
 
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60000 } })
@@ -71,6 +75,15 @@ export class AuthController {
     return { user };
   }
 
+  @Post('email-verification')
+  @Throttle({ default: { limit: 3, ttl: 300000 } })
+  @ApiOperation({ summary: 'Send a verification email to the authenticated Firebase account' })
+  @ApiResponse({ status: 200, description: 'Verification email sent or account already verified' })
+  @ApiResponse({ status: 429, description: 'Verification email resend cooldown is active' })
+  async sendEmailVerification(@Req() req: any) {
+    return this.emailVerificationService.send(req.firebaseIdentity.uid);
+  }
+
   @Get('profile')
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: 200, description: 'Profile retrieved successfully' })
@@ -86,7 +99,7 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async updateProfile(
     @Req() req: any,
-    @Body() body: { name?: string; phone?: string },
+    @Body() body: { name?: string; phone?: string; dob?: string },
   ) {
     return this.authService.updateUserProfile(req.user.id, body);
   }

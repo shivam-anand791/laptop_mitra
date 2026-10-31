@@ -412,6 +412,47 @@ export class SupportService {
     });
   }
 
+  async getUserReturns(userId: string) {
+    let returns;
+    try {
+      returns = await this.prisma.returnRequest.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              createdAt: true,
+              finalAmount: true,
+            },
+          },
+          items: {
+            include: {
+              orderItem: {
+                include: {
+                  product: {
+                    include: {
+                      images: { where: { isPrimary: true }, take: 1 },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to fetch customer returns', error instanceof Error ? error.stack : String(error));
+      throw new ServiceUnavailableException('Support service is temporarily unavailable');
+    }
+
+    return returns.map((r) => {
+      const { encryptedRefundDetails, ...safeResponse } = r as any;
+      return safeResponse;
+    });
+  }
+
   async getTicketById(id: string, userId: string, isStaff: boolean = false) {
     const ticket = await this.prisma.supportTicket.findUnique({
       where: { id },

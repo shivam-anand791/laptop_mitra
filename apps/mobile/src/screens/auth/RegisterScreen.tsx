@@ -36,7 +36,7 @@ type RegisterFormData = z.infer<typeof registerSchema>;
 
 export default function RegisterScreen() {
   const navigation = useNavigation<AuthNavigationProp>();
-  const { register: authRegister } = useAuth();
+  const { register: authRegister, sendVerificationEmail } = useAuth();
   const [isPending, setIsPending] = useState(false);
   const [authError, setAuthError] = useState('');
   const [selectedCountry, setSelectedCountry] = useState<Country>(COUNTRIES[0]!); // Default: India
@@ -73,6 +73,20 @@ export default function RegisterScreen() {
     setIsPending(true);
     try {
       await authRegister(registerPayload);
+      try {
+        const result = await sendVerificationEmail();
+        Alert.alert(
+          result.alreadyVerified ? 'Email already verified' : 'Check your email',
+          result.alreadyVerified
+            ? 'Your account email is already verified.'
+            : 'We sent a verification link to ' + data.email.trim() + '.',
+        );
+      } catch {
+        Alert.alert(
+          'Account created',
+          'Your account was created, but we could not send the verification email. Sign in and retry from Account.',
+        );
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Registration failed. Please try again.';
       setAuthError(message);

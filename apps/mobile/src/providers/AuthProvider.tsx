@@ -18,6 +18,8 @@ interface AuthContextType {
   isGuest: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (data: { name: string; email: string; password: string; phone?: string | undefined; referralCode?: string | undefined }) => Promise<void>;
+  sendVerificationEmail: () => Promise<{ sent: boolean; alreadyVerified: boolean }>;
+  refreshAuthenticatedUser: () => Promise<void>;
   guestLogin: () => Promise<void>;
   linkGuestAccount: (data: { email: string; password: string; name?: string | undefined }) => Promise<void>;
   logout: () => Promise<void>;
@@ -156,6 +158,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [syncUser]);
 
+  const sendVerificationEmail = useCallback(
+    () => getClient().sendVerificationEmail(),
+    [getClient],
+  );
+
+  const refreshAuthenticatedUser = useCallback(async () => {
+    const currentUser = getFirebaseAuth().currentUser;
+    if (!currentUser) throw new Error('Sign in before refreshing your account.');
+    await currentUser.reload();
+    await currentUser.getIdToken(true);
+    await syncUser(currentUser);
+  }, [syncUser]);
+
   const guestLogin = useCallback(async () => {
     const { signInAnonymously } = await import('firebase/auth');
     const credential = await signInAnonymously(getFirebaseAuth());
@@ -200,6 +215,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isGuest: !!user?.isGuest,
         login,
         register,
+        sendVerificationEmail,
+        refreshAuthenticatedUser,
         guestLogin,
         linkGuestAccount,
         logout,

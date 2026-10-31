@@ -22,6 +22,7 @@
     "prisma:push": "node ../../scripts/db-command.cjs dev push",
     "prisma:studio": "node ../../scripts/db-command.cjs dev studio",
     "admin:promote": "ts-node scripts/promote-admin.ts",
+    "admin:bootstrap": "ts-node scripts/bootstrap-admin.ts",
     "mail:test": "ts-node scripts/send-test-email.ts"
   },
   "prisma": {

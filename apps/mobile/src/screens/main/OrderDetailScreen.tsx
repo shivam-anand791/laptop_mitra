@@ -5,27 +5,18 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useOrder, useCancelOrder, useReturnOrder, useReorder, useOrderInvoice, useOrderTracking } from '../../hooks/useApi';
 import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
+import {
+  getMobileStatusLabel,
+  formatIndianRupees,
+  canCancelOrder,
+  canReturnOrder,
+  canDownloadInvoice,
+  getRealTrackingSteps,
+  getDeliveryEstimateText,
+  getWarrantyDisplayText,
+} from '../../utils/account-helpers';
 
 type OrderDetailRouteProp = RouteProp<MainStackParamList, 'OrderDetail'>;
-
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  PENDING: { bg: '#fef3c7', text: '#92400e' },
-  CONFIRMED: { bg: '#dbeafe', text: '#1e40af' },
-  PROCESSING: { bg: '#ede9fe', text: '#5b21b6' },
-  SHIPPING: { bg: '#e0e7ff', text: '#3730a3' },
-  SHIPPED: { bg: '#e0e7ff', text: '#3730a3' },
-  DELIVERED: { bg: '#dcfce7', text: '#166534' },
-  CANCELLED: { bg: '#fee2e2', text: '#991b1b' },
-};
-
-const TIMELINE_STATUSES = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED'];
-
-const getDefaultStatus = () => ({ bg: '#f1f5f9', text: '#64748b' });
-
-const formatPrice = (price: number | string) => {
-  const num = typeof price === 'string' ? parseFloat(price) : price;
-  return `₹${(num || 0).toLocaleString('en-IN')}`;
-};
 
 const formatDate = (dateStr: string) => {
   const date = new Date(dateStr);
@@ -130,12 +121,21 @@ export default function OrderDetailScreen() {
     );
   }
 
-  const status = STATUS_COLORS[order.status] ?? getDefaultStatus();
-  const canCancel = order.status === 'PENDING' || order.status === 'CONFIRMED';
-  const canReturn = order.status === 'DELIVERED';
-  const timelineIndex = TIMELINE_STATUSES.indexOf(order.status);
+  const statusCfg = getMobileStatusLabel(order.status, order.paymentStatus, order.returnStatus);
+  const canCancel = canCancelOrder(order.status);
   const isCancelled = order.status === 'CANCELLED';
 
+  const returnEligibility = canReturnOrder({
+    status: order.status,
+    deliveredAt: (order as any).deliveredAt ?? null,
+    returnWindowDays: 7,
+    returnStatus: order.returnStatus,
+    isLease: order.items?.some((it: any) => it.purchaseMode === 'lease'),
+  });
+
+  const invoiceEligibility = canDownloadInvoice(order as any);
+  const realSteps = getRealTrackingSteps(order as any);
+  const estimateText = getDeliveryEstimateText((order as any).estimatedDelivery);
   const shippingAddress = order.shippingAddress as Record<string, string> | null;
 
   return (
@@ -154,23 +154,37 @@ export default function OrderDetailScreen() {
       <View style={styles.headerSection}>
         <View style={styles.headerTopRow}>
           <Text style={styles.orderNumber}>#{order.orderNumber || order.id.slice(-8)}</Text>
-          <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-            <Text style={[styles.statusBadgeText, { color: status.text }]}>{order.status}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: statusCfg.bg }]}>
+            <Ionicons name={statusCfg.icon as any} size={12} color={statusCfg.text} />
+            <Text style={[styles.statusBadgeText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
           </View>
         </View>
         <Text style={styles.orderDate}>Placed on {formatDate(order.createdAt)}</Text>
+
+        {/* Estimated Delivery Banner */}
+        <View style={styles.estimateBanner}>
+          <Ionicons name="calendar-outline" size={15} color="#2563eb" />
+          <Text style={styles.estimateBannerText}>{estimateText}</Text>
+        </View>
       </View>
 
       {/* Quick Action Buttons */}
       <View style={styles.actionButtonRow}>
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => setIsInvoiceModalOpen(true)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="document-text-outline" size={16} color="#2563eb" />
-          <Text style={styles.secondaryButtonText}>Tax Invoice</Text>
-        </TouchableOpacity>
+        {invoiceEligibility.canDownload ? (
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => setIsInvoiceModalOpen(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="document-text-outline" size={16} color="#2563eb" />
+            <Text style={styles.secondaryButtonText}>Tax Invoice</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={[styles.secondaryButton, styles.buttonDisabled]}>
+            <Ionicons name="document-text-outline" size={16} color="#94a3b8" />
+            <Text style={[styles.secondaryButtonText, { color: '#94a3b8' }]}>Invoice</Text>
+          </View>
+        )}
 
         <TouchableOpacity
           style={styles.secondaryButton}
@@ -188,7 +202,7 @@ export default function OrderDetailScreen() {
           )}
         </TouchableOpacity>
 
-        {canReturn && (
+        {returnEligibility.eligible && (
           <TouchableOpacity
             style={styles.secondaryButton}
             onPress={() => setIsReturnModalOpen(true)}
@@ -209,30 +223,57 @@ export default function OrderDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Status Timeline */}
+      {/* Invoice note when disabled */}
+      {!invoiceEligibility.canDownload && invoiceEligibility.note && (
+        <View style={styles.noticeBox}>
+          <Ionicons name="information-circle-outline" size={16} color="#64748b" />
+          <Text style={styles.noticeBoxText}>{invoiceEligibility.note}</Text>
+        </View>
+      )}
+
+      {/* Real Data-Backed Status Timeline */}
       {!isCancelled && (
         <View style={styles.timelineCard}>
           <Text style={styles.sectionTitle}>Delivery Progress</Text>
           <View style={styles.timeline}>
-            {TIMELINE_STATUSES.map((step, index) => {
-              const isActive = index <= timelineIndex;
-              const isCurrent = index === timelineIndex;
-              return (
-                <View key={step} style={styles.timelineStep}>
-                  <View style={styles.timelineDotRow}>
-                    <View style={[styles.timelineDot, isActive && styles.timelineDotActive, isCurrent && styles.timelineDotCurrent]}>
-                      {isActive && <Ionicons name="checkmark" size={12} color="#fff" />}
-                    </View>
-                    {index < TIMELINE_STATUSES.length - 1 && (
-                      <View style={[styles.timelineLine, index < timelineIndex && styles.timelineLineActive]} />
-                    )}
+            {realSteps.map((step, index) => (
+              <View key={step.key} style={styles.timelineStep}>
+                <View style={styles.timelineDotRow}>
+                  <View
+                    style={[
+                      styles.timelineDot,
+                      step.isCompleted && styles.timelineDotActive,
+                      step.isCurrent && styles.timelineDotCurrent,
+                    ]}
+                  >
+                    {step.isCompleted && <Ionicons name="checkmark" size={12} color="#fff" />}
                   </View>
-                  <Text style={[styles.timelineLabel, isActive && styles.timelineLabelActive]}>
-                    {step.charAt(0) + step.slice(1).toLowerCase()}
-                  </Text>
+                  {index < realSteps.length - 1 && (
+                    <View
+                      style={[
+                        styles.timelineLine,
+                        realSteps[index + 1]?.isCompleted && styles.timelineLineActive,
+                      ]}
+                    />
+                  )}
                 </View>
-              );
-            })}
+                <View style={{ flex: 1, paddingVertical: 4 }}>
+                  <Text style={[styles.timelineLabel, step.isCompleted && styles.timelineLabelActive]}>
+                    {step.label}
+                  </Text>
+                  {step.timestamp && (
+                    <Text style={styles.timelineTimestamp}>
+                      {new Date(step.timestamp).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ))}
           </View>
           {trackData?.carrier && (
             <View style={styles.trackInfo}>
@@ -253,6 +294,7 @@ export default function OrderDetailScreen() {
           const primaryImage = product?.images?.find((img: any) => img.isPrimary) ?? product?.images?.[0];
           const isLease = item.purchaseMode === 'lease';
           const lineUnitTotal = Number(item.price) + (item.hasWarranty && !isLease ? Number(item.warrantyPrice || 1999) : 0);
+          const warrantyLabel = getWarrantyDisplayText(item.warrantyMonths, item.hasWarranty);
 
           return (
             <View key={item.id} style={styles.orderItem}>
@@ -267,18 +309,22 @@ export default function OrderDetailScreen() {
               </View>
               <View style={styles.itemInfo}>
                 <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center', marginBottom: 2 }}>
-                  <View style={{
-                    paddingHorizontal: 5,
-                    paddingVertical: 1,
-                    borderRadius: 4,
-                    backgroundColor: isLease ? '#FEF3C7' : '#DCFCE7',
-                  }}>
-                    <Text style={{
-                      fontSize: 9,
-                      fontWeight: '800',
-                      textTransform: 'uppercase',
-                      color: isLease ? '#92400E' : '#15803D',
-                    }}>
+                  <View
+                    style={{
+                      paddingHorizontal: 5,
+                      paddingVertical: 1,
+                      borderRadius: 4,
+                      backgroundColor: isLease ? '#FEF3C7' : '#DCFCE7',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 9,
+                        fontWeight: '800',
+                        textTransform: 'uppercase',
+                        color: isLease ? '#92400E' : '#15803D',
+                      }}
+                    >
                       {isLease ? 'Rent / mo' : 'Buy'}
                     </Text>
                   </View>
@@ -287,24 +333,24 @@ export default function OrderDetailScreen() {
                       <Text style={{ fontSize: 9, fontWeight: '700', color: '#1D4ED8' }}>16GB RAM</Text>
                     </View>
                   )}
-                  {item.hasWarranty && !isLease && (
+                  {!isLease && (
                     <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: '#F3E8FF' }}>
-                      <Text style={{ fontSize: 9, fontWeight: '700', color: '#7E22CE' }}>+1 Yr Warranty</Text>
+                      <Text style={{ fontSize: 9, fontWeight: '700', color: '#7E22CE' }}>{warrantyLabel}</Text>
                     </View>
                   )}
                 </View>
 
                 <Text style={styles.itemName} numberOfLines={2}>{product?.name ?? 'Laptop Item'}</Text>
                 <Text style={styles.itemDetail}>
-                  Qty: {item.quantity} × {formatPrice(item.price)}
+                  Qty: {item.quantity} × {formatIndianRupees(item.price)}
                   {isLease && <Text style={{ color: '#92400E', fontWeight: '600' }}> (1st Month)</Text>}
                 </Text>
                 {isLease && (
                   <Text style={{ fontSize: 10, color: '#92400E', fontWeight: '500', marginTop: 2 }}>
-                    Month 1 advance, {formatPrice(item.price)}/mo thereafter. Later months are invoiced separately.
+                    Month 1 advance, {formatIndianRupees(item.price)}/mo thereafter. Later months are invoiced separately.
                   </Text>
                 )}
-                <Text style={styles.itemTotal}>{formatPrice(lineUnitTotal * (item.quantity ?? 1))}</Text>
+                <Text style={styles.itemTotal}>{formatIndianRupees(lineUnitTotal * (item.quantity ?? 1))}</Text>
               </View>
             </View>
           );
@@ -317,24 +363,24 @@ export default function OrderDetailScreen() {
         <View style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Subtotal</Text>
-            <Text style={styles.summaryValue}>{formatPrice(order.subtotal)}</Text>
+            <Text style={styles.summaryValue}>{formatIndianRupees(order.subtotal)}</Text>
           </View>
           {Number(order.discountAmount) > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryDiscountLabel}>Discount Coupon</Text>
-              <Text style={styles.summaryDiscountValue}>- {formatPrice(order.discountAmount)}</Text>
+              <Text style={styles.summaryDiscountValue}>- {formatIndianRupees(order.discountAmount)}</Text>
             </View>
           )}
           {Number(order.referralDiscount ?? 0) > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryDiscountLabel}>Mitra Referral Discount</Text>
-              <Text style={styles.summaryDiscountValue}>- {formatPrice(order.referralDiscount ?? 0)}</Text>
+              <Text style={styles.summaryDiscountValue}>- {formatIndianRupees(order.referralDiscount ?? 0)}</Text>
             </View>
           )}
           <View style={styles.summaryDivider} />
           <View style={styles.summaryRow}>
             <Text style={styles.summaryTotalLabel}>Grand Total (Incl. GST)</Text>
-            <Text style={styles.summaryTotalValue}>{formatPrice(order.finalAmount)}</Text>
+            <Text style={styles.summaryTotalValue}>{formatIndianRupees(order.finalAmount)}</Text>
           </View>
         </View>
       </View>
@@ -363,13 +409,13 @@ export default function OrderDetailScreen() {
         <View style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Payment Status</Text>
-            <Text style={[styles.summaryValue, { fontWeight: '700', color: order.paymentStatus === 'PAID' ? '#16a34a' : '#1e293b' }]}>
-              {order.paymentStatus}
+            <Text style={[styles.summaryValue, { fontWeight: '700', color: order.paymentStatus === 'PAID' || order.paymentStatus === 'COMPLETED' ? '#16a34a' : '#1e293b' }]}>
+              {order.paymentStatus === 'COMPLETED' ? 'Paid' : order.paymentStatus}
             </Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Gateway</Text>
-            <Text style={styles.summaryValue}>{order.paymentMethod || 'Razorpay Secure'}</Text>
+            <Text style={styles.summaryLabel}>Payment Method</Text>
+            <Text style={styles.summaryValue}>{order.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Razorpay Secure'}</Text>
           </View>
         </View>
       </View>
@@ -462,20 +508,20 @@ export default function OrderDetailScreen() {
             <View style={styles.invoiceBreakdown}>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Base Amount</Text>
-                <Text style={styles.summaryValue}>{formatPrice((invoiceData as any)?.taxBreakdown?.taxableAmount || (order.subtotal * 0.82))}</Text>
+                <Text style={styles.summaryValue}>{formatIndianRupees((invoiceData as any)?.taxBreakdown?.taxableAmount || (order.subtotal * 0.82))}</Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>CGST (9%)</Text>
-                <Text style={styles.summaryValue}>{formatPrice((invoiceData as any)?.taxBreakdown?.cgst || (order.subtotal * 0.09))}</Text>
+                <Text style={styles.summaryValue}>{formatIndianRupees((invoiceData as any)?.taxBreakdown?.cgst || (order.subtotal * 0.09))}</Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>SGST (9%)</Text>
-                <Text style={styles.summaryValue}>{formatPrice((invoiceData as any)?.taxBreakdown?.sgst || (order.subtotal * 0.09))}</Text>
+                <Text style={styles.summaryValue}>{formatIndianRupees((invoiceData as any)?.taxBreakdown?.sgst || (order.subtotal * 0.09))}</Text>
               </View>
               <View style={styles.summaryDivider} />
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryTotalLabel}>Total Paid</Text>
-                <Text style={styles.summaryTotalValue}>{formatPrice(order.finalAmount)}</Text>
+                <Text style={styles.summaryTotalValue}>{formatIndianRupees(order.finalAmount)}</Text>
               </View>
             </View>
 
@@ -525,10 +571,30 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 4,
   },
+  estimateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+  estimateBannerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1d4ed8',
+  },
   statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 999,
+    borderRadius: 8,
   },
   statusBadgeText: {
     fontSize: 12,
@@ -537,7 +603,7 @@ const styles = StyleSheet.create({
   actionButtonRow: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   secondaryButton: {
     flex: 1,
@@ -556,11 +622,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1e293b',
   },
+  buttonDisabled: {
+    opacity: 0.5,
+    backgroundColor: '#f1f5f9',
+  },
+  noticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+  },
+  noticeBoxText: {
+    fontSize: 12,
+    color: '#64748b',
+    flex: 1,
+  },
   timelineCard: {
     backgroundColor: '#f8fafc',
     borderRadius: 12,
     padding: 14,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
   },
   timeline: {
     marginTop: 10,
@@ -569,7 +658,7 @@ const styles = StyleSheet.create({
   },
   timelineStep: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
   },
   timelineDotRow: {
@@ -599,9 +688,9 @@ const styles = StyleSheet.create({
   },
   timelineLine: {
     width: 2,
-    height: 20,
+    height: 24,
     backgroundColor: '#e2e8f0',
-    marginTop: 2,
+    marginVertical: 2,
   },
   timelineLineActive: {
     backgroundColor: '#2563eb',
@@ -609,11 +698,15 @@ const styles = StyleSheet.create({
   timelineLabel: {
     fontSize: 13,
     color: '#94a3b8',
-    paddingVertical: 4,
   },
   timelineLabelActive: {
     color: '#0f172a',
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  timelineTimestamp: {
+    fontSize: 11,
+    color: '#64748b',
+    marginTop: 2,
   },
   trackInfo: {
     flexDirection: 'row',
@@ -854,7 +947,6 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1.5,
     borderColor: '#bfdbfe',
-    marginHorizontal: 16,
     marginBottom: 16,
     gap: 12,
   },

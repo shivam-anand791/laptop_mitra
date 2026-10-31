@@ -6,6 +6,7 @@
     "moduleResolution": "bundler",
     "module": "ESNext",
     "allowSyntheticDefaultImports": true,
+    "types": ["jest"],
     "paths": {
       "@/*": ["./src/*"]
     },

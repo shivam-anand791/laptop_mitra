@@ -102,18 +102,18 @@ export default function Navbar() {
                     </div>
                     <div className="py-1 text-xs font-semibold">
                       <Link
-                        href="/profile"
+                        href="/account/orders"
                         onClick={() => setUserDropdownOpen(false)}
                         className="block px-4 py-1.5 text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB]"
                       >
-                        Orders &amp; Profile
+                        My Account &amp; Orders
                       </Link>
                       <Link
-                        href="/profile#referral"
+                        href="/account/referral"
                         onClick={() => setUserDropdownOpen(false)}
                         className="block px-4 py-1.5 text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB]"
                       >
-                        Mitra Referral
+                        Mitra Affiliate Program
                       </Link>
                     </div>
                     <div className="pt-1">
@@ -317,8 +317,8 @@ export default function Navbar() {
               )}
             </div>
 
-            <Link href="/profile#referral" className="hover:text-[#2563EB] transition-colors">
-              Partner Referral Program
+            <Link href="/account/referral" className="hover:text-[#2563EB] transition-colors">
+              Mitra Affiliate Program
             </Link>
 
             <Link href="/help" className="hover:text-[#2563EB] transition-colors">
@@ -359,8 +359,8 @@ export default function Navbar() {
             <Link href="/products?type=lease" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#2563EB]">
               Corporate Leasing
             </Link>
-            <Link href="/profile#referral" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#2563EB]">
-              Partner Referral Program
+            <Link href="/account/referral" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#2563EB]">
+              Mitra Affiliate Program
             </Link>
             <Link href="/help" onClick={() => setMobileMenuOpen(false)} className="py-2 px-3 rounded-lg hover:bg-slate-50 hover:text-[#2563EB]">
               Warranty &amp; Support

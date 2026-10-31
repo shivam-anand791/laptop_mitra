@@ -20,6 +20,13 @@ export default function ProfilePage() {
     if (user) {
       setName(user.name || '');
       setPhone(user.phone || '');
+      if (user.dob) {
+        try {
+          setDob(new Date(user.dob).toISOString().split('T')[0]);
+        } catch {
+          // ignore date parse errors
+        }
+      }
       if (user.imageUrl) setAvatarPreview(user.imageUrl);
     }
   }, [user]);
@@ -78,7 +85,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+    <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-2xs space-y-6">
       <div>
         <h2 className="text-xl font-bold text-slate-900">Personal Information</h2>
         <p className="text-xs text-slate-500 mt-1">
@@ -87,15 +94,15 @@ export default function ProfilePage() {
       </div>
 
       {successMessage && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-semibold p-4 rounded-2xl flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-semibold p-4 rounded-xl flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           {successMessage}
         </div>
       )}
 
       {errorMessage && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm font-semibold p-4 rounded-2xl flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm font-semibold p-4 rounded-xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
           {errorMessage}
         </div>
       )}
@@ -103,7 +110,7 @@ export default function ProfilePage() {
       {/* Avatar Section */}
       <div className="flex items-center gap-6 pb-6 border-b border-slate-100">
         <div className="relative group">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-2xl font-black shadow-md overflow-hidden border-2 border-white">
+          <div className="w-20 h-20 rounded-2xl bg-slate-900 text-white flex items-center justify-center text-2xl font-black overflow-hidden border-2 border-white shadow-xs">
             {avatarPreview ? (
               <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
             ) : (
@@ -112,7 +119,7 @@ export default function ProfilePage() {
           </div>
           <label
             htmlFor="avatar-upload"
-            className="absolute -bottom-1.5 -right-1.5 w-7 h-7 bg-slate-900 hover:bg-blue-600 text-white rounded-full flex items-center justify-center cursor-pointer shadow-md transition"
+            className="absolute -bottom-1.5 -right-1.5 w-7 h-7 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center cursor-pointer shadow-xs transition"
             title="Upload Photo"
           >
             <Camera className="w-3.5 h-3.5" />
@@ -210,7 +217,7 @@ export default function ProfilePage() {
           <button
             type="submit"
             disabled={saving}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold shadow-md shadow-blue-600/20 transition flex items-center gap-2"
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition flex items-center gap-2 cursor-pointer"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             {saving ? 'Saving Changes...' : 'Save Profile Changes'}
