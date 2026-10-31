@@ -25,6 +25,7 @@ export class CartController {
     @Body('purchaseMode') purchaseMode?: 'sell' | 'lease',
     @Body('configuration') configuration?: string,
     @Body('hasWarranty') hasWarranty?: boolean,
+    @Body('variantId') variantId?: string,
   ) {
     const result = await this.cartService.addItem(
       user.id,
@@ -33,6 +34,7 @@ export class CartController {
       purchaseMode,
       configuration,
       hasWarranty,
+      variantId,
     );
     return { cartItem: result, message: 'Item added to cart' };
   }

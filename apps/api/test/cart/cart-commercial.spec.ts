@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
-import { CartService, CONFIG_UPGRADE_SELL_DELTA, CONFIG_UPGRADE_LEASE_DELTA, WARRANTY_PRICE_PER_UNIT } from '../../src/modules/cart/cart.service';
+import { CartService, WARRANTY_PRICE_PER_UNIT } from '../../src/modules/cart/cart.service';
 
-describe('CartCommercialSpec - Pricing, Upgrades, Warranty & Multi-Mode', () => {
+describe('CartCommercialSpec - Variant Pricing, Warranty & Multi-Mode', () => {
   let cartService: CartService;
   let mockPrisma: any;
   let mockProductService: any;
@@ -69,6 +69,9 @@ describe('CartCommercialSpec - Pricing, Upgrades, Warranty & Multi-Mode', () => 
           return Promise.resolve(null);
         }),
       },
+      productVariant: {
+        findUnique: jest.fn(),
+      },
     };
 
     mockProductService = {};
@@ -76,6 +79,29 @@ describe('CartCommercialSpec - Pricing, Upgrades, Warranty & Multi-Mode', () => 
   });
 
   describe('Price Resolution', () => {
+    it('attaches the active default variant when callers omit a variant choice', async () => {
+      const variant = {
+        id: 'variant-default',
+        productId: mockProduct.id,
+        price: 31500,
+        stock: 4,
+        allowBackorder: false,
+        isActive: true,
+      };
+      mockPrisma.product.findUnique.mockResolvedValue({ ...mockProduct, variants: [variant] });
+      mockPrisma.productVariant.findUnique.mockResolvedValue(variant);
+
+      await cartService.addItem('user-1', mockProduct.id);
+
+      expect(mockPrisma.cartItem.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          variant: { connect: { id: variant.id } },
+          lineKey: `variant:${variant.id}:sell`,
+          priceAtAdd: 31500,
+        }),
+      }));
+    });
+
     it('resolves standard outright purchase price', async () => {
       const item = await cartService.addItem('user-1', 'prod-t480', 1, 'sell', 'default', false);
       expect(item.priceAtAdd).toBe(30000);
@@ -85,10 +111,10 @@ describe('CartCommercialSpec - Pricing, Upgrades, Warranty & Multi-Mode', () => 
       expect(item.warrantyPrice).toBe(0);
     });
 
-    it('resolves outright purchase price with 16GB Pro upgrade (+₹4,000)', async () => {
+    it('does not invent an upgrade price for a legacy configuration label', async () => {
       const item = await cartService.addItem('user-1', 'prod-t480', 1, 'sell', 'ram-16gb', false);
-      expect(item.priceAtAdd).toBe(30000 + CONFIG_UPGRADE_SELL_DELTA);
-      expect(item.configuration).toBe('ram-16gb');
+      expect(item.priceAtAdd).toBe(30000);
+      expect(item.configuration).toBe('default');
     });
 
     it('resolves explicit leasePriceMonthly when available', async () => {
@@ -103,9 +129,9 @@ describe('CartCommercialSpec - Pricing, Upgrades, Warranty & Multi-Mode', () => 
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('resolves lease price with 16GB Pro upgrade (+₹500/mo)', async () => {
+    it('does not invent a lease upgrade price for a legacy configuration label', async () => {
       const item = await cartService.addItem('user-1', 'prod-t480', 1, 'lease', 'ram-16gb', false);
-      expect(item.priceAtAdd).toBe(2500 + CONFIG_UPGRADE_LEASE_DELTA); // 3000
+      expect(item.priceAtAdd).toBe(2500);
     });
   });
 
@@ -138,7 +164,7 @@ describe('CartCommercialSpec - Pricing, Upgrades, Warranty & Multi-Mode', () => 
       expect(buyItem.hasWarranty).toBe(true);
 
       expect(leaseItem).toBeDefined();
-      expect(leaseItem.priceAtAdd).toBe(3000);
+      expect(leaseItem.priceAtAdd).toBe(2500);
       expect(leaseItem.quantity).toBe(2);
       expect(leaseItem.hasWarranty).toBe(false);
     });
@@ -146,15 +172,34 @@ describe('CartCommercialSpec - Pricing, Upgrades, Warranty & Multi-Mode', () => 
     it('computes separated oneTimeTotal and monthlyTotal in getCart', async () => {
       // 1 Buy laptop (30000) + warranty (1999) = 31999
       await cartService.addItem('user-1', 'prod-t480', 1, 'sell', 'default', true);
-      // 2 Lease laptops (3000/mo) * 2 = 6000/mo
+      // 2 Lease laptops (2500/mo) * 2 = 5000/mo
       await cartService.addItem('user-1', 'prod-t480', 2, 'lease', 'ram-16gb', false);
 
       const cartSummary = await cartService.getCart('user-1');
 
       expect(cartSummary.oneTimeTotal).toBe(31999);
-      expect(cartSummary.monthlyTotal).toBe(6000);
-      expect(cartSummary.total).toBe(37999);
+      expect(cartSummary.monthlyTotal).toBe(5000);
+      expect(cartSummary.total).toBe(36999);
       expect(cartSummary.itemCount).toBe(3);
+    });
+
+    it('uses the current selected variant price when a saved cart is reopened', async () => {
+      mockCart.items = [{
+        id: 'variant-cart-item',
+        productId: mockProduct.id,
+        variantId: 'variant-16gb',
+        variant: { id: 'variant-16gb', price: 34000, leasePriceMonthly: 2800 },
+        priceAtAdd: 30000,
+        quantity: 1,
+        purchaseMode: 'sell',
+        hasWarranty: false,
+        warrantyPrice: 0,
+      }];
+
+      const cartSummary = await cartService.getCart('user-1');
+
+      expect(cartSummary.items[0].priceAtAdd).toBe(34000);
+      expect(cartSummary.oneTimeTotal).toBe(34000);
     });
   });
 });

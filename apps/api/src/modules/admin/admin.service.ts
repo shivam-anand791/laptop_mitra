@@ -298,6 +298,7 @@ export class AdminService {
         include: {
           category: true,
           images: true,
+          variants: { include: { images: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -314,6 +315,110 @@ export class AdminService {
     };
   }
 
+  private normalizeProductVariants(variants: any[]) {
+    if (!Array.isArray(variants)) throw new BadRequestException('Product variants must be an array');
+    if (variants.length === 0) return [];
+
+    const explicitDefaults = variants.filter((variant) => variant?.isDefault === true).length;
+    if (explicitDefaults > 1) throw new BadRequestException('Only one default variant is allowed');
+
+    const skus = new Set<string>();
+    const activeCombinations = new Set<string>();
+    let activeAttributeKeys: string[] | undefined;
+    let defaultCount = 0;
+    const normalized = variants.map((variant, index) => {
+      const name = typeof variant?.name === 'string' ? variant.name.trim() : '';
+      const sku = typeof variant?.sku === 'string' ? variant.sku.trim() : '';
+      if (!name || !sku) throw new BadRequestException(`Variant ${index + 1} requires a name and SKU`);
+      const skuKey = sku.toLowerCase();
+      if (skus.has(skuKey)) throw new BadRequestException(`Duplicate variant SKU "${sku}"`);
+      skus.add(skuKey);
+
+      const attributes = variant.attributes;
+      if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) {
+        throw new BadRequestException(`Variant "${name}" requires an attributes object`);
+      }
+      const cleanAttributes: Record<string, string | number | boolean> = {};
+      for (const [key, value] of Object.entries(attributes)) {
+        if (!key.trim() || !['string', 'number', 'boolean'].includes(typeof value)
+          || (typeof value === 'string' && !value.trim())
+          || (typeof value === 'number' && !Number.isFinite(value))) {
+          throw new BadRequestException(`Variant "${name}" has an invalid attribute`);
+        }
+        cleanAttributes[key.trim()] = value as string | number | boolean;
+      }
+      if (!Object.keys(cleanAttributes).length) {
+        throw new BadRequestException(`Variant "${name}" requires at least one attribute`);
+      }
+
+      const price = Number(variant.price);
+      const stock = Number(variant.stock ?? 0);
+      if (!Number.isFinite(price) || price < 0) throw new BadRequestException(`Variant "${name}" has an invalid price`);
+      if (!Number.isSafeInteger(stock) || stock < 0) throw new BadRequestException(`Variant "${name}" has invalid stock`);
+
+      const optionalPrice = (value: unknown, label: string) => {
+        if (value === undefined || value === null || value === '') return null;
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          throw new BadRequestException(`Variant "${name}" has an invalid ${label}`);
+        }
+        return parsed;
+      };
+
+      const isDefault = explicitDefaults ? variant.isDefault === true : index === 0;
+      if (isDefault) defaultCount += 1;
+      const isActive = variant.isActive !== false;
+      if (isDefault && !isActive) throw new BadRequestException('The default variant must be active');
+
+      if (isActive) {
+        const keys = Object.keys(cleanAttributes).sort();
+        if (activeAttributeKeys && keys.join('\0') !== activeAttributeKeys.join('\0')) {
+          throw new BadRequestException('Active variants for a product must define the same configuration attributes');
+        }
+        activeAttributeKeys = keys;
+        const combinationKey = JSON.stringify(Object.fromEntries(keys.map((key) => [key, cleanAttributes[key]])));
+        if (activeCombinations.has(combinationKey)) {
+          throw new BadRequestException(`Duplicate active configuration for variant "${name}"`);
+        }
+        activeCombinations.add(combinationKey);
+      }
+
+      const images = Array.isArray(variant.images) ? variant.images.map((image: any, imageIndex: number) => {
+        if (typeof image?.url !== 'string' || !image.url.trim()) {
+          throw new BadRequestException(`Variant "${name}" has an invalid image URL`);
+        }
+        return {
+          url: image.url.trim(),
+          ...(typeof image.altText === 'string' ? { altText: image.altText.trim() } : {}),
+          isPrimary: image.isPrimary === true,
+          sortOrder: Number.isSafeInteger(Number(image.sortOrder)) && Number(image.sortOrder) >= 0
+            ? Number(image.sortOrder)
+            : imageIndex,
+        };
+      }) : [];
+
+      return {
+        ...(typeof variant.id === 'string' && variant.id ? { id: variant.id } : {}),
+        name,
+        sku,
+        attributes: cleanAttributes,
+        price,
+        compareAtPrice: optionalPrice(variant.compareAtPrice, 'compare-at price'),
+        leasePriceMonthly: optionalPrice(variant.leasePriceMonthly, 'monthly lease price'),
+        stock,
+        allowBackorder: variant.allowBackorder === true,
+        isActive,
+        isDefault,
+        images,
+      };
+    });
+
+    if (normalized.some((variant) => variant.isActive) && defaultCount !== 1) {
+      throw new BadRequestException('Exactly one active default variant is required');
+    }
+    return normalized;
+  }
+
   async createProduct(data: {
     name: string;
     price: number | string;
@@ -326,10 +431,12 @@ export class AdminService {
     isFeatured?: boolean;
     isNewArrival?: boolean;
     imageUrl?: string;
+    images?: any[];
     leasePriceMonthly?: number | string;
     bulkSellPrice?: number | string;
     bulkLeasePrice?: number | string;
     metadata?: any;
+    variants?: any[];
   }) {
     if (!data.name || !data.sku || data.price === undefined) {
       throw new BadRequestException('Name, price, and SKU are required');
@@ -349,15 +456,18 @@ export class AdminService {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)+/g, '') + `-${Date.now().toString().slice(-4)}`;
+    const variants = data.variants === undefined ? undefined : this.normalizeProductVariants(data.variants);
+    const defaultVariant = variants?.find((variant) => variant.isDefault);
 
     return this.prisma.product.create({
       data: {
         name: data.name,
         slug,
-        sku: data.sku,
-        price,
-        stock: data.stock !== undefined ? Number(data.stock) : 0,
-        leasePriceMonthly: data.leasePriceMonthly !== undefined && data.leasePriceMonthly !== null && data.leasePriceMonthly !== '' ? Number(data.leasePriceMonthly) : null,
+        sku: defaultVariant?.sku || data.sku,
+        price: defaultVariant?.price ?? price,
+        compareAtPrice: defaultVariant?.compareAtPrice,
+        stock: defaultVariant?.stock ?? (data.stock !== undefined ? Number(data.stock) : 0),
+        leasePriceMonthly: defaultVariant?.leasePriceMonthly ?? (data.leasePriceMonthly !== undefined && data.leasePriceMonthly !== null && data.leasePriceMonthly !== '' ? Number(data.leasePriceMonthly) : null),
         bulkSellPrice: data.bulkSellPrice !== undefined && data.bulkSellPrice !== null && data.bulkSellPrice !== '' ? Number(data.bulkSellPrice) : null,
         bulkLeasePrice: data.bulkLeasePrice !== undefined && data.bulkLeasePrice !== null && data.bulkLeasePrice !== '' ? Number(data.bulkLeasePrice) : null,
         description: data.description || null,
@@ -367,7 +477,26 @@ export class AdminService {
         isFeatured: !!data.isFeatured,
         isNewArrival: !!data.isNewArrival,
         metadata: data.metadata || null,
-        ...(data.imageUrl
+        ...(variants ? {
+          variants: {
+            create: variants.map(({ images, ...variant }) => ({
+              ...variant,
+              ...(images.length ? { images: { create: images } } : {}),
+            })),
+          },
+        } : {}),
+        ...(Array.isArray(data.images) && data.images.length > 0
+          ? {
+              images: {
+                create: data.images.map((img, idx) => ({
+                  url: typeof img === 'string' ? img : img.url,
+                  altText: typeof img === 'object' && img.altText ? img.altText : data.name,
+                  isPrimary: typeof img === 'object' && img.isPrimary !== undefined ? !!img.isPrimary : idx === 0,
+                  sortOrder: typeof img === 'object' && img.sortOrder !== undefined ? Number(img.sortOrder) : idx,
+                })),
+              },
+            }
+          : data.imageUrl
           ? {
               images: {
                 create: [
@@ -385,6 +514,7 @@ export class AdminService {
       include: {
         category: true,
         images: true,
+        variants: { include: { images: true } },
       },
     });
   }
@@ -403,6 +533,7 @@ export class AdminService {
     if (data.description !== undefined) updateData.description = data.description;
     if (data.shortDescription !== undefined) updateData.shortDescription = data.shortDescription;
     if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
+    if (data.metadata !== undefined) updateData.metadata = data.metadata;
     if (data.stock !== undefined) {
       const stock = Number(data.stock);
       if (isNaN(stock) || stock < 0) throw new BadRequestException('Stock must be a positive integer');
@@ -423,13 +554,95 @@ export class AdminService {
       updateData.bulkLeasePrice = data.bulkLeasePrice !== null && data.bulkLeasePrice !== '' ? Number(data.bulkLeasePrice) : null;
     }
 
-    return this.prisma.product.update({
-      where: { id },
-      data: updateData,
-      include: {
-        category: true,
-        images: true,
-      },
+    if (data.images !== undefined && Array.isArray(data.images)) {
+      await this.prisma.productImage.deleteMany({ where: { productId: id } });
+      if (data.images.length > 0) {
+        await this.prisma.productImage.createMany({
+          data: data.images.map((img, idx) => ({
+            productId: id,
+            url: typeof img === 'string' ? img : img.url,
+            altText: typeof img === 'object' && img.altText ? img.altText : product.name,
+            isPrimary: typeof img === 'object' && img.isPrimary !== undefined ? !!img.isPrimary : idx === 0,
+            sortOrder: typeof img === 'object' && img.sortOrder !== undefined ? Number(img.sortOrder) : idx,
+          })),
+        });
+      }
+    }
+
+    if (data.variants === undefined) {
+      return this.prisma.product.update({
+        where: { id },
+        data: updateData,
+        include: { category: true, images: true, variants: { include: { images: true } } },
+      });
+    }
+
+    const variants = this.normalizeProductVariants(data.variants);
+    const defaultVariant = variants.find((variant) => variant.isDefault)!;
+    const existing = await this.prisma.productVariant.findMany({ where: { productId: id } });
+    const existingById = new Map(existing.map((variant) => [variant.id, variant]));
+    for (const variant of variants) {
+      if (variant.id && !existingById.has(variant.id)) {
+        throw new BadRequestException(`Variant "${variant.name}" does not belong to this product`);
+      }
+    }
+
+    if (!defaultVariant) {
+      return this.prisma.$transaction(async (transaction) => {
+        await transaction.productVariant.updateMany({
+          where: { productId: id },
+          data: { isActive: false, isDefault: false },
+        });
+        return transaction.product.update({
+          where: { id },
+          data: updateData,
+          include: { category: true, images: true, variants: { include: { images: true } } },
+        });
+      });
+    }
+
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.productVariant.updateMany({
+        where: { productId: id },
+        data: { isActive: false, isDefault: false },
+      });
+
+      for (const variant of variants) {
+        const { id: variantId, images, ...variantData } = variant;
+        if (variantId) {
+          await transaction.productVariant.update({
+            where: { id: variantId },
+            data: {
+              ...variantData,
+              images: {
+                deleteMany: {},
+                ...(images.length ? { create: images } : {}),
+              },
+            },
+          });
+        } else {
+          await transaction.productVariant.create({
+            data: {
+              ...variantData,
+              productId: id,
+              ...(images.length ? { images: { create: images } } : {}),
+            },
+          });
+        }
+      }
+
+      return transaction.product.update({
+        where: { id },
+        data: {
+          ...updateData,
+          sku: defaultVariant.sku,
+          price: defaultVariant.price,
+          compareAtPrice: defaultVariant.compareAtPrice,
+          stock: defaultVariant.stock,
+          leasePriceMonthly: defaultVariant.leasePriceMonthly,
+        },
+        include: { category: true, images: true, variants: { include: { images: true } } },
+      });
     });
   }
 

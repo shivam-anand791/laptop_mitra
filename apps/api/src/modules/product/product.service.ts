@@ -259,6 +259,17 @@ export class ProductService {
       sortOrder: img.sortOrder || 0,
       createdAt: img.createdAt || new Date().toISOString(),
     }));
+    const variants = (p.variants || []).map((variant: any) => ({
+      ...variant,
+      price: Number(variant.price),
+      compareAtPrice: variant.compareAtPrice === null ? null : Number(variant.compareAtPrice),
+      leasePriceMonthly: variant.leasePriceMonthly === null ? null : Number(variant.leasePriceMonthly),
+      attributes: typeof variant.attributes === 'string' ? JSON.parse(variant.attributes) : variant.attributes || {},
+      images: (variant.images || []).map((image: any) => ({
+        ...image,
+        url: image.url.startsWith('http') || !assetBaseUrl ? image.url : `${assetBaseUrl}/${image.url.replace(/^\//, '')}`,
+      })),
+    }));
 
     return {
       id: p.id,
@@ -283,6 +294,7 @@ export class ProductService {
       categoryId: p.categoryId || null,
       category: p.category || null,
       images,
+      variants,
       createdAt: p.createdAt || new Date().toISOString(),
       updatedAt: p.updatedAt || new Date().toISOString(),
     };
@@ -357,7 +369,15 @@ export class ProductService {
           take: normalizedFilters.limit,
           skip: normalizedFilters.offset,
           orderBy: { createdAt: 'desc' },
-          include: { category: true, images: true },
+          include: {
+            category: true,
+            images: true,
+            variants: {
+              where: { isActive: true, isDefault: true },
+              take: 1,
+              include: { images: { orderBy: { sortOrder: 'asc' } } },
+            },
+          },
         }),
         this.prisma.product.count({ where }),
       ]);
@@ -423,9 +443,19 @@ export class ProductService {
 
   async findOne(id: string, _includeRelations: string[] = []): Promise<Product> {
     try {
-      const dbProduct = await this.prisma.product.findUnique({
-        where: { id },
-        include: { category: true, images: true },
+      const dbProduct = await this.prisma.product.findFirst({
+        where: {
+          OR: [{ id }, { slug: id }],
+        },
+        include: {
+          category: true,
+          images: true,
+          variants: {
+            where: { isActive: true },
+            include: { images: { orderBy: { sortOrder: 'asc' } } },
+            orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+          },
+        },
       });
       if (dbProduct) {
         return this.normalizeProduct(dbProduct);

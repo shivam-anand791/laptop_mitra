@@ -246,10 +246,11 @@ export const api = {
     purchaseMode: 'sell' | 'lease' = 'sell',
     configuration: string = 'default',
     hasWarranty: boolean = false,
+    variantId?: string,
   ) {
     return await request<any>('/cart/items', {
       method: 'POST',
-      body: JSON.stringify({ productId, quantity, purchaseMode, configuration, hasWarranty }),
+      body: JSON.stringify({ productId, quantity, purchaseMode, configuration, hasWarranty, ...(variantId ? { variantId } : {}) }),
     });
   },
 

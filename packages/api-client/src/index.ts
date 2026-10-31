@@ -150,10 +150,11 @@ export class LaptopMitraApiClient {
     purchaseMode: 'sell' | 'lease' = 'sell',
     configuration: string = 'default',
     hasWarranty: boolean = false,
+    variantId?: string,
   ): Promise<{ cartItem: CartItem; message: string }> {
     return this.request<{ cartItem: CartItem; message: string }>('/cart/items', {
       method: 'POST',
-      body: JSON.stringify({ productId, quantity, purchaseMode, configuration, hasWarranty }),
+      body: JSON.stringify({ productId, quantity, purchaseMode, configuration, hasWarranty, ...(variantId ? { variantId } : {}) }),
     });
   }
 
@@ -742,4 +743,3 @@ export class LaptopMitraApiClient {
     });
   }
 }
-

@@ -1,0 +1,588 @@
+[
+  {
+    "id": "prod-asus-rog-zephyrus-g14",
+    "name": "ASUS ROG Zephyrus G14 (AMD Ryzen 9 6900HS, 16GB, 1TB SSD, Radeon RX 6700S)",
+    "sku": "LM-ROG-G14-6900-16-1TB",
+    "price": "82999",
+    "compareAtPrice": "159990",
+    "leasePriceMonthly": null,
+    "bulkSellPrice": null,
+    "bulkLeasePrice": null,
+    "variants": [
+      {
+        "id": "02a7223b-8a94-48cc-9649-8f04ae2d3e86",
+        "sku": "LM-ROG-G14-6900-16-512",
+        "name": "16GB DDR5 / 512GB SSD / Radeon RX 6700S 8GB",
+        "price": "74999",
+        "compareAtPrice": "139990",
+        "leasePriceMonthly": null,
+        "stock": 4,
+        "isDefault": false,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "AMD Radeon RX 6700S 8GB",
+          "processor": "AMD Ryzen 9 6900HS"
+        }
+      },
+      {
+        "id": "3b5c7270-f356-4bd9-a00a-00eab067105c",
+        "sku": "LM-ROG-G14-6900-16-1TB",
+        "name": "16GB DDR5 / 1TB SSD / Radeon RX 6700S 8GB",
+        "price": "82999",
+        "compareAtPrice": "159990",
+        "leasePriceMonthly": null,
+        "stock": 11,
+        "isDefault": true,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "1TB SSD",
+          "graphics": "AMD Radeon RX 6700S 8GB",
+          "processor": "AMD Ryzen 9 6900HS"
+        }
+      },
+      {
+        "id": "f17a743f-8964-4420-bc87-8cc871ef2687",
+        "sku": "LM-ROG-G14-6900-24-1TB",
+        "name": "24GB DDR5 / 1TB SSD / Radeon RX 6700S 8GB",
+        "price": "92999",
+        "compareAtPrice": "174990",
+        "leasePriceMonthly": null,
+        "stock": 4,
+        "isDefault": false,
+        "attributes": {
+          "ram": "24GB",
+          "storage": "1TB SSD",
+          "graphics": "AMD Radeon RX 6700S 8GB",
+          "processor": "AMD Ryzen 9 6900HS"
+        }
+      }
+    ]
+  },
+  {
+    "id": "prod-macbook-air-m1",
+    "name": "Apple MacBook Air 13.3\" (M1 Chip, 8GB RAM, 256GB SSD) - Gold",
+    "sku": "LM-MBA-M1-8-256-GLD",
+    "price": "51999",
+    "compareAtPrice": "92900",
+    "leasePriceMonthly": null,
+    "bulkSellPrice": null,
+    "bulkLeasePrice": null,
+    "variants": [
+      {
+        "id": "de3771e4-f593-46da-a3d9-8efdfa51ea28",
+        "sku": "LM-MBA-M1-8-256-GLD",
+        "name": "8GB Unified RAM / 256GB SSD / Apple 7-Core GPU",
+        "price": "51999",
+        "compareAtPrice": "92900",
+        "leasePriceMonthly": null,
+        "stock": 12,
+        "isDefault": true,
+        "attributes": {
+          "ram": "8GB",
+          "storage": "256GB SSD",
+          "graphics": "Apple 7-Core GPU",
+          "processor": "Apple M1 (8-Core CPU)"
+        }
+      },
+      {
+        "id": "b1097065-7713-40c9-b692-f9ddcfdc649d",
+        "sku": "LM-MBA-M1-8-512-GRY",
+        "name": "8GB Unified RAM / 512GB SSD / Apple 8-Core GPU",
+        "price": "61999",
+        "compareAtPrice": "112900",
+        "leasePriceMonthly": null,
+        "stock": 6,
+        "isDefault": false,
+        "attributes": {
+          "ram": "8GB",
+          "storage": "512GB SSD",
+          "graphics": "Apple 8-Core GPU",
+          "processor": "Apple M1 (8-Core CPU)"
+        }
+      },
+      {
+        "id": "e6c03abc-1e8a-44d2-a2fc-6edc058129a9",
+        "sku": "LM-MBA-M1-16-512-GRY",
+        "name": "16GB Unified RAM / 512GB SSD / Apple 8-Core GPU",
+        "price": "74999",
+        "compareAtPrice": "132900",
+        "leasePriceMonthly": null,
+        "stock": 4,
+        "isDefault": false,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "Apple 8-Core GPU",
+          "processor": "Apple M1 (8-Core CPU)"
+        }
+      }
+    ]
+  },
+  {
+    "id": "prod-macbook-pro-16",
+    "name": "Apple MacBook Pro 16\" (M2 Pro, 16GB, 512GB SSD) - Space Gray",
+    "sku": "LM-MBP16-M2P-16-512",
+    "price": "154999",
+    "compareAtPrice": "249900",
+    "leasePriceMonthly": null,
+    "bulkSellPrice": null,
+    "bulkLeasePrice": null,
+    "variants": [
+      {
+        "id": "421c71c6-7848-42b6-affc-4c87bdc993df",
+        "sku": "LM-MBP16-M2P-16-512",
+        "name": "16GB Unified RAM / 512GB SSD / M2 Pro (12-Core)",
+        "price": "154999",
+        "compareAtPrice": "249900",
+        "leasePriceMonthly": null,
+        "stock": 8,
+        "isDefault": true,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "Apple 19-Core GPU",
+          "processor": "Apple M2 Pro (12-Core)"
+        }
+      },
+      {
+        "id": "51b8336f-2529-4733-8d92-ce804020418f",
+        "sku": "LM-MBP16-M2P-32-2TB",
+        "name": "32GB Unified RAM / 2TB SSD / M2 Pro (12-Core)",
+        "price": "219999",
+        "compareAtPrice": "329900",
+        "leasePriceMonthly": null,
+        "stock": 3,
+        "isDefault": false,
+        "attributes": {
+          "ram": "32GB",
+          "storage": "2TB SSD",
+          "graphics": "Apple 19-Core GPU",
+          "processor": "Apple M2 Pro (12-Core)"
+        }
+      },
+      {
+        "id": "72ee2744-d7c4-4469-ab14-171b3b7ca6ae",
+        "sku": "LM-MBP16-M2P-32-1TB",
+        "name": "32GB Unified RAM / 1TB SSD / M2 Pro (12-Core)",
+        "price": "189999",
+        "compareAtPrice": "289900",
+        "leasePriceMonthly": null,
+        "stock": 5,
+        "isDefault": false,
+        "attributes": {
+          "ram": "32GB",
+          "storage": "1TB SSD",
+          "graphics": "Apple 19-Core GPU",
+          "processor": "Apple M2 Pro (12-Core)"
+        }
+      }
+    ]
+  },
+  {
+    "id": "prod-dell-xps-15-9520",
+    "name": "Dell XPS 15 9520 (Intel Core i7 12th Gen, 32GB RAM, 1TB SSD, RTX 3050 Ti)",
+    "sku": "LM-XPS15-9520-32-1TB-3050TI",
+    "price": "94999",
+    "compareAtPrice": "185000",
+    "leasePriceMonthly": null,
+    "bulkSellPrice": null,
+    "bulkLeasePrice": null,
+    "variants": [
+      {
+        "id": "75e1c423-df76-4240-b102-21c3cd45673d",
+        "sku": "LM-XPS15-9520-32-1TB-3050TI",
+        "name": "32GB DDR5 / 1TB SSD / RTX 3050 Ti 4GB / 15.6\" FHD+",
+        "price": "94999",
+        "compareAtPrice": "185000",
+        "leasePriceMonthly": null,
+        "stock": 9,
+        "isDefault": true,
+        "attributes": {
+          "ram": "32GB",
+          "storage": "1TB SSD",
+          "graphics": "NVIDIA GeForce RTX 3050 Ti 4GB",
+          "processor": "Intel Core i7-12700H"
+        }
+      },
+      {
+        "id": "46ebc085-3415-4926-baf3-45f5e0363844",
+        "sku": "LM-XPS15-9520-16-512-3050",
+        "name": "16GB DDR5 / 512GB SSD / RTX 3050 4GB / 15.6\" FHD+",
+        "price": "78999",
+        "compareAtPrice": "145000",
+        "leasePriceMonthly": null,
+        "stock": 5,
+        "isDefault": false,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "NVIDIA GeForce RTX 3050 4GB",
+          "processor": "Intel Core i7-12700H"
+        }
+      },
+      {
+        "id": "5956bbfa-b2a5-434a-8536-4938267bbf6e",
+        "sku": "LM-XPS15-9520-64-2TB-OLED",
+        "name": "64GB DDR5 / 2TB SSD / RTX 3050 Ti 4GB / 15.6\" 3.5K OLED",
+        "price": "124999",
+        "compareAtPrice": "235000",
+        "leasePriceMonthly": null,
+        "stock": 3,
+        "isDefault": false,
+        "attributes": {
+          "ram": "64GB",
+          "storage": "2TB SSD",
+          "graphics": "NVIDIA GeForce RTX 3050 Ti 4GB",
+          "processor": "Intel Core i7-12700H"
+        }
+      }
+    ]
+  },
+  {
+    "id": "prod-hp-elitebook-840-g8",
+    "name": "HP EliteBook 840 G8 (Intel Core i5 11th Gen, 16GB RAM, 256GB SSD)",
+    "sku": "LM-HP-EB840G8-I5-16-512",
+    "price": "38999",
+    "compareAtPrice": "92000",
+    "leasePriceMonthly": null,
+    "bulkSellPrice": null,
+    "bulkLeasePrice": null,
+    "variants": [
+      {
+        "id": "2d4f2111-847d-4da0-90da-e42c264f9056",
+        "sku": "LM-HP-EB840G8-I5-8-256",
+        "name": "8GB DDR4 / 256GB SSD / Intel Core i5-1135G7",
+        "price": "32999",
+        "compareAtPrice": "78000",
+        "leasePriceMonthly": null,
+        "stock": 8,
+        "isDefault": false,
+        "attributes": {
+          "ram": "8GB",
+          "storage": "256GB SSD",
+          "graphics": "Intel Iris Xe Graphics",
+          "processor": "Intel Core i5-1135G7"
+        }
+      },
+      {
+        "id": "efdf5b2a-7db4-46d5-a984-e2b7d3f4c5dc",
+        "sku": "LM-HP-EB840G8-I5-16-512",
+        "name": "16GB DDR4 / 512GB SSD / Intel Core i5-1135G7",
+        "price": "38999",
+        "compareAtPrice": "92000",
+        "leasePriceMonthly": null,
+        "stock": 19,
+        "isDefault": true,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "Intel Iris Xe Graphics",
+          "processor": "Intel Core i5-1135G7"
+        }
+      },
+      {
+        "id": "235e28b3-2111-44be-8b1e-26314518691f",
+        "sku": "LM-HP-EB840G8-I7-16-512",
+        "name": "16GB DDR4 / 512GB SSD / Intel Core i7-1165G7",
+        "price": "44999",
+        "compareAtPrice": "108000",
+        "leasePriceMonthly": null,
+        "stock": 6,
+        "isDefault": false,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "Intel Iris Xe Graphics",
+          "processor": "Intel Core i7-1165G7"
+        }
+      },
+      {
+        "id": "28ebfa9a-2e57-470f-85da-2a78b20f6dd4",
+        "sku": "LM-HP-EB840G8-I7-32-1TB",
+        "name": "32GB DDR4 / 1TB SSD / Intel Core i7-1165G7",
+        "price": "52999",
+        "compareAtPrice": "125000",
+        "leasePriceMonthly": null,
+        "stock": 4,
+        "isDefault": false,
+        "attributes": {
+          "ram": "32GB",
+          "storage": "1TB SSD",
+          "graphics": "Intel Iris Xe Graphics",
+          "processor": "Intel Core i7-1165G7"
+        }
+      }
+    ]
+  },
+  {
+    "id": "prod-thinkpad-x1-carbon-g10",
+    "name": "Lenovo ThinkPad X1 Carbon Gen 10 (Intel Core i7 12th Gen, 16GB, 512GB SSD)",
+    "sku": "LM-TP-X1C10-I7-16-512",
+    "price": "64999",
+    "compareAtPrice": "148000",
+    "leasePriceMonthly": null,
+    "bulkSellPrice": null,
+    "bulkLeasePrice": null,
+    "variants": [
+      {
+        "id": "7b66243b-03fd-4abf-a8ee-f4d1d5ede677",
+        "sku": "LM-TP-X1C10-I5-16-512",
+        "name": "16GB LPDDR5 / 512GB SSD / Intel Core i5-1240P",
+        "price": "56999",
+        "compareAtPrice": "135000",
+        "leasePriceMonthly": null,
+        "stock": 6,
+        "isDefault": false,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "Intel Iris Xe Graphics",
+          "processor": "Intel Core i5-1240P"
+        }
+      },
+      {
+        "id": "d733550b-ffe0-456e-b76c-695acf5d87c6",
+        "sku": "LM-TP-X1C10-I7-16-512",
+        "name": "16GB LPDDR5 / 512GB SSD / Intel Core i7-1260P",
+        "price": "64999",
+        "compareAtPrice": "148000",
+        "leasePriceMonthly": null,
+        "stock": 14,
+        "isDefault": true,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "Intel Iris Xe Graphics",
+          "processor": "Intel Core i7-1260P"
+        }
+      },
+      {
+        "id": "a3fd7537-c110-492b-be21-6b9f5bfe8735",
+        "sku": "LM-TP-X1C10-I7-32-1TB",
+        "name": "32GB LPDDR5 / 1TB SSD / Intel Core i7-1260P",
+        "price": "79999",
+        "compareAtPrice": "175000",
+        "leasePriceMonthly": null,
+        "stock": 5,
+        "isDefault": false,
+        "attributes": {
+          "ram": "32GB",
+          "storage": "1TB SSD",
+          "graphics": "Intel Iris Xe Graphics",
+          "processor": "Intel Core i7-1260P"
+        }
+      }
+    ]
+  },
+  {
+    "id": "6db6f9d3-796c-4ab8-9748-4555bbdd074c",
+    "name": "[QA-TEST] ASUS ROG Strix G16 (2023) (165Hz QHD+, RTX 40-Series)",
+    "sku": "LM-QA-ROG-G16-01",
+    "price": "104999",
+    "compareAtPrice": "144990",
+    "leasePriceMonthly": null,
+    "bulkSellPrice": null,
+    "bulkLeasePrice": null,
+    "variants": [
+      {
+        "id": "19ccd2ea-6de5-4cac-bfac-6d7605235d50",
+        "sku": "LM-QA-ROG-G16-01",
+        "name": "16GB RAM / 512GB SSD / RTX 4060 8GB",
+        "price": "104999",
+        "compareAtPrice": "144990",
+        "leasePriceMonthly": null,
+        "stock": 7,
+        "isDefault": true,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "NVIDIA GeForce RTX 4060 8GB",
+          "warranty": "1 Year LaptopMitra Onsite",
+          "condition": "Grade A+ Certified",
+          "processor": "Intel Core i7-13650HX"
+        }
+      },
+      {
+        "id": "7db97e69-86d9-4df8-a32f-468c7db3e860",
+        "sku": "LM-QA-ROG-G16-02",
+        "name": "32GB RAM / 1TB SSD / RTX 4070 8GB",
+        "price": "129999",
+        "compareAtPrice": "174990",
+        "leasePriceMonthly": null,
+        "stock": 5,
+        "isDefault": false,
+        "attributes": {
+          "ram": "32GB",
+          "storage": "1TB SSD",
+          "graphics": "NVIDIA GeForce RTX 4070 8GB",
+          "warranty": "1 Year LaptopMitra Onsite",
+          "condition": "Grade A+ Certified",
+          "processor": "Intel Core i7-13650HX"
+        }
+      }
+    ]
+  },
+  {
+    "id": "3e6dc385-00d3-4a85-bc8e-8b2cd97e2b81",
+    "name": "[QA-TEST] Apple MacBook Pro 14\" (Apple M3 Pro Chip, Liquid Retina XDR)",
+    "sku": "LM-QA-MBP14-M3-01",
+    "price": "169999",
+    "compareAtPrice": "199900",
+    "leasePriceMonthly": null,
+    "bulkSellPrice": null,
+    "bulkLeasePrice": null,
+    "variants": [
+      {
+        "id": "762d070f-91a8-4fa6-ae2d-82616a2cbc32",
+        "sku": "LM-QA-MBP14-M3-01",
+        "name": "18GB RAM / 512GB SSD (11-Core CPU / 14-Core GPU)",
+        "price": "169999",
+        "compareAtPrice": "199900",
+        "leasePriceMonthly": null,
+        "stock": 4,
+        "isDefault": true,
+        "attributes": {
+          "ram": "18GB",
+          "storage": "512GB SSD",
+          "graphics": "Apple 14-Core GPU",
+          "warranty": "1 Year AppleCare+ Equivalent",
+          "condition": "Grade A+ Like New",
+          "processor": "Apple M3 Pro (11-Core)"
+        }
+      },
+      {
+        "id": "be5d702e-527e-4455-85ad-a65318052bf1",
+        "sku": "LM-QA-MBP14-M3-02",
+        "name": "36GB RAM / 1TB SSD (12-Core CPU / 18-Core GPU)",
+        "price": "219999",
+        "compareAtPrice": "249900",
+        "leasePriceMonthly": null,
+        "stock": 4,
+        "isDefault": false,
+        "attributes": {
+          "ram": "36GB",
+          "storage": "1TB SSD",
+          "graphics": "Apple 18-Core GPU",
+          "warranty": "1 Year AppleCare+ Equivalent",
+          "condition": "Grade A+ Like New",
+          "processor": "Apple M3 Pro (12-Core)"
+        }
+      }
+    ]
+  },
+  {
+    "id": "4c5c3e27-c9b3-434d-a441-df092d2e638a",
+    "name": "[QA-TEST] Dell XPS 13 Plus 9320 (Intel Core i7 12th Gen, 3.5K OLED Touch)",
+    "sku": "LM-QA-XPS13P-01",
+    "price": "84999",
+    "compareAtPrice": "139990",
+    "leasePriceMonthly": null,
+    "bulkSellPrice": null,
+    "bulkLeasePrice": null,
+    "variants": [
+      {
+        "id": "6b462857-48d0-4177-a8ee-163eea099528",
+        "sku": "LM-QA-XPS13P-01",
+        "name": "16GB RAM / 512GB SSD (Core i7 / OLED Touch)",
+        "price": "84999",
+        "compareAtPrice": "139990",
+        "leasePriceMonthly": null,
+        "stock": 9,
+        "isDefault": true,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "Intel Iris Xe",
+          "warranty": "1 Year Doorstep Warranty",
+          "condition": "Grade A+ Flawless",
+          "processor": "Intel Core i7-1260P"
+        }
+      },
+      {
+        "id": "8a90363a-0317-4d9a-94dd-464f57e5e7b1",
+        "sku": "LM-QA-XPS13P-02",
+        "name": "32GB RAM / 1TB SSD (Core i7 / OLED Touch)",
+        "price": "99999",
+        "compareAtPrice": "164990",
+        "leasePriceMonthly": null,
+        "stock": 3,
+        "isDefault": false,
+        "attributes": {
+          "ram": "32GB",
+          "storage": "1TB SSD",
+          "graphics": "Intel Iris Xe",
+          "warranty": "2 Years Comprehensive",
+          "condition": "Grade A+ Flawless",
+          "processor": "Intel Core i7-1260P"
+        }
+      }
+    ]
+  },
+  {
+    "id": "574340e6-97ab-4d0f-8e92-2b9ae0532361",
+    "name": "[QA-TEST] Lenovo ThinkPad T14s Gen 3 (Intel Core 12th Gen, FHD+ IPS)",
+    "sku": "LM-QA-TP-T14-01",
+    "price": "45999",
+    "compareAtPrice": "85000",
+    "leasePriceMonthly": null,
+    "bulkSellPrice": null,
+    "bulkLeasePrice": null,
+    "variants": [
+      {
+        "id": "280fbae7-26b5-43be-98e7-6c9bfbc7396b",
+        "sku": "LM-QA-TP-T14-01",
+        "name": "8GB RAM / 256GB SSD (Core i5)",
+        "price": "45999",
+        "compareAtPrice": "85000",
+        "leasePriceMonthly": null,
+        "stock": 10,
+        "isDefault": true,
+        "attributes": {
+          "ram": "8GB",
+          "storage": "256GB SSD",
+          "graphics": "Intel Iris Xe",
+          "warranty": "1 Year Comprehensive",
+          "condition": "Grade A+",
+          "processor": "Intel Core i5-1240P"
+        }
+      },
+      {
+        "id": "fa246e8d-b5d9-47af-8e27-5f17ba0d1d6b",
+        "sku": "LM-QA-TP-T14-02",
+        "name": "16GB RAM / 512GB SSD (Core i5)",
+        "price": "52999",
+        "compareAtPrice": "95000",
+        "leasePriceMonthly": null,
+        "stock": 8,
+        "isDefault": false,
+        "attributes": {
+          "ram": "16GB",
+          "storage": "512GB SSD",
+          "graphics": "Intel Iris Xe",
+          "warranty": "1 Year Comprehensive",
+          "condition": "Grade A+",
+          "processor": "Intel Core i5-1240P"
+        }
+      },
+      {
+        "id": "b4759d4c-3465-403e-b811-45d6826004d8",
+        "sku": "LM-QA-TP-T14-03",
+        "name": "32GB RAM / 1TB SSD (Core i7)",
+        "price": "64999",
+        "compareAtPrice": "115000",
+        "leasePriceMonthly": null,
+        "stock": 5,
+        "isDefault": false,
+        "attributes": {
+          "ram": "32GB",
+          "storage": "1TB SSD",
+          "graphics": "Intel Iris Xe",
+          "warranty": "2 Years Extended",
+          "condition": "Grade A+",
+          "processor": "Intel Core i7-1260P"
+        }
+      }
+    ]
+  }
+]

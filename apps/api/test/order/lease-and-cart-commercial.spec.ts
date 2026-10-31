@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { OrderService } from '../../src/modules/order/order.service';
-import { CONFIG_UPGRADE_SELL_DELTA, CONFIG_UPGRADE_LEASE_DELTA, WARRANTY_PRICE_PER_UNIT } from '../../src/modules/cart/cart.service';
+import { WARRANTY_PRICE_PER_UNIT } from '../../src/modules/cart/cart.service';
 
 describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, Multi-Mode Orders & Razorpay', () => {
   let orderService: OrderService;
@@ -50,6 +50,9 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findUnique: jest.fn(),
       },
+      productVariant: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       order: {
         findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockImplementation(({ data }: any) => {
@@ -97,21 +100,7 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
     );
   });
 
-  describe('1. Price Resolution & Upgrade Deltas', () => {
-    it('resolves correct prices for sell and lease with configuration upgrade deltas', () => {
-      // Sell default
-      const sellDefault = 80000;
-      // Sell with 16GB Pro (+4000)
-      const sellUpgraded = sellDefault + CONFIG_UPGRADE_SELL_DELTA;
-      expect(sellUpgraded).toBe(84000);
-
-      // Lease explicit (3500)
-      const leaseExplicit = 3500;
-      // Lease explicit with 16GB Pro (+500/mo)
-      const leaseUpgraded = leaseExplicit + CONFIG_UPGRADE_LEASE_DELTA;
-      expect(leaseUpgraded).toBe(4000);
-    });
-
+  describe('1. Price Resolution', () => {
     it('rejects order creation if a lease item has null leasePriceMonthly', async () => {
       prisma.cart.findFirst.mockResolvedValue({
         id: 'cart-1',
@@ -171,6 +160,53 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
     });
   });
 
+  it('prices and reserves the selected active variant at checkout', async () => {
+    const variant = {
+      id: 'variant-1',
+      productId: mockProductBuy.id,
+      name: '16GB RAM / 1TB SSD',
+      sku: 'TP-X1-16-1T',
+      attributes: { RAM: '16GB', Storage: '1TB SSD' },
+      price: 92500,
+      stock: 2,
+      allowBackorder: false,
+      isActive: true,
+    };
+    prisma.cart.findFirst.mockResolvedValue({
+      id: 'cart-variant',
+      items: [{
+        productId: mockProductBuy.id,
+        product: mockProductBuy,
+        variantId: variant.id,
+        variant,
+        priceAtAdd: 1,
+        quantity: 1,
+        purchaseMode: 'sell',
+        configuration: 'default',
+        hasWarranty: false,
+      }],
+    });
+
+    const order = await orderService.createOrder(
+      'user-1', undefined, undefined,
+      { email: 'user@example.com', phone: '9876543210' },
+      '9876543210', undefined, 'user@example.com',
+    );
+
+    expect(Number(order.subtotal)).toBe(92500);
+    expect(prisma.productVariant.updateMany).toHaveBeenCalledWith({
+      where: { id: variant.id, productId: mockProductBuy.id, isActive: true, stock: { gte: 1 } },
+      data: { stock: { decrement: 1 } },
+    });
+    expect(prisma.product.updateMany).not.toHaveBeenCalled();
+    expect(order.items[0]).toMatchObject({
+      variantId: variant.id,
+      variantSku: variant.sku,
+      variantName: variant.name,
+      variantAttributes: variant.attributes,
+    });
+  });
+
   describe('3. BUY and RENT Coexistence & Order Totals (Option A: Month 1 Advance)', () => {
     it('creates an order with BUY item + warranty and LEASE item (charged as Month 1 advance)', async () => {
       // 1 Buy item: ₹80,000 + 16GB Pro upgrade (+₹4,000) + Warranty (+₹1,999) = ₹85,999
@@ -184,7 +220,7 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
             product: mockProductBuy,
             quantity: 1,
             purchaseMode: 'sell',
-            configuration: 'ram-16gb',
+            configuration: 'default',
             hasWarranty: true,
           },
           {
@@ -209,17 +245,17 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
       );
 
       expect(order).toBeDefined();
-      expect(Number(order.subtotal)).toBe(92999);
-      expect(Number(order.finalAmount)).toBe(92999);
+      expect(Number(order.subtotal)).toBe(88999);
+      expect(Number(order.finalAmount)).toBe(88999);
       expect(order.items.length).toBe(2);
 
       const buyLine = order.items.find((i: any) => i.purchaseMode === 'sell');
       const leaseLine = order.items.find((i: any) => i.purchaseMode === 'lease');
 
       expect(buyLine).toBeDefined();
-      expect(buyLine.configuration).toBe('ram-16gb');
+      expect(buyLine.configuration).toBe('default');
       expect(buyLine.hasWarranty).toBe(true);
-      expect(Number(buyLine.price)).toBe(84000); // 80000 + 4000
+      expect(Number(buyLine.price)).toBe(80000);
       expect(buyLine.warrantyPrice).toBe(WARRANTY_PRICE_PER_UNIT);
 
       expect(leaseLine).toBeDefined();

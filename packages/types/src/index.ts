@@ -21,6 +21,31 @@ export interface ProductImage {
   createdAt?: Date | string;
 }
 
+export interface ProductVariantImage {
+  id: string;
+  variantId: string;
+  url: string;
+  altText?: string | null;
+  isPrimary: boolean;
+  sortOrder?: number;
+}
+
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  name: string;
+  sku: string;
+  attributes: Record<string, string | number | boolean>;
+  price: number;
+  compareAtPrice?: number | null;
+  leasePriceMonthly?: number | null;
+  stock: number;
+  allowBackorder?: boolean;
+  isActive: boolean;
+  isDefault: boolean;
+  images?: ProductVariantImage[];
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -44,6 +69,7 @@ export interface Product {
   categoryId?: string | null;
   category?: Category | null;
   images?: ProductImage[];
+  variants?: ProductVariant[];
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -70,6 +96,8 @@ export interface CartItem {
   id: string;
   cartId?: string;
   productId: string;
+  variantId?: string | null;
+  variant?: ProductVariant | null;
   quantity: number;
   priceAtAdd: number;
   purchaseMode?: 'sell' | 'lease';
@@ -151,6 +179,10 @@ export interface OrderItem {
   id: string;
   orderId: string;
   productId: string;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantName?: string | null;
+  variantAttributes?: Record<string, string | number | boolean> | null;
   quantity: number;
   price: number;
   purchaseMode?: 'sell' | 'lease';
@@ -815,3 +847,72 @@ export interface SupportSettings {
 
 
 
+
+// ---------------------------------------------------------------------------
+// Rental / Lease Duration & Pricing Structure
+// ---------------------------------------------------------------------------
+
+export type RentalTenureMonths = 3 | 6 | 12 | 24;
+
+export interface RentalPlanCalculation {
+  tenureMonths: RentalTenureMonths;
+  label: string;
+  monthlyRate: number;
+  totalRent: number;
+  refundableDeposit: number;
+  discountPercentage: number;
+  isBestValue: boolean;
+  savingsVsShortTerm: number;
+}
+
+export function calculateRentalPlans(base12MonthRate: number): RentalPlanCalculation[] {
+  const rate12 = Math.round(base12MonthRate);
+  const rate3 = Math.round(base12MonthRate * 1.28);
+  const rate6 = Math.round(base12MonthRate * 1.15);
+  const rate24 = Math.round(base12MonthRate * 0.82);
+
+  const deposit = Math.max(2500, Math.round((base12MonthRate * 1.2) / 500) * 500);
+
+  return [
+    {
+      tenureMonths: 3,
+      label: '3 Months (Flex)',
+      monthlyRate: rate3,
+      totalRent: rate3 * 3,
+      refundableDeposit: deposit,
+      discountPercentage: 0,
+      isBestValue: false,
+      savingsVsShortTerm: 0,
+    },
+    {
+      tenureMonths: 6,
+      label: '6 Months',
+      monthlyRate: rate6,
+      totalRent: rate6 * 6,
+      refundableDeposit: deposit,
+      discountPercentage: Math.round(((rate3 - rate6) / rate3) * 100),
+      isBestValue: false,
+      savingsVsShortTerm: (rate3 - rate6) * 6,
+    },
+    {
+      tenureMonths: 12,
+      label: '12 Months',
+      monthlyRate: rate12,
+      totalRent: rate12 * 12,
+      refundableDeposit: deposit,
+      discountPercentage: Math.round(((rate3 - rate12) / rate3) * 100),
+      isBestValue: true,
+      savingsVsShortTerm: (rate3 - rate12) * 12,
+    },
+    {
+      tenureMonths: 24,
+      label: '24 Months (Enterprise)',
+      monthlyRate: rate24,
+      totalRent: rate24 * 24,
+      refundableDeposit: deposit,
+      discountPercentage: Math.round(((rate3 - rate24) / rate3) * 100),
+      isBestValue: false,
+      savingsVsShortTerm: (rate3 - rate24) * 24,
+    },
+  ];
+}

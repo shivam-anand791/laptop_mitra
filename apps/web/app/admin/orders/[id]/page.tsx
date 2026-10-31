@@ -249,10 +249,15 @@ export default function AdminOrderDetailPage() {
                                 {product?.name || `Product ID: ${item.productId}`}
                               </p>
                               <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                                <span className="font-mono">SKU: {product?.sku || 'N/A'}</span>
+                                <span className="font-mono">SKU: {item.variantSku || product?.sku || 'N/A'}</span>
                                 <span>•</span>
                                 <span>Qty: {item.quantity} × {formatINR(item.price)}</span>
                               </div>
+                              {item.variantAttributes && (
+                                <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-400">
+                                  {Object.entries(item.variantAttributes).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}
+                                </p>
+                              )}
                             </div>
                           </div>
 

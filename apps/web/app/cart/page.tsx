@@ -93,14 +93,20 @@ export default function CartPage() {
                 const unitPrice = Number(item.priceAtAdd);
                 const warrantyAmount = (!isLease && item.hasWarranty) ? (item.warrantyPrice || 1999) : 0;
                 const itemTotal = (unitPrice + warrantyAmount) * item.quantity;
+                const variantAttributes = item.variant?.attributes || {};
+                const variantSummary = Object.entries(variantAttributes)
+                  .map(([key, value]) => `${key}: ${String(value)}`)
+                  .join(' · ');
                 const imgUrl =
+                  item.variant?.images?.find((i) => i.isPrimary)?.url ||
+                  item.variant?.images?.[0]?.url ||
                   item.product?.images?.find((i) => i.isPrimary)?.url ||
                   item.product?.images?.[0]?.url ||
                   '/images/generated/cat-business.webp';
 
                 return (
                   <div
-                    key={item.id || `${item.productId}-${item.purchaseMode}-${item.configuration}`}
+                    key={item.id || `${item.productId}-${item.variantId || item.configuration}-${item.purchaseMode}`}
                     className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs flex flex-col sm:flex-row items-start sm:items-center gap-4 transition-all hover:border-slate-300"
                   >
                     {/* Thumbnail */}
@@ -137,11 +143,6 @@ export default function CartPage() {
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                           Grade A+ Inspected
                         </span>
-                        {item.configuration === 'ram-16gb' && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                            16GB Pro Upgrade
-                          </span>
-                        )}
                       </div>
 
                       <Link href={`/products/${item.productId}`} className="block">
@@ -150,8 +151,10 @@ export default function CartPage() {
                         </h3>
                       </Link>
 
+                      {variantSummary && <p className="text-xs text-slate-600">{variantSummary}</p>}
+
                       <p className="text-xs text-slate-400 font-mono">
-                        SKU: {item.product?.sku || 'LM-SKU'}
+                        SKU: {item.variant?.sku || item.product?.sku || 'LM-SKU'}
                       </p>
 
                       <div className="pt-1 text-xs text-slate-600">

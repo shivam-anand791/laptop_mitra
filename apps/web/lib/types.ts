@@ -21,6 +21,31 @@ export interface ProductImage {
   createdAt?: Date | string;
 }
 
+export interface ProductVariantImage {
+  id: string;
+  variantId: string;
+  url: string;
+  altText?: string | null;
+  isPrimary: boolean;
+  sortOrder?: number;
+}
+
+export interface ProductVariant {
+  id: string;
+  productId: string;
+  name: string;
+  sku: string;
+  attributes: Record<string, string | number | boolean>;
+  price: number;
+  compareAtPrice?: number | null;
+  leasePriceMonthly?: number | null;
+  stock: number;
+  allowBackorder?: boolean;
+  isActive: boolean;
+  isDefault: boolean;
+  images?: ProductVariantImage[];
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -56,6 +81,7 @@ export interface Product {
   categoryId?: string | null;
   category?: Category | null;
   images?: ProductImage[];
+  variants?: ProductVariant[];
   dealEndsAt?: string | null;
   createdAt?: Date | string;
   updatedAt?: Date | string;
@@ -89,6 +115,8 @@ export interface CartItem {
   id: string;
   cartId?: string;
   productId: string;
+  variantId?: string | null;
+  variant?: ProductVariant | null;
   quantity: number;
   priceAtAdd: number;
   purchaseMode?: 'sell' | 'lease';
@@ -168,6 +196,10 @@ export interface OrderItem {
   id: string;
   orderId: string;
   productId: string;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantName?: string | null;
+  variantAttributes?: Record<string, string | number | boolean> | null;
   quantity: number;
   price: number;
   purchaseMode?: 'sell' | 'lease';
@@ -286,6 +318,10 @@ export interface AdminOrderItem {
   id: string;
   orderId: string;
   productId: string;
+  variantId?: string | null;
+  variantSku?: string | null;
+  variantName?: string | null;
+  variantAttributes?: Record<string, string | number | boolean> | null;
   quantity: number;
   price: string | number;
   product?: AdminProduct | Product | null;
@@ -444,5 +480,4 @@ export {
   type SavedReply,
   type SupportSettings,
 } from '@laptopmitra/types';
-
 

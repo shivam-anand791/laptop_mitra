@@ -2,8 +2,6 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProductService } from '../product/product.service';
 
-export const CONFIG_UPGRADE_SELL_DELTA = 4000;
-export const CONFIG_UPGRADE_LEASE_DELTA = 500;
 export const WARRANTY_PRICE_PER_UNIT = 1999;
 
 @Injectable()
@@ -13,7 +11,7 @@ export class CartService {
     private productService: ProductService,
   ) {}
 
-  private resolveUnitPrice(product: any, purchaseMode: 'sell' | 'lease', configuration: string): number {
+  private resolveUnitPrice(product: any, purchaseMode: 'sell' | 'lease'): number {
     let basePrice: number;
     if (purchaseMode === 'lease') {
       if (product.leasePriceMonthly === null || product.leasePriceMonthly === undefined) {
@@ -24,12 +22,7 @@ export class CartService {
       basePrice = Number(product.price);
     }
 
-    let upgradeDelta = 0;
-    if (configuration === 'ram-16gb') {
-      upgradeDelta = purchaseMode === 'sell' ? CONFIG_UPGRADE_SELL_DELTA : CONFIG_UPGRADE_LEASE_DELTA;
-    }
-
-    return basePrice + upgradeDelta;
+    return basePrice;
   }
 
   async getOrCreateCart(userId: string) {
@@ -38,6 +31,7 @@ export class CartService {
       include: {
         items: {
           include: {
+            variant: { include: { images: true } },
             product: {
               include: { images: true },
             },
@@ -57,6 +51,7 @@ export class CartService {
       include: {
         items: {
           include: {
+            variant: { include: { images: true } },
             product: {
               include: { images: true },
             },
@@ -73,10 +68,13 @@ export class CartService {
     purchaseMode: 'sell' | 'lease' = 'sell',
     configuration: string = 'default',
     hasWarranty: boolean = false,
+    variantId?: string,
   ) {
     const normalizedMode = purchaseMode === 'lease' ? 'lease' : 'sell';
-    const normalizedConfig = configuration === 'ram-16gb' || configuration === '16gb-pro' || configuration === '16GB Pro' ? 'ram-16gb' : 'default';
 
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+      throw new BadRequestException('Quantity must be a positive whole number');
+    }
     if (hasWarranty && normalizedMode === 'lease') {
       throw new BadRequestException('Extended warranty is only available for outright purchase, not for lease');
     }
@@ -84,27 +82,49 @@ export class CartService {
     const cart = await this.getOrCreateCart(userId);
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
+      include: { variants: { where: { isActive: true, isDefault: true }, take: 1 } },
     });
 
     if (!product) {
       throw new NotFoundException(`Product with id ${productId} not found`);
     }
 
-    const unitPrice = this.resolveUnitPrice(product, normalizedMode, normalizedConfig);
-    const warrantyPrice = (hasWarranty && normalizedMode === 'sell') ? WARRANTY_PRICE_PER_UNIT : 0;
+    const selectedVariantId = variantId || product.variants?.[0]?.id;
+    const normalizedConfig = 'default';
+    const variant = selectedVariantId
+      ? await this.prisma.productVariant.findUnique({ where: { id: selectedVariantId }, include: { images: true } })
+      : null;
+    if (selectedVariantId && (!variant || variant.productId !== productId || !variant.isActive)) {
+      throw new BadRequestException('Selected product variant is unavailable');
+    }
 
-    // Check if matching item (same product, mode, and configuration) already in cart
+    let unitPrice: number;
+    if (variant) {
+      const variantPrice = normalizedMode === 'lease' ? variant.leasePriceMonthly : variant.price;
+      if (variantPrice === null || variantPrice === undefined) {
+        throw new BadRequestException('This variant does not have a fixed monthly lease price. Please request a quote.');
+      }
+      unitPrice = Number(variantPrice);
+    } else {
+      unitPrice = this.resolveUnitPrice(product, normalizedMode);
+    }
+    const warrantyPrice = (hasWarranty && normalizedMode === 'sell') ? WARRANTY_PRICE_PER_UNIT : 0;
+    const stock = variant?.stock ?? product.stock;
+    const allowBackorder = variant?.allowBackorder ?? product.allowBackorder;
+
+    // Variant identity is independent from legacy configuration identity.
     const existingItem = cart.items.find(
       (item) =>
         item.productId === productId &&
         (item.purchaseMode || 'sell') === normalizedMode &&
+        (item.variantId || null) === (selectedVariantId || null) &&
         (item.configuration || 'default') === normalizedConfig,
     );
 
     if (existingItem) {
       const newQuantity = existingItem.quantity + quantity;
-      if (newQuantity > product.stock && !product.allowBackorder) {
-        throw new BadRequestException(`Only ${product.stock} items in stock`);
+      if (newQuantity > stock && !allowBackorder) {
+        throw new BadRequestException(`Only ${stock} items in stock`);
       }
       return this.prisma.cartItem.update({
         where: { id: existingItem.id },
@@ -113,19 +133,23 @@ export class CartService {
           hasWarranty: hasWarranty !== undefined ? hasWarranty : existingItem.hasWarranty,
           warrantyPrice: (hasWarranty ?? existingItem.hasWarranty) && normalizedMode === 'sell' ? WARRANTY_PRICE_PER_UNIT : 0,
         },
-        include: { product: true },
+        include: { product: true, variant: { include: { images: true } } },
       });
     }
 
     // Check stock
-    if (quantity > product.stock && !product.allowBackorder) {
-      throw new BadRequestException(`Only ${product.stock} items in stock`);
+    if (quantity > stock && !allowBackorder) {
+      throw new BadRequestException(`Only ${stock} items in stock`);
     }
 
     return this.prisma.cartItem.create({
       data: {
         cart: { connect: { id: cart.id } },
         product: { connect: { id: productId } },
+        ...(selectedVariantId ? { variant: { connect: { id: selectedVariantId } } } : {}),
+        lineKey: selectedVariantId
+          ? `variant:${selectedVariantId}:${normalizedMode}`
+          : `${productId}:${normalizedMode}:${normalizedConfig}`,
         quantity,
         priceAtAdd: unitPrice,
         purchaseMode: normalizedMode,
@@ -133,7 +157,7 @@ export class CartService {
         hasWarranty: !!hasWarranty && normalizedMode === 'sell',
         warrantyPrice,
       },
-      include: { product: true },
+      include: { product: true, variant: { include: { images: true } } },
     });
   }
 
@@ -162,13 +186,13 @@ export class CartService {
     const cart = await this.getOrCreateCart(userId);
     let item = await this.prisma.cartItem.findUnique({
       where: { id: itemId },
-      include: { product: true, cart: true },
+      include: { product: true, variant: true, cart: true },
     });
 
     if (!item || item.cartId !== cart.id) {
       item = await this.prisma.cartItem.findFirst({
         where: { cartId: cart.id, productId: itemId },
-        include: { product: true, cart: true },
+        include: { product: true, variant: true, cart: true },
       });
     }
 
@@ -183,8 +207,10 @@ export class CartService {
 
     const data: any = {};
     if (updates.quantity !== undefined) {
-      if (updates.quantity > item.product.stock && !item.product.allowBackorder) {
-        throw new BadRequestException(`Only ${item.product.stock} items in stock`);
+      const stock = item.variant?.stock ?? item.product.stock;
+      const allowBackorder = item.variant?.allowBackorder ?? item.product.allowBackorder;
+      if (updates.quantity > stock && !allowBackorder) {
+        throw new BadRequestException(`Only ${stock} items in stock`);
       }
       data.quantity = updates.quantity;
     }
@@ -200,7 +226,7 @@ export class CartService {
     return this.prisma.cartItem.update({
       where: { id: item.id },
       data,
-      include: { product: true },
+      include: { product: true, variant: { include: { images: true } } },
     });
   }
 
@@ -218,9 +244,18 @@ export class CartService {
 
     let oneTimeTotal = 0;
     let monthlyTotal = 0;
+    const items = cart.items.map((item) => {
+      const variantPrice = item.purchaseMode === 'lease'
+        ? item.variant?.leasePriceMonthly
+        : item.variant?.price;
+      const unitPrice = variantPrice === null || variantPrice === undefined
+        ? Number(item.priceAtAdd)
+        : Number(variantPrice);
+      return { ...item, priceAtAdd: unitPrice };
+    });
 
-    for (const item of cart.items) {
-      const price = typeof item.priceAtAdd === 'object' ? Number(item.priceAtAdd) : Number(item.priceAtAdd);
+    for (const item of items) {
+      const price = Number(item.priceAtAdd);
       const warranty = item.hasWarranty
         ? (typeof item.warrantyPrice === 'object' ? Number(item.warrantyPrice) : Number(item.warrantyPrice || 0))
         : 0;
@@ -239,7 +274,7 @@ export class CartService {
     return {
       id: cart.id,
       userId: cart.userId,
-      items: cart.items,
+      items,
       createdAt: cart.createdAt,
       updatedAt: cart.updatedAt,
       cart,

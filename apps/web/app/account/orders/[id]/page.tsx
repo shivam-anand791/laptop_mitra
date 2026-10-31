@@ -300,16 +300,16 @@ export default function OrderDetailPage() {
                           BUY
                         </span>
                       )}
-                      {item.configuration === 'ram-16gb' && (
-                        <span className="text-[10px] font-bold bg-amber-50 text-amber-800 px-2 py-0.5 rounded border border-amber-200">
-                          16GB Pro Upgrade
-                        </span>
-                      )}
                     </div>
 
                     <h4 className="font-bold text-sm text-slate-900">{item.product?.name || 'Enterprise Certified Laptop'}</h4>
+                    {item.variantAttributes && (
+                      <p className="text-xs text-slate-600">
+                        {Object.entries(item.variantAttributes).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}
+                      </p>
+                    )}
                     <p className="text-xs text-slate-500 mt-0.5">
-                      SKU: {item.product?.sku || 'LM-SKU-992'} • Qty: {item.quantity}
+                      SKU: {item.variantSku || item.product?.sku || 'LM-SKU-992'} • Qty: {item.quantity}
                     </p>
 
                     <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs">
@@ -565,17 +565,17 @@ export default function OrderDetailPage() {
                             }`}>
                               {isLease ? 'Rent / mo' : 'Buy'}
                             </span>
-                            {it.configuration === 'ram-16gb' && (
-                              <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
-                                16GB RAM Upgrade
-                              </span>
-                            )}
                             {it.hasWarranty && !isLease && (
                               <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800">
                                 +1 Yr Warranty
                               </span>
                             )}
                           </div>
+                          {it.variantAttributes && (
+                            <p className="mt-1 text-[11px] font-normal text-slate-600">
+                              {Object.entries(it.variantAttributes).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}
+                            </p>
+                          )}
                           {isLease && (
                             <p className="text-[11px] text-amber-700 mt-0.5 font-medium">
                               Month 1 advance, ₹{Number(it.price).toLocaleString('en-IN')}/month thereafter. Later months are invoiced separately.

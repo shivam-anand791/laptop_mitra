@@ -18,6 +18,7 @@ interface CartContextType {
       purchaseMode?: 'sell' | 'lease';
       configuration?: 'default' | 'ram-16gb' | string;
       hasWarranty?: boolean;
+      variantId?: string;
     }
   ) => void;
   updateQuantity: (itemIdOrProductId: string, quantity: number) => void;
@@ -28,7 +29,7 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
-function resolveUnitPrice(product: Product, mode: 'sell' | 'lease', config: string): number {
+function resolveUnitPrice(product: Product, mode: 'sell' | 'lease'): number {
   let basePrice: number;
   if (mode === 'lease') {
     if (product.leasePriceMonthly !== null && product.leasePriceMonthly !== undefined) {
@@ -40,8 +41,7 @@ function resolveUnitPrice(product: Product, mode: 'sell' | 'lease', config: stri
     basePrice = Number(product.price);
   }
 
-  const upgradeDelta = config === 'ram-16gb' ? (mode === 'sell' ? 4000 : 500) : 0;
-  return basePrice + upgradeDelta;
+  return basePrice;
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
@@ -85,7 +85,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
                     gItem.quantity || 1,
                     gItem.purchaseMode || 'sell',
                     gItem.configuration || 'default',
-                    gItem.hasWarranty || false
+                    gItem.hasWarranty || false,
+                    gItem.variantId || undefined
                   ).catch(() => {});
                 }
               }
@@ -136,16 +137,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       purchaseMode?: 'sell' | 'lease';
       configuration?: 'default' | 'ram-16gb' | string;
       hasWarranty?: boolean;
+      variantId?: string;
     }
   ) => {
     const mode = options?.purchaseMode === 'lease' ? 'lease' : 'sell';
-    const config = options?.configuration === 'ram-16gb' ? 'ram-16gb' : 'default';
+    const defaultVariant = product.variants?.find((item) => item.isActive && item.isDefault)
+      || product.variants?.find((item) => item.isActive);
+    const variantId = options?.variantId || defaultVariant?.id;
+    const variant = variantId ? product.variants?.find((item) => item.id === variantId && item.isActive) : undefined;
+    if (variantId && !variant) throw new Error('Selected product variant is unavailable.');
+    const config = 'default';
     const warranty = (options?.hasWarranty && mode === 'sell') ? true : false;
     const warrantyPrice = warranty ? 1999 : 0;
-    const unitPrice = resolveUnitPrice(product, mode, config);
+    const unitPrice = variant
+      ? Number(mode === 'lease' ? variant.leasePriceMonthly : variant.price)
+      : resolveUnitPrice(product, mode);
+    if (variant && mode === 'lease' && variant.leasePriceMonthly == null) {
+      throw new Error('This variant does not have a fixed monthly lease price. Please request a quote.');
+    }
 
     const existingIndex = items.findIndex(
       item => item.productId === product.id &&
+              (item.variantId || null) === (variantId || null) &&
               (item.purchaseMode || 'sell') === mode &&
               (item.configuration || 'default') === config
     );
@@ -167,6 +180,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const newItem: CartItem = {
         id: `ci-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         productId: product.id,
+        ...(variantId ? { variantId, variant } : {}),
         quantity,
         priceAtAdd: unitPrice,
         purchaseMode: mode,
@@ -182,7 +196,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     // Asynchronously notify backend API and synchronize server cart state
     if (firebaseUser) {
-      api.addToCart(product.id, quantity, mode, config, warranty)
+      api.addToCart(product.id, quantity, mode, config, warranty, variantId)
         .then(() => api.getCart())
         .then((res: any) => {
           const serverCart = res?.cart ?? res;

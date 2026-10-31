@@ -540,9 +540,15 @@ export default function CheckoutPage() {
                   {/* Items List Mini */}
                   <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
                     {items.map((item) => (
-                      <div key={item.productId} className="flex items-center justify-between text-xs py-2 border-b border-slate-100 last:border-0">
+                      <div key={item.id || `${item.productId}-${item.variantId || item.configuration}-${item.purchaseMode}`} className="flex items-center justify-between text-xs py-2 border-b border-slate-100 last:border-0">
                         <div className="min-w-0 pr-2">
                           <span className="font-bold text-slate-800 block truncate">{item.product?.name}</span>
+                          {item.variant?.attributes && (
+                            <span className="block truncate text-[11px] text-slate-500">
+                              {Object.entries(item.variant.attributes).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}
+                            </span>
+                          )}
+                          <span className="block font-mono text-[10px] text-slate-400">SKU: {item.variant?.sku || item.product?.sku}</span>
                           <span className="text-slate-400 font-mono text-[11px]">Qty: {item.quantity} × ₹{Number(item.priceAtAdd).toLocaleString('en-IN')}</span>
                         </div>
                         <span className="font-bold text-[#0B1F4B] tabular-nums shrink-0">

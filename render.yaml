@@ -4,7 +4,8 @@ services:
     runtime: node
     # --prod=false ensures devDependencies (nest, prisma, tsc, turbo) are installed even when NODE_ENV=production
     buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter api exec prisma generate && pnpm --filter api build
-    startCommand: corepack enable && node apps/api/dist/main
+    preDeployCommand: corepack enable && pnpm --filter api exec prisma migrate deploy
+    startCommand: corepack enable && pnpm --filter api exec prisma migrate deploy && node apps/api/dist/main
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION

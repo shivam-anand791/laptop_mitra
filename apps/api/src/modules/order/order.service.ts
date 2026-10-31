@@ -79,6 +79,10 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
         id: it.id,
         orderId: o.id,
         productId: it.productId,
+        variantId: it.variantId || null,
+        variantSku: it.variantSku || null,
+        variantName: it.variantName || null,
+        variantAttributes: it.variantAttributes || null,
         quantity: it.quantity,
         price: itPrice,
         purchaseMode: it.purchaseMode || 'sell',
@@ -196,7 +200,16 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
       order = await this.runSerializable(async (transaction) => {
         const cart = await transaction.cart.findFirst({
           where: { userId },
-          include: { items: { include: { product: true } } },
+          include: {
+            items: {
+              include: {
+                variant: true,
+                product: {
+                  include: { variants: { where: { isActive: true, isDefault: true }, take: 1 } },
+                },
+              },
+            },
+          },
         });
         if (!cart?.items?.length) throw new BadRequestException('Cart is empty');
 
@@ -211,24 +224,34 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
           }
 
           const mode = item.purchaseMode === 'lease' ? 'lease' : 'sell';
-          const config = item.configuration === 'ram-16gb' || item.configuration === '16gb-pro' ? 'ram-16gb' : 'default';
+          const config = 'default';
+          const variant = item.variant || item.product.variants?.[0] || null;
+
+          if (item.variantId && (!variant || variant.id !== item.variantId || variant.productId !== item.productId || !variant.isActive)) {
+            throw new BadRequestException('A selected product configuration is no longer available');
+          }
 
           if (item.hasWarranty && mode === 'lease') {
             throw new BadRequestException('Extended warranty cannot be applied to leased products');
           }
 
-          let basePrice = Number(item.product.price);
-          if (mode === 'lease') {
-            if (item.product.leasePriceMonthly === null || item.product.leasePriceMonthly === undefined) {
-              throw new BadRequestException(`Product "${item.product.name}" does not have a fixed monthly lease price. Please request a quote.`);
+          let unitPrice: number;
+          if (variant) {
+            const variantPrice = mode === 'lease' ? variant.leasePriceMonthly : variant.price;
+            if (variantPrice === null || variantPrice === undefined) {
+              throw new BadRequestException(`Configuration "${variant.name}" does not have a fixed monthly lease price. Please request a quote.`);
             }
-            basePrice = Number(item.product.leasePriceMonthly);
+            unitPrice = Number(variantPrice);
+          } else {
+            let basePrice = Number(item.product.price);
+            if (mode === 'lease') {
+              if (item.product.leasePriceMonthly === null || item.product.leasePriceMonthly === undefined) {
+                throw new BadRequestException(`Product "${item.product.name}" does not have a fixed monthly lease price. Please request a quote.`);
+              }
+              basePrice = Number(item.product.leasePriceMonthly);
+            }
+            unitPrice = basePrice;
           }
-          let upgradeDelta = 0;
-          if (config === 'ram-16gb') {
-            upgradeDelta = mode === 'sell' ? 4000 : 500;
-          }
-          const unitPrice = basePrice + upgradeDelta;
           if (!Number.isFinite(unitPrice) || unitPrice < 0) {
             throw new BadRequestException('A product in your cart has invalid pricing');
           }
@@ -246,6 +269,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
             warrantyUnitPricePaise,
             purchaseMode: mode,
             configuration: config,
+            variant,
             hasWarranty: !!item.hasWarranty && mode === 'sell',
             product: item.product,
           };
@@ -255,9 +279,13 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
         }
 
         for (const item of pricedItems) {
-          const stockWhere: any = { id: item.productId, status: 'ACTIVE' };
-          if (!item.product.allowBackorder) stockWhere.stock = { gte: item.quantity };
-          const reserved = await transaction.product.updateMany({
+          const stockWhere: any = item.variant
+            ? { id: item.variant.id, productId: item.productId, isActive: true }
+            : { id: item.productId, status: 'ACTIVE' };
+          const allowBackorder = item.variant?.allowBackorder ?? item.product.allowBackorder;
+          if (!allowBackorder) stockWhere.stock = { gte: item.quantity };
+          const inventoryModel = item.variant ? transaction.productVariant : transaction.product;
+          const reserved = await inventoryModel.updateMany({
             where: stockWhere,
             data: { stock: { decrement: item.quantity } },
           });
@@ -333,6 +361,12 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
             items: {
               create: pricedItems.map((item: any) => ({
                 productId: item.productId,
+                ...(item.variant ? {
+                  variantId: item.variant.id,
+                  variantSku: item.variant.sku,
+                  variantName: item.variant.name,
+                  variantAttributes: item.variant.attributes,
+                } : {}),
                 quantity: item.quantity,
                 price: (item.unitPricePaise / 100).toFixed(2),
                 purchaseMode: item.purchaseMode,
@@ -511,8 +545,9 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
 
       if (inventoryWasHeld) {
         for (const item of order.items) {
-          await transaction.product.update({
-            where: { id: item.productId },
+          const inventoryModel = item.variantId ? transaction.productVariant : transaction.product;
+          await inventoryModel.update({
+            where: { id: item.variantId || item.productId },
             data: { stock: { increment: item.quantity } },
           });
         }
@@ -595,8 +630,9 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
           if (updated.count !== 1) return false;
 
           for (const item of order.items) {
-            await transaction.product.update({
-              where: { id: item.productId },
+            const inventoryModel = item.variantId ? transaction.productVariant : transaction.product;
+            await inventoryModel.update({
+              where: { id: item.variantId || item.productId },
               data: { stock: { increment: item.quantity } },
             });
           }
