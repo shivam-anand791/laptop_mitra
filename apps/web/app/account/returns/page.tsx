@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { useSupportConfig } from '@/lib/support-config';
 import { SkeletonList, ErrorState } from '@/components/account';
 import {
   formatIndianRupees,
@@ -29,6 +30,7 @@ const TABS: { id: ReturnFilterTab; label: string }[] = [
 ];
 
 export default function AccountReturnsPage() {
+  const { data: supportConfig } = useSupportConfig();
   const [returns, setReturns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +120,7 @@ export default function AccountReturnsPage() {
               Returns &amp; Replacements
             </h1>
             <p className="text-xs text-slate-500 mt-1">
-              Track doorstep pickup, central lab diagnostics, and refund settlements under LaptopMitra&apos;s 7-Day Guarantee.
+              Track return requests and refund updates under the current return policy.
             </p>
           </div>
 
@@ -197,7 +199,8 @@ export default function AccountReturnsPage() {
           <div className="space-y-1 max-w-sm mx-auto">
             <h3 className="text-base font-bold text-slate-900">No Return Requests</h3>
             <p className="text-xs text-slate-500 leading-relaxed">
-              You do not have any active or past return requests. Every certified laptop purchase is covered by our 7-Day Guarantee.
+              You do not have any active or past return requests.
+              {supportConfig?.returnWindowDays ? ` Eligible return requests must be submitted within ${supportConfig.returnWindowDays} days.` : ''}
             </p>
           </div>
           <Link

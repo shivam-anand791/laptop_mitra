@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { Order } from '@/lib/types';
 import { canCancelOrder, canReturnOrder, canDownloadInvoice } from '@/lib/account-helpers';
+import { useSupportConfig } from '@/lib/support-config';
 import { OrderStatusChip } from './OrderStatusChip';
 import { PaymentText } from './PaymentText';
 import {
@@ -35,6 +36,7 @@ export function OrderCard({
   isReordering = false,
 }: OrderCardProps) {
   const [copied, setCopied] = useState(false);
+  const { data: supportConfig } = useSupportConfig();
 
   const handleCopyOrderNumber = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -62,7 +64,7 @@ export function OrderCard({
   // Server-eligibility rules via helper
   const canCancel = canCancelOrder(order.status);
   const deliveredAt = order.deliveries?.[0]?.deliveredAt || (order.status === 'DELIVERED' ? order.updatedAt : null);
-  const returnCheck = canReturnOrder(order.status, deliveredAt, 7, order.returnStatus, isLease);
+  const returnCheck = canReturnOrder(order.status, deliveredAt, supportConfig?.returnWindowDays ?? 0, order.returnStatus, isLease);
   const canReturn = returnCheck.eligible;
   const canInvoice = canDownloadInvoice(order.paymentStatus, order.status, isLease);
 
@@ -83,9 +85,12 @@ export function OrderCard({
     .join(' • ');
 
   // Warranty duration text from data
-  const warrantyText = firstItem?.hasWarranty
-    ? '12-Month Assured Warranty Included'
-    : '6-Month Assured Warranty Included';
+  const standardWarrantyMonths = supportConfig
+    ? Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))
+    : null;
+  const warrantyText = standardWarrantyMonths
+    ? `${standardWarrantyMonths * (firstItem?.hasWarranty ? 2 : 1)}-Month Assured Warranty Included`
+    : 'Warranty duration unavailable';
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 hover:border-slate-300 transition overflow-hidden shadow-2xs flex flex-col justify-between">

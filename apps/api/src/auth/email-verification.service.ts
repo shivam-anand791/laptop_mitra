@@ -68,14 +68,24 @@ export class EmailVerificationService {
         supportPhone: this.configService.get<string>('SUPPORT_PHONE') || '+91 7701993300',
       });
 
-      const result = await this.mailService.sendSmtpMail({
+      let result = await this.mailService.sendSmtpMail({
         to: firebaseUser.email,
         subject: content.subject,
         text: content.text,
         html: content.html,
       });
+
+      if (!result.success && this.mailService.getActiveProvider?.() === 'resend') {
+        result = await this.mailService.sendMail({
+          to: firebaseUser.email,
+          subject: content.subject,
+          text: content.text,
+          html: content.html,
+        });
+      }
+
       if (!result.success) {
-        throw new Error(result.error || 'SMTP delivery failed.');
+        throw new Error(result.error || 'Email delivery failed.');
       }
 
       return { sent: true, alreadyVerified: false };

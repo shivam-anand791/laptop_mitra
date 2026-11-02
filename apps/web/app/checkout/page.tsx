@@ -8,8 +8,9 @@ import CustomerLayout from '../../components/CustomerLayout';
 import { useCart } from '../../lib/cart-context';
 import { useAuth } from '../../lib/auth-context';
 import { api } from '../../lib/api';
-import { Order, PincodeVerificationResult } from '../../lib/types';
+import { Address, CreateAddressDto, Order, PincodeVerificationResult } from '../../lib/types';
 import { config, NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../lib/config';
+import { useSupportConfig } from '../../lib/support-config';
 
 declare global {
   interface Window {
@@ -19,8 +20,9 @@ declare global {
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items, subtotal, itemCount, clearCart } = useCart();
-  const { user } = useAuth();
+  const { data: supportConfig } = useSupportConfig();
+  const { items, subtotal, itemCount, clearCart, isSyncing: cartSyncing, syncError: cartSyncError } = useCart();
+  const { user, isLoading: authLoading } = useAuth();
 
   // Form State
   const [formData, setFormData] = useState({
@@ -53,27 +55,95 @@ export default function CheckoutPage() {
   const [pincodeVerification, setPincodeVerification] = useState<PincodeVerificationResult | null>(null);
   const [isVerifyingPincode, setIsVerifyingPincode] = useState(false);
   const [pincodeError, setPincodeError] = useState<string | null>(null);
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([]);
+  const [savedAddressesOwnerId, setSavedAddressesOwnerId] = useState<string | null>(null);
+  const [savedAddressesLoading, setSavedAddressesLoading] = useState(true);
+  const [savedAddressesError, setSavedAddressesError] = useState<string | null>(null);
+  const [selectedSavedAddressId, setSelectedSavedAddressId] = useState<string | null>(null);
+  const [addressPickerOpen, setAddressPickerOpen] = useState(true);
+  const [saveAddressToAccount, setSaveAddressToAccount] = useState(false);
+
+  const canUseSavedAddresses = !!user && user.role === 'CUSTOMER' && !user.isGuest;
+
+  useEffect(() => {
+    let active = true;
+    if (authLoading) return () => { active = false; };
+
+    if (!canUseSavedAddresses || !user) {
+      setSavedAddresses([]);
+      setSavedAddressesOwnerId(null);
+      setSelectedSavedAddressId(null);
+      setSavedAddressesError(null);
+      setSavedAddressesLoading(false);
+      if (!user) {
+        setFormData((prev) => ({
+          ...prev,
+          fullName: '', email: '', phone: '', address: '', city: '', state: 'Maharashtra', pincode: '',
+        }));
+      }
+      return () => { active = false; };
+    }
+
+    const ownerId = user.id;
+    setSavedAddressesLoading(true);
+    setSavedAddressesError(null);
+    setSavedAddresses([]);
+    setSavedAddressesOwnerId(null);
+    setSelectedSavedAddressId(null);
+    setFormData((prev) => ({ ...prev, address: '', city: '', pincode: '' }));
+
+    api.getAddresses()
+      .then((addresses) => {
+        if (!active) return;
+        setSavedAddresses(addresses);
+        setSavedAddressesOwnerId(ownerId);
+        const preferred = addresses.find((address) => address.isDefault) || addresses[0];
+        if (preferred) {
+          setSelectedSavedAddressId(preferred.id);
+          setFormData((prev) => ({
+            ...prev,
+            fullName: preferred.fullName || user.name || prev.fullName,
+            phone: preferred.phone || user.phone || prev.phone,
+            address: preferred.address,
+            city: preferred.city || '',
+            state: preferred.state || 'Maharashtra',
+            pincode: preferred.pincode || '',
+            gstin: preferred.gstin || prev.gstin,
+          }));
+          setAddressPickerOpen(true);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) setSavedAddressesError(error instanceof Error ? error.message : 'Could not load your saved addresses.');
+      })
+      .finally(() => {
+        if (active) setSavedAddressesLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [authLoading, user?.id, user?.role, user?.isGuest]);
 
   // Debounced Pincode Verification Effect
   useEffect(() => {
     const cleanPin = formData.pincode?.trim() || '';
+    let active = true;
+    setPincodeVerification(null);
+    setPincodeError(null);
 
     if (!cleanPin) {
-      setPincodeVerification(null);
-      setPincodeError(null);
       setIsVerifyingPincode(false);
-      return;
+      return () => { active = false; };
     }
 
     if (cleanPin.length !== 6 || !/^\d{6}$/.test(cleanPin)) {
       setPincodeVerification(null);
-      if (cleanPin.length >= 6) {
+      if (cleanPin.length > 0) {
         setPincodeError('Please enter a valid 6-digit Indian postal PIN code.');
       } else {
         setPincodeError(null);
       }
       setIsVerifyingPincode(false);
-      return;
+      return () => { active = false; };
     }
 
     const timer = setTimeout(async () => {
@@ -81,14 +151,15 @@ export default function CheckoutPage() {
       setPincodeError(null);
       try {
         const result = await api.verifyPincode(cleanPin);
+        if (!active) return;
         setPincodeVerification(result);
 
         if (result.valid && result.serviceable) {
-          // Auto-fill city and state if absent or from detection
+          // Keep the address aligned with the verified PIN code.
           setFormData((prev) => ({
             ...prev,
-            city: prev.city || result.city || '',
-            state: prev.state || result.state || '',
+            city: result.city || prev.city,
+            state: result.state || prev.state,
           }));
           // If customer has selected COD but location is outside Delhi NCR, auto-switch to prepaid
           if (!result.isDelhiNcr && paymentMethod === 'cod') {
@@ -102,13 +173,19 @@ export default function CheckoutPage() {
           if (paymentMethod === 'cod') setPaymentMethod('razorpay');
         }
       } catch (err: any) {
-        setPincodeError('Pincode verification is temporarily unavailable. Please try again.');
+        if (active) {
+          setPincodeVerification(null);
+          setPincodeError('Pincode verification is temporarily unavailable. Please try again.');
+        }
       } finally {
-        setIsVerifyingPincode(false);
+        if (active) setIsVerifyingPincode(false);
       }
     }, 400);
 
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [formData.pincode, paymentMethod]);
 
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
@@ -151,7 +228,7 @@ export default function CheckoutPage() {
           code: discountCodeInput.trim().toUpperCase(),
           amount: res.discountAmount,
           message: res.message,
-          type: discountCodeInput.toUpperCase().startsWith('MITRA') ? 'referral' : 'coupon',
+          type: res.isReferral || discountCodeInput.toUpperCase().startsWith('MITRA') ? 'referral' : 'coupon',
         });
         setDiscountCodeInput('');
       } else {
@@ -168,23 +245,90 @@ export default function CheckoutPage() {
   };
 
   const finalAmount = Math.max(0, subtotal - (appliedDiscount?.amount || 0));
+  const codEligible = !!(pincodeVerification?.valid && pincodeVerification.serviceable && pincodeVerification.isDelhiNcr);
+
+  const visibleSavedAddresses = savedAddressesOwnerId === user?.id ? savedAddresses : [];
+  const selectedSavedAddress = visibleSavedAddresses.find((address) => address.id === selectedSavedAddressId) || null;
+
+  const selectSavedAddress = (address: Address) => {
+    setSelectedSavedAddressId(address.id);
+    setAddressPickerOpen(false);
+    setSaveAddressToAccount(false);
+    if (address.pincode !== formData.pincode) {
+      setPincodeVerification(null);
+      setPincodeError(null);
+    }
+    setFormData((prev) => ({
+      ...prev,
+      fullName: address.fullName || user?.name || '',
+      phone: address.phone || user?.phone || '',
+      address: address.address,
+      city: address.city || '',
+      state: address.state || 'Maharashtra',
+      pincode: address.pincode || '',
+      gstin: address.gstin || prev.gstin,
+    }));
+  };
+
+  const startNewAddress = () => {
+    setSelectedSavedAddressId(null);
+    setAddressPickerOpen(false);
+    setSaveAddressToAccount(false);
+    setPincodeVerification(null);
+    setPincodeError(null);
+    setFormData((prev) => ({ ...prev, address: '', city: '', state: 'Maharashtra', pincode: '' }));
+    document.getElementById('checkout-address-fields')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   const handleFormChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (['fullName', 'phone', 'address', 'city', 'state', 'pincode'].includes(e.target.name)) {
+      setSelectedSavedAddressId(null);
+    }
+    setFormData((previous) => ({ ...previous, [e.target.name]: e.target.value }));
   };
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (cartSyncing || cartSyncError || itemCount === 0 || (canUseSavedAddresses && savedAddressesLoading)) return;
     if (!formData.fullName || !formData.phone || !formData.address || !formData.pincode) {
       alert('Please fill in all mandatory shipping address fields');
+      return;
+    }
+    if (isVerifyingPincode || !pincodeVerification?.valid || !pincodeVerification.serviceable) {
+      setPincodeError(pincodeVerification?.message || 'Verify a serviceable delivery PIN code before placing your order.');
       return;
     }
 
     setIsSubmitting(true);
 
     try {
+      let orderAddressId = savedAddressesOwnerId === user?.id ? selectedSavedAddressId : null;
+      if (!orderAddressId && saveAddressToAccount && canUseSavedAddresses && user) {
+        const savedAddress = await api.createAddress({
+          fullName: formData.fullName,
+          phone: formData.phone,
+          address: formData.address,
+          city: formData.city,
+          state: formData.state,
+          pincode: formData.pincode,
+          gstin: formData.gstin,
+          isDefault: false,
+        } satisfies CreateAddressDto);
+        orderAddressId = savedAddress.id;
+        setSavedAddresses((previous) => [savedAddress, ...previous]);
+        setSavedAddressesOwnerId(user.id);
+        setSelectedSavedAddressId(savedAddress.id);
+        setSaveAddressToAccount(false);
+        setFormData((previous) => ({
+          ...previous,
+          city: savedAddress.city || previous.city,
+          state: savedAddress.state || previous.state,
+          pincode: savedAddress.pincode || previous.pincode,
+        }));
+      }
+
       // 1. Create order on backend
       const orderPayload = {
         discountCode: appliedDiscount?.type === 'coupon' ? appliedDiscount.code : undefined,
@@ -192,6 +336,7 @@ export default function CheckoutPage() {
         paymentMethod: paymentMethod,
         email: formData.email,
         idempotencyKey: `lm-web-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        ...(orderAddressId ? { addressId: orderAddressId } : {}),
         shippingAddress: {
           fullName: formData.fullName,
           phone: formData.phone,
@@ -276,8 +421,19 @@ export default function CheckoutPage() {
         clearCart();
         setCompletedOrder(order);
       }
-    } catch {
-      alert('Could not complete order. Please verify your details and try again.');
+    } catch (error: unknown) {
+      if (selectedSavedAddressId && error instanceof Error && error.message.includes('Saved delivery address not found')) {
+        setSelectedSavedAddressId(null);
+        setSavedAddressesError('The selected address was removed. Choose another address or enter a new one.');
+        try {
+          const latestAddresses = await api.getAddresses();
+          setSavedAddresses(latestAddresses);
+          setSavedAddressesOwnerId(user?.id || null);
+        } catch {
+          // Keep the current form usable if the address list cannot be refreshed.
+        }
+      }
+      alert(error instanceof Error ? error.message : 'Could not complete order. Please verify your details and try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -363,7 +519,8 @@ export default function CheckoutPage() {
         <div className="bg-[#F8FAFC] min-h-[70vh] flex items-center justify-center py-16 px-4">
           <div className="max-w-md w-full text-center space-y-4 bg-white p-8 rounded-3xl border border-[#E4E9F2] shadow-sm">
             <h2 className="text-xl font-black text-[#0B1F4B]">Your Cart is Empty</h2>
-            <p className="text-xs text-slate-500">Add certified laptops to your cart before proceeding to checkout.</p>
+            <p className="text-xs text-slate-500">{cartSyncing ? 'Checking your saved cart…' : cartSyncError || 'Add certified laptops to your cart before proceeding to checkout.'}</p>
+            {cartSyncError && <button type="button" onClick={() => window.location.reload()} className="text-xs font-bold text-blue-600">Retry cart sync</button>}
             <Link
               href="/products"
               className="inline-block px-6 py-3 bg-[#1D6FF2] text-white font-bold rounded-xl text-xs shadow-md shadow-blue-500/20"
@@ -400,7 +557,94 @@ export default function CheckoutPage() {
                     </h2>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  {(authLoading || (canUseSavedAddresses && savedAddressesLoading)) && (
+                    <p role="status" className="text-xs text-slate-500">Loading your saved delivery addresses...</p>
+                  )}
+
+                  {canUseSavedAddresses && savedAddressesError && (
+                    <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      {savedAddressesError} You can still enter a delivery address below.
+                    </p>
+                  )}
+
+                  {canUseSavedAddresses && savedAddressesOwnerId === user?.id && visibleSavedAddresses.length > 0 && (
+                    <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 sm:p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h3 className="text-sm font-bold text-[#0B1F4B]">Select Delivery Address</h3>
+                          <p className="mt-0.5 text-[11px] text-slate-500">Choose where you want your order delivered.</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setAddressPickerOpen((open) => !open)}
+                            className="text-xs font-bold text-[#1D6FF2] hover:underline"
+                          >
+                            {addressPickerOpen ? 'Hide addresses' : 'Change Address'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={startNewAddress}
+                            className="text-xs font-bold text-[#1D6FF2] hover:underline"
+                          >
+                            + Add New Address
+                          </button>
+                        </div>
+                      </div>
+
+                      {addressPickerOpen ? (
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="group" aria-label="Saved delivery addresses">
+                          {visibleSavedAddresses.map((address) => {
+                            const selected = address.id === selectedSavedAddressId;
+                            return (
+                              <button
+                                key={address.id}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => selectSavedAddress(address)}
+                                className={`w-full rounded-xl border p-3 text-left transition-colors ${selected
+                                  ? 'border-[#1D6FF2] bg-blue-50/70 ring-1 ring-[#1D6FF2]/20'
+                                  : 'border-[#E4E9F2] bg-white hover:border-blue-300'
+                                  }`}
+                              >
+                                <span className="flex items-center justify-between gap-2">
+                                  <span className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{address.label || 'Home'}</span>
+                                    {address.isDefault && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold text-blue-700">Default</span>}
+                                  </span>
+                                  <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] ${selected ? 'border-[#1D6FF2] bg-[#1D6FF2] text-white' : 'border-slate-300 text-transparent'}`} aria-hidden="true">✓</span>
+                                </span>
+                                <span className="mt-2 block text-xs font-bold text-slate-800">{address.fullName || user?.name || 'Recipient'}</span>
+                                <span className="mt-1 block text-[11px] leading-4 text-slate-600">
+                                  {address.address}{address.landmark ? `, ${address.landmark}` : ''}
+                                </span>
+                                <span className="mt-1 block text-[11px] text-slate-600">
+                                  {[address.city, address.state].filter(Boolean).join(', ')}{address.pincode ? ` — ${address.pincode}` : ''}
+                                </span>
+                                {(address.phone || user?.phone) && <span className="mt-1 block font-mono text-[10px] text-slate-500">{address.phone || user?.phone}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : selectedSavedAddress ? (
+                        <div className="rounded-xl border border-[#1D6FF2] bg-white p-3 text-xs">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-slate-800">{selectedSavedAddress.fullName || user?.name || 'Recipient'}</span>
+                            {selectedSavedAddress.isDefault && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold text-blue-700">Default</span>}
+                          </div>
+                          <p className="mt-1 text-[11px] leading-4 text-slate-600">
+                            {selectedSavedAddress.address}{selectedSavedAddress.landmark ? `, ${selectedSavedAddress.landmark}` : ''}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-600">
+                            {[selectedSavedAddress.city, selectedSavedAddress.state].filter(Boolean).join(', ')}{selectedSavedAddress.pincode ? ` — ${selectedSavedAddress.pincode}` : ''}
+                          </p>
+                          {(selectedSavedAddress.phone || user?.phone) && <p className="mt-1 font-mono text-[10px] text-slate-500">{selectedSavedAddress.phone || user?.phone}</p>}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  <div id="checkout-address-fields" className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                     <div className="sm:col-span-2 space-y-1">
                       <label className="font-bold text-slate-700">Full Name *</label>
                       <input
@@ -470,6 +714,8 @@ export default function CheckoutPage() {
                       <input
                         type="text"
                         maxLength={6}
+                        inputMode="numeric"
+                        pattern="[0-9]{6}"
                         name="pincode"
                         required
                         value={formData.pincode}
@@ -477,8 +723,27 @@ export default function CheckoutPage() {
                         placeholder="PIN Code"
                         className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 font-mono focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
                       />
+                      <p aria-live="polite" className={`min-h-4 text-[11px] ${pincodeError ? 'text-rose-600' : 'text-emerald-700'}`}>
+                        {isVerifyingPincode
+                          ? 'Verifying delivery PIN code…'
+                          : pincodeError || (pincodeVerification?.valid && pincodeVerification.serviceable
+                            ? `Delivery available: ${pincodeVerification.city || ''}${pincodeVerification.district && pincodeVerification.district !== pincodeVerification.city ? `, ${pincodeVerification.district}` : ''}${pincodeVerification.state ? `, ${pincodeVerification.state}` : ''}`
+                            : '')}
+                      </p>
                     </div>
                   </div>
+
+                  {canUseSavedAddresses && !selectedSavedAddressId && (
+                    <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={saveAddressToAccount}
+                        onChange={(event) => setSaveAddressToAccount(event.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-[#1D6FF2] focus:ring-[#1D6FF2]"
+                      />
+                      Save this address to my account
+                    </label>
+                  )}
                 </div>
 
                 {/* 2. B2B / GST Information (Optional) */}
@@ -575,15 +840,16 @@ export default function CheckoutPage() {
                           type="radio"
                           name="paymentMethod"
                           checked={paymentMethod === 'cod'}
-                          onChange={() => setPaymentMethod('cod')}
-                          className="w-4 h-4 text-[#1D6FF2] focus:ring-[#1D6FF2] cursor-pointer"
+                          disabled={!codEligible}
+                          onChange={() => codEligible && setPaymentMethod('cod')}
+                          className="w-4 h-4 text-[#1D6FF2] focus:ring-[#1D6FF2] disabled:cursor-not-allowed cursor-pointer"
                         />
                         <div>
                           <span className="font-black text-sm text-[#0B1F4B] block">
                             Cash on Delivery (Pay at Doorstep)
                           </span>
                           <span className="text-xs text-slate-500">
-                            Verification call required prior to dispatch
+                            {codEligible ? 'Verification call required prior to dispatch' : 'Available only for verified, serviceable Delhi NCR PIN codes'}
                           </span>
                         </div>
                       </div>
@@ -681,7 +947,11 @@ export default function CheckoutPage() {
                     </div>
 
                     <div className="flex justify-between text-slate-600">
-                      <span>1-Year Comprehensive Warranty</span>
+                      <span>
+                        {supportConfig
+                          ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))}-Month Comprehensive Warranty`
+                          : 'Comprehensive Warranty'}
+                      </span>
                       <span className="font-bold text-emerald-700 uppercase">INCLUDED</span>
                     </div>
                   </div>
@@ -700,7 +970,7 @@ export default function CheckoutPage() {
                   {/* Submit CTA */}
                   <button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || cartSyncing || !!cartSyncError || authLoading || (canUseSavedAddresses && savedAddressesLoading) || isVerifyingPincode || !pincodeVerification?.valid || !pincodeVerification.serviceable}
                     className="w-full h-11 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs active:scale-95 transition-all text-center cursor-pointer"
                   >
                     {isSubmitting ? (
@@ -712,6 +982,7 @@ export default function CheckoutPage() {
                       <span>🔒 Place Order • ₹{finalAmount.toLocaleString('en-IN')}</span>
                     )}
                   </button>
+                  {cartSyncError && <p role="alert" className="text-xs text-red-600">{cartSyncError} <button type="button" onClick={() => window.location.reload()} className="font-bold underline">Retry</button></p>}
 
                   {/* Assurance */}
                   <div className="pt-3 border-t border-[#E4E9F2] space-y-1.5 text-[11px] text-slate-500">
@@ -721,7 +992,11 @@ export default function CheckoutPage() {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-emerald-600 font-bold">✓</span>
-                      <span>7-Day Doorstep Replacement Guarantee</span>
+                      <span>
+                        {supportConfig?.returnWindowDays
+                          ? `${supportConfig.returnWindowDays}-Day Doorstep Replacement Policy`
+                          : 'Doorstep Replacement Policy'}
+                      </span>
                     </div>
                   </div>
                 </div>

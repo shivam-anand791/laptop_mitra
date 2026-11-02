@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { Order, OrderCounts } from '@/lib/types';
+import { useSupportConfig } from '@/lib/support-config';
 import {
   filterOrdersByStatus,
   filterOrdersByDate,
@@ -61,6 +62,7 @@ const RETURN_REASONS = [
 
 export default function OrdersPage() {
   const router = useRouter();
+  const { data: supportConfig } = useSupportConfig();
 
   // Primary data state
   const [orders, setOrders] = useState<Order[]>([]);
@@ -248,7 +250,11 @@ export default function OrdersPage() {
       );
       showBanner(
         'success',
-        `Return request for order ${returningOrder.orderNumber} submitted. Our logistics team will contact you within 24 hours.`
+        `Return request for order ${returningOrder.orderNumber} submitted. ${
+          supportConfig?.firstResponseSlaHours
+            ? `Our team aims to respond within ${supportConfig.firstResponseSlaHours} hours.`
+            : 'Our team will review your request.'
+        }`
       );
       setReturningOrder(null);
     } catch (err: any) {
@@ -537,7 +543,9 @@ export default function OrdersPage() {
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Every certified laptop is backed by LaptopMitra&apos;s 7-day hassle-free replacement and return guarantee. Please select the primary reason:
+              {supportConfig?.returnWindowDays
+                ? `Submit your request within ${supportConfig.returnWindowDays} days of delivery. Please select the primary reason:`
+                : 'Return eligibility follows the current policy. Please select the primary reason:'}
             </p>
 
             <div className="space-y-2 pt-1">

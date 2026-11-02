@@ -12,6 +12,7 @@ import { api } from '../../../lib/api';
 import { useCart } from '../../../lib/cart-context';
 import { useWishlist } from '../../../lib/wishlist-context';
 import { useAuth } from '../../../lib/auth-context';
+import { useSupportConfig } from '../../../lib/support-config';
 import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../../lib/config';
 import CorporateQuoteModal from '../../../components/CorporateQuoteModal';
 import QualityPromiseSection from '../../../components/QualityPromiseSection';
@@ -92,6 +93,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const { addItem } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
   const { user } = useAuth();
+  const { data: supportConfig } = useSupportConfig();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [similarProducts, setSimilarProducts] = useState<Product[]>([]);
@@ -378,7 +380,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const activeBattery = getVariantSpecValue(selectedVariant, 'batteryHealth', product.metadata?.batteryHealth) || '95%+ Original Battery Health';
   const activeOs = getVariantSpecValue(selectedVariant, 'os', product.metadata?.os) || 'Genuine Windows 11 Pro / macOS';
   const activeCondition = getVariantSpecValue(selectedVariant, 'condition', product.metadata?.condition) || 'Grade A+ Pristine (Like New)';
-  const activeWarranty = getVariantSpecValue(selectedVariant, 'warranty', product.metadata?.warranty) || '1 Year Doorstep Warranty & Pickup';
+  const warrantyMonths = supportConfig
+    ? Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))
+    : null;
+  const warrantyLabel = warrantyMonths ? `${warrantyMonths}-Month Doorstep Warranty` : 'the configured warranty period';
+  const returnLabel = supportConfig?.returnWindowDays
+    ? `${supportConfig.returnWindowDays}-Day Replacement`
+    : 'Return and replacement policy';
+  const activeWarranty = warrantyLabel;
 
   const specificationThemedGroups = [
     {
@@ -445,7 +454,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
         {
           label: 'Condition & Warranty',
           value: `${activeCondition} • ${activeWarranty}`,
-          subtext: 'Thoroughly cleaned and inspected — backed by 1-Year Doorstep Warranty',
+          subtext: `Thoroughly cleaned and inspected — backed by ${warrantyLabel}`,
           Icon: ShieldCheck,
         },
       ],
@@ -501,10 +510,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   )}
                 </div>
 
-                {/* 1-Year Doorstep Warranty Floater */}
+                {/* Doorstep Warranty Floater */}
                 <div className="absolute top-4 left-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-blue-200 shadow-sm flex items-center gap-1.5 text-xs font-bold text-[#0B1F4B]">
                   <ShieldCheck size={16} className="text-[#2563EB]" />
-                  <span>1-Year Comprehensive Warranty</span>
+                  <span>{warrantyMonths ? `${warrantyMonths}-Month Comprehensive Warranty` : 'Comprehensive Warranty'}</span>
                 </div>
 
                 {/* Wishlist Button */}
@@ -555,11 +564,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <ShieldCheck size={15} className="text-[#2563EB]" />
-                  <span className="font-bold text-slate-700 leading-tight">1-Yr Doorstep<br/>Warranty</span>
+                  <span className="font-bold text-slate-700 leading-tight">{warrantyMonths ? `${warrantyMonths}-Month Doorstep` : 'Doorstep'}<br/>Warranty</span>
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <RotateCcw size={15} className="text-[#2563EB]" />
-                  <span className="font-bold text-slate-700 leading-tight">7-Day Free<br/>Replacement</span>
+                  <span className="font-bold text-slate-700 leading-tight">{returnLabel}<br/>Policy</span>
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <FileText size={15} className="text-[#2563EB]" />
@@ -601,7 +610,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   </div>
                   <div className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
                     <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">Warranty</span>
-                    <span className="font-extrabold text-[#2563EB] block">1-Year Doorstep</span>
+                    <span className="font-extrabold text-[#2563EB] block">{warrantyMonths ? `${warrantyMonths}-Month Doorstep` : 'Doorstep'}</span>
                   </div>
                 </div>
               </div>
@@ -638,7 +647,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     <span className="text-base sm:text-lg">🛡️</span>
                     <div>
                       <span className="font-extrabold text-slate-900 block leading-tight">Warranty</span>
-                      <span className="text-[9px] text-slate-500">1-Year Doorstep</span>
+                      <span className="text-[9px] text-slate-500">{warrantyMonths ? `${warrantyMonths}-Month Doorstep` : 'Warranty coverage'}</span>
                     </div>
                   </div>
                 </div>
@@ -1342,7 +1351,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     <li className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center gap-3">
                       <span className="text-2xl">🛡️</span>
                       <div>
-                        <strong className="text-[#0B1F4B] block text-sm">1-Year Warranty Card</strong>
+                        <strong className="text-[#0B1F4B] block text-sm">{warrantyMonths ? `${warrantyMonths}-Month Warranty Card` : 'Warranty Card'}</strong>
                         <span className="text-slate-500">Official serial-tagged warranty card with doorstep QR code</span>
                       </div>
                     </li>
@@ -1356,7 +1365,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     <div className="p-5 rounded-2xl bg-blue-50/60 border border-blue-200 space-y-2.5">
                       <h4 className="font-extrabold text-[#2563EB] text-sm flex items-center gap-1.5">
                         <ShieldCheck size={18} />
-                        What is Covered (1 Full Year):
+                        What is Covered ({warrantyMonths ? `${warrantyMonths} Months` : 'the configured period'}):
                       </h4>
                       <ul className="list-disc pl-4 space-y-1.5 text-slate-700">
                         <li>Motherboard, processor, integrated RAM, and SSD hardware.</li>
@@ -1369,10 +1378,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     <div className="p-5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2.5">
                       <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5">
                         <RotateCcw size={18} className="text-[#2563EB]" />
-                        7-Day Free Replacement:
+                        {supportConfig?.returnWindowDays
+                          ? `${supportConfig.returnWindowDays}-Day Free Replacement:`
+                          : 'Return and Replacement Policy:'}
                       </h4>
                       <p className="text-slate-600 leading-relaxed">
-                        If your laptop demonstrates any functional discrepancy or fails to meet your performance standards upon arrival, we arrange immediate doorstep reverse pickup with zero shipping fee and issue a direct replacement or refund within 7 days.
+                        If your laptop demonstrates a functional discrepancy or fails to meet its performance standards upon arrival, contact support during the applicable return window to request inspection, replacement, or refund.
                       </p>
                     </div>
 

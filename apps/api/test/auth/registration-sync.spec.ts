@@ -173,6 +173,25 @@ describe('Registration & Post-Registration Synchronization and Redirection', () 
     });
   });
 
+  describe('Unique referral code generation', () => {
+    it('retries a collision before returning a new code', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce({ id: 'existing-user' }).mockResolvedValueOnce(null);
+      randomService.generateReferralCode
+        .mockReturnValueOnce('mitrashiv1111')
+        .mockReturnValueOnce('mitrashiv0007');
+
+      await expect(service.generateUniqueReferralCode('Shivam Anand')).resolves.toBe('mitrashiv0007');
+      expect(prisma.user.findFirst).toHaveBeenCalledTimes(2);
+    });
+
+    it('fails instead of returning an unchecked colliding code after retries', async () => {
+      prisma.user.findFirst.mockResolvedValue({ id: 'existing-user' });
+      randomService.generateReferralCode.mockReturnValue('mitrashiv1111');
+
+      await expect(service.generateUniqueReferralCode('Shivam Anand')).rejects.toThrow('unique referral code');
+    });
+  });
+
   describe('Post-Registration Safe Redirection & Open Redirect Protection', () => {
     it('redirects standard customer to /profile by default', () => {
       expect(getSafeRedirectUrl(null, 'CUSTOMER')).toBe('/profile');

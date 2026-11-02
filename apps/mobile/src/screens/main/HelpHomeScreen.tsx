@@ -35,7 +35,7 @@ const CATEGORY_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 export default function HelpHomeScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isGuest } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
   const {
@@ -44,7 +44,7 @@ export default function HelpHomeScreen() {
     refetch: refetchCategories,
   } = useHelpCategories();
 
-  const queryParams = searchQuery.trim() ? { search: searchQuery.trim() } : undefined;
+  const queryParams = searchQuery.trim() ? { q: searchQuery.trim() } : undefined;
   const {
     data: articles = [],
     isLoading: loadingArticles,
@@ -101,18 +101,18 @@ export default function HelpHomeScreen() {
         </View>
         <View style={styles.guidedInfo}>
           <View style={styles.guidedBadgeRow}>
-            <Text style={styles.guidedBadge}>INSTANT RESOLUTION</Text>
+            <Text style={styles.guidedBadge}>GUIDED HELP</Text>
           </View>
           <Text style={styles.guidedTitle}>Need Help With An Order?</Text>
           <Text style={styles.guidedDesc}>
-            Track packages, initiate 7-day returns, verify warranty, or raise a priority ticket.
+            Review order, return, and warranty options or send a request to our support team.
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color={colors.primary} />
       </TouchableOpacity>
 
       {/* Open Tickets Shortcut */}
-      {isAuthenticated && (
+      {isAuthenticated && !isGuest && (
         <TouchableOpacity
           style={styles.ticketsShortcutCard}
           onPress={() => navigation.navigate('TicketList')}
@@ -140,6 +140,25 @@ export default function HelpHomeScreen() {
           )}
         </TouchableOpacity>
       )}
+
+      <View style={styles.quickLinksRow}>
+        <TouchableOpacity
+          style={styles.quickLink}
+          onPress={() => navigation.navigate('OrderHistory')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="receipt-outline" size={18} color={colors.primary} />
+          <Text style={styles.quickLinkText}>My Orders</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.quickLink}
+          onPress={() => navigation.navigate('GuidedSupportFlow', { category: 'RETURN_REFUND' })}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="repeat-outline" size={18} color={colors.primary} />
+          <Text style={styles.quickLinkText}>Returns</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Emergency Contact Actions */}
       <View style={styles.contactRow}>
@@ -297,6 +316,28 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     ...shadows.sm,
+  },
+  quickLinksRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  quickLink: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    padding: spacing.md,
+    backgroundColor: colors.cardBg,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: radius.lg,
+  },
+  quickLinkText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
   },
   guidedIconWrapper: {
     width: 44,

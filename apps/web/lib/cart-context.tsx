@@ -11,6 +11,8 @@ interface CartContextType {
   subtotal: number;
   oneTimeTotal: number;
   monthlyTotal: number;
+  isSyncing: boolean;
+  syncError: string | null;
   addItem: (
     product: Product,
     quantity?: number,
@@ -48,11 +50,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const { firebaseUser, isLoading } = useAuth();
   const storageKey = `lm_cart:${firebaseUser?.uid ?? 'guest'}`;
   const [cartState, setCartState] = useState<{ key: string; items: CartItem[] }>({ key: '', items: [] });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const items = cartState.key === storageKey ? cartState.items : [];
 
   useEffect(() => {
     if (isLoading) return;
     let isCancelled = false;
+    let cachedItems: CartItem[] = [];
 
     // Load from local storage for instant responsiveness
     try {
@@ -60,7 +65,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed.items)) {
-          setCartState({ key: storageKey, items: parsed.items });
+          cachedItems = parsed.items;
+          setCartState({ key: storageKey, items: cachedItems });
         }
       } else {
         setCartState({ key: storageKey, items: [] });
@@ -72,48 +78,44 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     // Synchronize authoritative cart from backend if authenticated
     if (firebaseUser) {
       const syncBackendCart = async () => {
-        // Reconcile guest cart into authenticated user cart
+        setIsSyncing(true);
+        setSyncError(null);
         try {
+          const initial: any = await api.getCart();
+          let serverCart = initial?.cart ?? initial;
+          let serverItems: CartItem[] = Array.isArray(serverCart?.items) ? serverCart.items : [];
           const guestStored = localStorage.getItem('lm_cart:guest');
-          if (guestStored) {
-            const parsed = JSON.parse(guestStored);
-            if (Array.isArray(parsed?.items) && parsed.items.length > 0) {
-              for (const gItem of parsed.items) {
-                if (gItem?.productId) {
-                  await api.addToCart(
-                    gItem.productId,
-                    gItem.quantity || 1,
-                    gItem.purchaseMode || 'sell',
-                    gItem.configuration || 'default',
-                    gItem.hasWarranty || false,
-                    gItem.variantId || undefined
-                  ).catch(() => {});
-                }
-              }
-              localStorage.removeItem('lm_cart:guest');
+          const guestItems = guestStored ? JSON.parse(guestStored)?.items : null;
+          const itemsToRestore = Array.isArray(guestItems) && guestItems.length ? guestItems : cachedItems;
+          if (serverItems.length === 0 && itemsToRestore.length) {
+            for (const item of itemsToRestore) {
+              if (!item?.productId) continue;
+              await api.addToCart(item.productId, item.quantity || 1, item.purchaseMode || 'sell', item.configuration || 'default', !!item.hasWarranty, item.variantId || undefined);
             }
+            const refreshed: any = await api.getCart();
+            serverCart = refreshed?.cart ?? refreshed;
+            serverItems = Array.isArray(serverCart?.items) ? serverCart.items : [];
+            if (serverItems.length === 0) throw new Error('Your cart could not be synchronized. Please refresh and try again.');
+            if (Array.isArray(guestItems) && guestItems.length) localStorage.removeItem('lm_cart:guest');
           }
-        } catch {
-          // Ignore guest merge parse errors
-        }
-
-        try {
-          const res: any = await api.getCart();
           if (isCancelled) return;
-          const serverCart = res?.cart ?? res;
-          const serverItems = Array.isArray(serverCart?.items) ? serverCart.items : [];
           setCartState({ key: storageKey, items: serverItems });
           const count = serverItems.reduce((acc: number, item: any) => acc + item.quantity, 0);
           localStorage.setItem(storageKey, JSON.stringify({
             items: serverItems,
             itemCount: count,
           }));
-        } catch {
-          // Fallback to local cache if network/API temporarily unavailable
+        } catch (error) {
+          if (!isCancelled) setSyncError(error instanceof Error ? error.message : 'Cart synchronization failed. Please retry.');
+        } finally {
+          if (!isCancelled) setIsSyncing(false);
         }
       };
 
       void syncBackendCart();
+    } else {
+      setIsSyncing(false);
+      setSyncError(null);
     }
 
     return () => {
@@ -280,6 +282,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       subtotal,
       oneTimeTotal,
       monthlyTotal,
+      isSyncing,
+      syncError,
       addItem,
       updateQuantity,
       updateWarranty,

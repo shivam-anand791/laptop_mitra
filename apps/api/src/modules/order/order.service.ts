@@ -36,9 +36,9 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     private productService: ProductService,
     private notificationService: NotificationService,
     private discountService: DiscountService,
+    private pincodeService: PincodeService,
     private paymentService?: PaymentService,
     @Optional() private adminService?: AdminService,
-    @Optional() private pincodeService?: PincodeService,
   ) {}
 
   onModuleInit() {
@@ -150,9 +150,32 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     user?: any,
     paymentMethod = 'razorpay',
     idempotencyKey?: string,
+    savedAddressId?: string,
   ): Promise<Order> {
+    if (savedAddressId) {
+      const savedAddress = await this.prisma.address.findFirst({
+        where: { id: savedAddressId, userId },
+      });
+      if (!savedAddress) {
+        throw new NotFoundException('Saved delivery address not found');
+      }
+
+      // Use the authenticated customer's stored address as the order source of truth.
+      shippingAddress = {
+        fullName: savedAddress.fullName || user?.name || '',
+        phone: savedAddress.phone || user?.phone || phone || '',
+        address: savedAddress.address,
+        landmark: savedAddress.landmark || undefined,
+        city: savedAddress.city || '',
+        state: savedAddress.state || '',
+        pincode: savedAddress.pincode || '',
+      };
+    }
+
     const resolvedEmail = (email || shippingAddress?.email || user?.email)?.trim();
-    const resolvedPhone = (phone || shippingAddress?.phone || user?.phone)?.trim();
+    const resolvedPhone = (savedAddressId
+      ? shippingAddress?.phone || user?.phone || phone
+      : phone || shippingAddress?.phone || user?.phone)?.trim();
 
     if (!resolvedEmail) {
       throw new BadRequestException('Email is required to place an order');
@@ -162,14 +185,6 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     }
     if (!['razorpay', 'cod'].includes(paymentMethod)) {
       throw new BadRequestException('Unsupported payment method');
-    }
-
-    // Backend Pincode verification & Delhi NCR COD enforcement
-    if (this.pincodeService && shippingAddress && (shippingAddress.pincode || paymentMethod === 'cod')) {
-      const pinCheck = await this.pincodeService.validateOrderShipping(shippingAddress, paymentMethod);
-      shippingAddress.city = shippingAddress.city || pinCheck.city;
-      shippingAddress.state = shippingAddress.state || pinCheck.state;
-      shippingAddress.pincode = pinCheck.pincode;
     }
 
     if (idempotencyKey?.trim()) {
@@ -213,6 +228,13 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
         return memExisting;
       }
     }
+
+    // Backend Pincode verification & Delhi NCR COD enforcement
+    const pinCheck = await this.pincodeService.validateOrderShipping(shippingAddress, paymentMethod);
+    shippingAddress.city = pinCheck.city || shippingAddress.city;
+    shippingAddress.district = pinCheck.district || shippingAddress.district;
+    shippingAddress.state = pinCheck.state || shippingAddress.state;
+    shippingAddress.pincode = pinCheck.pincode;
 
     let order: any;
     try {
@@ -332,6 +354,20 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
               status: 'ACTIVE',
             },
           });
+          if (!referral) {
+            const legacyCode = await transaction.referral.findFirst({
+              where: {
+                code: { equals: normalizedReferral, mode: 'insensitive' },
+                status: 'ACTIVE',
+              },
+              select: { userId: true },
+            });
+            if (legacyCode) {
+              referral = await transaction.user.findFirst({
+                where: { id: legacyCode.userId, status: 'ACTIVE' },
+              });
+            }
+          }
           if (!referral) throw new BadRequestException('Invalid or inactive referral code');
           if (referral.id === userId) throw new BadRequestException('Self-referrals are not allowed');
 
@@ -373,7 +409,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
             phone: resolvedPhone,
             email: resolvedEmail,
             notes: notes || null,
-            referralCode: referralDiscountPaise ? referral.code : null,
+            referralCode: referralDiscountPaise ? referral.referralCode : null,
             referralDiscount: (referralDiscountPaise / 100).toFixed(2),
             inventoryStatus: paymentMethod === 'cod' ? 'CONSUMED' : 'RESERVED',
             reservationExpiresAt,
@@ -407,13 +443,17 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
               referrerUserId: referral.id,
               referredUserId: userId,
               orderId: created.id,
-              referralCode: referral.code,
+              referralCode: referral.referralCode,
               discountAmount: (referralDiscountPaise / 100).toFixed(2),
             },
           });
         }
 
-        await transaction.cartItem.deleteMany({ where: { cartId: cart.id } });
+        // COD is complete at order creation. Keep prepaid carts until payment
+        // verification succeeds so a dismissed or failed payment remains retryable.
+        if (paymentMethod === 'cod') {
+          await transaction.cartItem.deleteMany({ where: { cartId: cart.id } });
+        }
         return created;
       });
     } catch (error: any) {

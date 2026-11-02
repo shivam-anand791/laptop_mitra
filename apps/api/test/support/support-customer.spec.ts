@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupportService } from '../../src/modules/support/support.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { ForbiddenException, BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ForbiddenException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { PaymentEncryptionService } from '../../src/common/encryption/payment-encryption.service';
 import { NotificationService } from '../../src/modules/notifications/notification.service';
 
@@ -68,8 +68,12 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
       returnItem: {
         create: jest.fn(),
       },
+      supportSettings: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
       helpCategory: {
         findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
       },
       helpArticle: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -95,6 +99,66 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
     }).compile();
 
     service = module.get<SupportService>(SupportService);
+  });
+
+  it('returns customer support policy values from SupportSettings', async () => {
+    prisma.supportSettings.findUnique.mockResolvedValue({
+      supportHoursText: 'Weekdays, 9 AM to 5 PM',
+      firstResponseSlaMinutes: 180,
+      autoCloseDays: 12,
+      reopenWindowDays: 4,
+      returnWindowDays: 10,
+      standardWarrantyDays: 365,
+    });
+
+    const config = await service.getSupportConfig();
+
+    expect(prisma.supportSettings.findUnique).toHaveBeenCalledWith({ where: { id: 'default' } });
+    expect(config).toMatchObject({
+      supportHoursText: 'Weekdays, 9 AM to 5 PM',
+      firstResponseSlaHours: 3,
+      autoCloseDays: 12,
+      reopenWindowDays: 4,
+      returnWindowDays: 10,
+      standardWarrantyDays: 365,
+    });
+  });
+
+  it('searches and filters fallback help articles when the knowledge base is unseeded', async () => {
+    prisma.supportSettings.findUnique.mockResolvedValue({
+      returnWindowDays: 11,
+      standardWarrantyDays: 240,
+    });
+
+    const searchResults = await service.getHelpArticles('240-Day');
+    const popularTopicResults = await service.getHelpArticles('Returns & Replacements');
+    const categoryResults = await service.getHelpArticles(undefined, 'warranty-repair');
+
+    expect(searchResults).toHaveLength(1);
+    expect(searchResults[0].content).toContain('240-Day');
+    expect(popularTopicResults).toHaveLength(1);
+    expect(categoryResults).toHaveLength(1);
+    expect(categoryResults[0].title).toContain('Standard Hardware Warranty');
+  });
+
+  it('uses configured policy values in published policy articles', async () => {
+    prisma.helpArticle.findMany.mockResolvedValue([{
+      slug: '7-day-replacement-return-policy',
+      title: '7-Day Replacement Policy',
+      summary: 'The 7-day delivery window applies.',
+      content: 'Eligible in the 7-day delivery window; refunds take 5-7 business days.',
+      category: { id: 'cat-returns', slug: 'returns-refunds', title: 'Returns' },
+    }]);
+    prisma.supportSettings.findUnique.mockResolvedValue({
+      returnWindowDays: 11,
+      standardWarrantyDays: 240,
+    });
+
+    const [article] = await service.getHelpArticles();
+
+    expect(article.title).toBe('11-Day Replacement Policy');
+    expect(article.content).toContain('11-day delivery window');
+    expect(article.content).toContain('5-7 business days');
   });
 
   describe('IDOR Security Checks on Tickets', () => {
@@ -182,6 +246,7 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
   describe('Ticket Creation & Sequence Number', () => {
     it('creates ticket with formatted LM-T- sequence number', async () => {
       prisma.$queryRaw.mockResolvedValue([{ nextval: 1042 }]);
+      prisma.supportSettings.findUnique.mockResolvedValue({ firstResponseSlaMinutes: 60 });
       prisma.supportTicket.create.mockImplementation(({ data }: any) => ({
         id: 'tkt-new',
         ...data,
@@ -189,6 +254,7 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
       prisma.ticketMessage.create.mockResolvedValue({ id: 'msg-1' });
       prisma.ticketEvent.create.mockResolvedValue({ id: 'evt-1' });
 
+      const requestStartedAt = Date.now();
       const ticket = await service.createTicket(mockUserA.id, {
         subject: 'Keyboard not working',
         category: 'WARRANTY_REPAIR',
@@ -197,6 +263,9 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
 
       expect(ticket.ticketNumber).toBe('LM-T-1042');
       expect(ticket.status).toBe('NEW');
+      const firstResponseDueAt = prisma.supportTicket.create.mock.calls[0][0].data.firstResponseDueAt.getTime();
+      expect(firstResponseDueAt).toBeGreaterThanOrEqual(requestStartedAt + 60 * 60 * 1000);
+      expect(firstResponseDueAt).toBeLessThanOrEqual(Date.now() + 60 * 60 * 1000);
       expect(notifications.dispatchSupportNotification).toHaveBeenCalledWith(
         mockUserA.id,
         expect.objectContaining({ type: 'ticket-created', ticketNumber: 'LM-T-1042' }),

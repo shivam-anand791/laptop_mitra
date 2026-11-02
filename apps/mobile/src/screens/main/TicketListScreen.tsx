@@ -27,7 +27,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }>
 
 export default function TicketListScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isGuest } = useAuth();
   const [selectedFilter, setSelectedFilter] = useState<'ALL' | 'ACTIVE' | 'RESOLVED'>('ALL');
 
   const { data: tickets = [], isLoading, refetch, isRefetching } = useTickets();
@@ -42,7 +42,7 @@ export default function TicketListScreen() {
     return true;
   });
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || isGuest) {
     return (
       <View style={styles.centered}>
         <Ionicons name="lock-closed-outline" size={48} color={colors.primary} />

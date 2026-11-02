@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Order } from '@/lib/types';
+import { useSupportConfig } from '@/lib/support-config';
 import { SkeletonList, ErrorState } from '@/components/account';
 import {
   ShieldCheck,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 
 export default function WarrantySupportPage() {
+  const { data: supportConfig } = useSupportConfig();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +52,7 @@ export default function WarrantySupportPage() {
               Warranty Coverage &amp; Claims
             </h1>
             <p className="text-xs text-slate-500 mt-1">
-              Every certified refurbished laptop includes LaptopMitra Assured Warranty with doorstep diagnostics and part replacement.
+              Review the coverage period and claim options for your purchased laptops.
             </p>
           </div>
 
@@ -94,7 +96,7 @@ export default function WarrantySupportPage() {
 
         <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-3">
           <Link
-            href="/help/warranty-repair/6-month-standard-warranty-coverage"
+            href="/help"
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition"
           >
             Read Warranty Terms <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
@@ -103,7 +105,7 @@ export default function WarrantySupportPage() {
             href="/account/returns"
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-slate-500" /> 7-Day Replacement Policy
+            <RotateCcw className="w-3.5 h-3.5 text-slate-500" /> Return policy
           </Link>
         </div>
       </div>
@@ -145,15 +147,18 @@ export default function WarrantySupportPage() {
               const isLease = firstItem?.purchaseMode === 'lease';
               const hasExtension = !!firstItem?.hasWarranty;
 
-              // Base warranty defaults to 6 months (180 days), add-on extends total to 12 months (365 days)
-              const warrantyDays = hasExtension ? 365 : 180;
+              const standardWarrantyDays = supportConfig?.standardWarrantyDays;
+              const warrantyDays = standardWarrantyDays
+                ? standardWarrantyDays * (hasExtension ? 2 : 1)
+                : 0;
+              const warrantyMonths = Math.max(1, Math.round(warrantyDays / 30));
               const warrantyLabel = hasExtension
-                ? '12-Month Assured Warranty'
-                : '6-Month Assured Warranty';
+                ? `Extended Assured Warranty (${warrantyMonths} months)`
+                : `${warrantyMonths}-Month Assured Warranty`;
 
               const orderDate = new Date(ord.createdAt);
               const warrantyEnd = new Date(orderDate.getTime() + warrantyDays * 24 * 60 * 60 * 1000);
-              const isActive = new Date() <= warrantyEnd && ord.status !== 'CANCELLED';
+              const isActive = warrantyDays > 0 && new Date() <= warrantyEnd && ord.status !== 'CANCELLED';
               const daysLeft = isActive ? Math.ceil((warrantyEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
 
               const primaryImage =
@@ -194,7 +199,7 @@ export default function WarrantySupportPage() {
                           {isActive ? `${daysLeft} Days Active` : 'Warranty Expired'}
                         </span>
                         <span className="text-[11px] text-slate-500 font-medium">
-                          {isLease ? 'Quarterly Enterprise Servicing' : warrantyLabel}
+                          {isLease ? 'Quarterly Enterprise Servicing' : supportConfig ? warrantyLabel : 'Coverage period unavailable'}
                         </span>
                       </div>
 
@@ -203,7 +208,8 @@ export default function WarrantySupportPage() {
                       </h3>
 
                       <p className="text-xs text-slate-500">
-                        Purchased on {orderDate.toLocaleDateString('en-IN')} • Coverage valid until {warrantyEnd.toLocaleDateString('en-IN')}
+                        Purchased on {orderDate.toLocaleDateString('en-IN')}
+                        {supportConfig && ` • Coverage valid until ${warrantyEnd.toLocaleDateString('en-IN')}`}
                       </p>
                     </div>
                   </div>

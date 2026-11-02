@@ -20,6 +20,7 @@ import {
   useAddTicketMessage,
   useReopenTicket,
   useRateTicket,
+  useSupportConfig,
 } from '../../hooks/useApi';
 import { colors, spacing, radius, shadows } from '../../theme/tokens';
 
@@ -41,6 +42,7 @@ export default function TicketDetailScreen() {
 
   // Queries & Mutations
   const { data: ticket, isLoading, refetch } = useTicket(ticketId);
+  const { data: supportConfig } = useSupportConfig();
   const addMessageMutation = useAddTicketMessage();
   const reopenMutation = useReopenTicket();
   const rateMutation = useRateTicket();
@@ -177,7 +179,9 @@ export default function TicketDetailScreen() {
   const isResolvedOrClosed = ticket.status === 'RESOLVED' || ticket.status === 'CLOSED';
   const resolvedDate = new Date(ticket.resolvedAt || ticket.updatedAt);
   const daysSinceResolved = Math.floor((Date.now() - resolvedDate.getTime()) / (1000 * 60 * 60 * 24));
-  const canReopen = isResolvedOrClosed && daysSinceResolved <= 7;
+  const canReopen = isResolvedOrClosed
+    && Boolean(supportConfig?.reopenWindowDays)
+    && daysSinceResolved <= (supportConfig?.reopenWindowDays ?? 0);
 
   return (
     <KeyboardAvoidingView
@@ -324,7 +328,9 @@ export default function TicketDetailScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.reopenTitle}>Issue not fully resolved?</Text>
               <Text style={styles.reopenDesc}>
-                You can reopen this ticket within 7 days of resolution.
+                {supportConfig?.reopenWindowDays
+                  ? `You can reopen this ticket within ${supportConfig.reopenWindowDays} days of resolution.`
+                  : 'The configured reopen window has expired or is unavailable.'}
               </Text>
             </View>
             <TouchableOpacity

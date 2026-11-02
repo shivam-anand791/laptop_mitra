@@ -6,6 +6,8 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { useSupportConfig } from '@/lib/support-config';
+import { HelpBreadcrumbs } from '@/components/help/HelpSubnav';
 import {
   ArrowLeft,
   ArrowRight,
@@ -58,14 +60,29 @@ function GuidedFlowContent() {
 
   const prefilledOrderId = searchParams?.get('orderId');
   const prefilledCategory = searchParams?.get('category');
+  const prefilledContact = searchParams?.get('contact');
 
   // Step state: 1: Context, 2: Category & Issue, 3: Self-serve solutions, 4: Raise Ticket / Return
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const goToStep = (step: number, replace = false) => {
+    setCurrentStep(step);
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    params.set('step', String(step));
+    const url = `/help/guided-flow?${params.toString()}`;
+    if (replace) router.replace(url, { scroll: false });
+    else router.push(url, { scroll: false });
+  };
+
+  useEffect(() => {
+    const step = Number(searchParams?.get('step'));
+    if (step >= 1 && step <= 4) setCurrentStep(step);
+  }, [searchParams]);
 
   // Data
   const [orders, setOrders] = useState<OrderInfo[]>([]);
-  const [config, setConfig] = useState<any>(null);
   const [loadingOrders, setLoadingOrders] = useState(true);
+  const { data: config, isLoading: loadingConfig, error: configError } = useSupportConfig();
+  const [ordersError, setOrdersError] = useState<string | null>(null);
 
   // Selections
   const [selectedOrder, setSelectedOrder] = useState<OrderInfo | null>(null);
@@ -99,17 +116,18 @@ function GuidedFlowContent() {
   const [submittingReturn, setSubmittingReturn] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (prefilledContact === 'callback') setCallbackRequested(true);
+  }, [prefilledContact]);
+
   // Load orders and config
   useEffect(() => {
     async function loadData() {
       setLoadingOrders(true);
+      setOrdersError(null);
       try {
-        const [ordersRes, configRes] = await Promise.all([
-          api.getOrders().catch(() => []),
-          api.getSupportConfig().catch(() => null),
-        ]);
+        const ordersRes = await api.getOrders();
         setOrders(ordersRes || []);
-        setConfig(configRes);
 
         // Handle URL prefill
         if (prefilledOrderId && ordersRes?.length) {
@@ -117,12 +135,11 @@ function GuidedFlowContent() {
           if (match) {
             setSelectedOrder(match);
             setIsNotOrderRelated(false);
-            setCurrentStep(2);
+            goToStep(2, true);
           }
         }
-        if (prefilledCategory) {
-          setSelectedCategory(prefilledCategory);
-        }
+      } catch (error) {
+        setOrdersError(error instanceof Error ? error.message : 'Unable to load your orders.');
       } finally {
         setLoadingOrders(false);
       }
@@ -133,42 +150,51 @@ function GuidedFlowContent() {
     } else {
       setLoadingOrders(false);
     }
-  }, [isAuthenticated, prefilledOrderId, prefilledCategory]);
+  }, [isAuthenticated, prefilledOrderId]);
+
+  useEffect(() => {
+    if (!prefilledCategory || !config) return;
+    const normalized = prefilledCategory.toLowerCase().replace(/-/g, '_');
+    const match = config.categories.find((category) =>
+      category.id.toLowerCase() === normalized
+      || String(category.slug || '').toLowerCase().replace(/-/g, '_') === normalized
+    );
+    const semanticMatch = /warrant|repair|hardware/.test(normalized) ? 'WARRANTY_REPAIR'
+      : /return|refund|replace/.test(normalized) ? 'RETURN_REFUND'
+      : /order|delivery|shipping/.test(normalized) ? 'ORDER_DELIVERY'
+      : /payment|billing/.test(normalized) ? 'PAYMENT'
+      : null;
+    setSelectedCategory(match?.id || semanticMatch || prefilledCategory);
+  }, [config, prefilledCategory]);
 
   // Auth gate check
-  if (!isAuthenticated && !loadingOrders) {
+  if ((!isAuthenticated || isGuest) && !loadingOrders) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 rounded-3xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4">
-          <ShieldAlert className="w-8 h-8" />
+      <div className="min-h-screen bg-slate-50">
+        <HelpBreadcrumbs current="Guided help" />
+        <div className="flex flex-col items-center justify-center p-6 text-center">
+          <div className="w-16 h-16 rounded-3xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
+            Sign In to Access Guided Support
+          </h2>
+          <p className="text-sm text-slate-500 max-w-md mb-6 leading-relaxed">
+            Sign in to view your orders and submit a support request.
+          </p>
+          <Link
+            href={`/login?next=${encodeURIComponent(`/help/guided-flow${searchParams?.toString() ? `?${searchParams.toString()}` : ''}`)}`}
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm transition shadow-lg shadow-blue-500/25"
+          >
+            Sign In / Create Account
+          </Link>
         </div>
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
-          Sign In to Access Guided Support
-        </h2>
-        <p className="text-sm text-slate-500 max-w-md mb-6 leading-relaxed">
-          To help you with your order, 7-day return request, or warranty claim, please log in with your verified account.
-        </p>
-        <Link
-          href={`/login?redirect=${encodeURIComponent('/help/guided-flow' + (prefilledOrderId ? `?orderId=${prefilledOrderId}` : ''))}`}
-          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm transition shadow-lg shadow-blue-500/25"
-        >
-          Sign In / Create Account
-        </Link>
       </div>
     );
   }
 
   // Get active categories list
-  const categoriesList = config?.categories || [
-    { id: 'ORDER_DELIVERY', label: 'Order & Delivery' },
-    { id: 'RETURN_REFUND', label: 'Return, Replacement & Refund' },
-    { id: 'WARRANTY_REPAIR', label: 'Warranty & Repair' },
-    { id: 'PAYMENT', label: 'Payment & Billing' },
-    { id: 'BUYBACK', label: 'Buyback Guarantee' },
-    { id: 'RENT_LEASE', label: 'Rent / Lease (Fleet)' },
-    { id: 'ACCOUNT', label: 'Account & Security' },
-    { id: 'OTHER', label: 'Other Assistance' },
-  ];
+  const categoriesList = config?.categories || [];
 
   const activeCategoryObj = categoriesList.find((c: any) => c.id === selectedCategory);
   const issuesList = activeCategoryObj?.issues || [];
@@ -181,13 +207,13 @@ function GuidedFlowContent() {
       setSelectedOrderItemId(order.items[0].id);
       setSelectedReturnItems({ [order.items[0].id]: 1 });
     }
-    setCurrentStep(2);
+    goToStep(2);
   };
 
   const handleSelectNoOrder = () => {
     setSelectedOrder(null);
     setIsNotOrderRelated(true);
-    setCurrentStep(2);
+    goToStep(2);
   };
 
   // Handle Step 2 Selection
@@ -195,15 +221,16 @@ function GuidedFlowContent() {
     setSelectedCategory(catId);
     setSelectedIssue(issueId);
     setTicketSubject(`${activeCategoryObj?.label || 'Support'}: ${issueLabel}`);
-    setCurrentStep(3);
+    goToStep(3);
   };
 
-  // Check 7-day return eligibility
+  const returnWindowDays = config?.returnWindowDays;
+
   const isEligibleForReturn = () => {
-    if (!selectedOrder) return false;
+    if (!selectedOrder || !returnWindowDays || selectedOrder.status !== 'DELIVERED') return false;
     const orderDate = new Date(selectedOrder.deliveredAt || selectedOrder.createdAt);
     const diffDays = (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24);
-    return diffDays <= 7;
+    return diffDays <= returnWindowDays;
   };
 
   // Submit Ticket Action
@@ -301,6 +328,7 @@ function GuidedFlowContent() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
+      <HelpBreadcrumbs current="Guided help" />
       {/* ── Top Header ── */}
       <div className="bg-white border-b border-slate-200 py-6 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -314,7 +342,7 @@ function GuidedFlowContent() {
             </Link>
             <div>
               <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                Guided Support Assistant
+                Guided help
                 <span className="text-xs bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded-full">
                   Step {currentStep} of 4
                 </span>
@@ -358,13 +386,17 @@ function GuidedFlowContent() {
                 Step 1: Which purchase or order is this about?
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                Select from your recent orders to prefill warranty and tracking information.
+                Select an order to keep its details with your support request.
               </p>
             </div>
 
             {loadingOrders ? (
               <div className="py-12 flex justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+              </div>
+            ) : ordersError ? (
+              <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+                {ordersError} Please try again or choose the option for a general question.
               </div>
             ) : (
               <div className="space-y-3">
@@ -453,12 +485,20 @@ function GuidedFlowContent() {
                 </p>
               </div>
               <button
-                onClick={() => setCurrentStep(1)}
+                onClick={() => goToStep(1)}
                 className="text-xs font-bold text-blue-600 hover:underline"
               >
                 Change Order
               </button>
             </div>
+
+            {loadingConfig ? (
+              <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Loading available support options…</p>
+            ) : configError ? (
+              <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+                Support options are temporarily unavailable. Please return to Help or try again later.
+              </p>
+            ) : null}
 
             {/* Category selection */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -517,14 +557,14 @@ function GuidedFlowContent() {
                 </p>
               </div>
               <button
-                onClick={() => setCurrentStep(2)}
+                onClick={() => goToStep(2)}
                 className="text-xs font-bold text-blue-600 hover:underline"
               >
                 Change Issue
               </button>
             </div>
 
-            {/* Automated Resolution Cards */}
+            {/* Available support options */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Order Tracking Action */}
               {selectedOrder && (
@@ -546,24 +586,26 @@ function GuidedFlowContent() {
                 </div>
               )}
 
-              {/* 7-Day Return / Replacement Action */}
+              {/* Return / Replacement Action */}
               {selectedOrder && selectedCategory === 'RETURN_REFUND' && (
                 <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 mb-1">
-                      <RotateCcw className="w-4 h-4" /> 7-Day Return & Replacement
+                      <RotateCcw className="w-4 h-4" /> Return &amp; Replacement
                     </div>
                     <p className="text-xs text-slate-600">
-                      {isEligibleForReturn()
-                        ? 'Your order is within the 7-day return window. Submit return details and bank account for instant pickup.'
-                        : 'Your order was delivered more than 7 days ago. You can still raise a hardware warranty repair claim.'}
+                      {!returnWindowDays
+                        ? 'Return eligibility could not be checked. Please contact our support team.'
+                        : isEligibleForReturn()
+                        ? `Your order is within the ${returnWindowDays}-day return window. Submit a request for review.`
+                        : `This order is outside the ${returnWindowDays}-day return window. Review warranty support options or contact our team.`}
                     </p>
                   </div>
-                  {isEligibleForReturn() ? (
+                  {returnWindowDays && isEligibleForReturn() ? (
                     <button
                       onClick={() => {
                         setIsReturnMode(true);
-                        setCurrentStep(4);
+                        goToStep(4);
                       }}
                       className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
                     >
@@ -573,11 +615,13 @@ function GuidedFlowContent() {
                     <button
                       onClick={() => {
                         setIsReturnMode(false);
-                        setCurrentStep(4);
+                        setSelectedCategory('WARRANTY_REPAIR');
+                        setSelectedIssue('');
+                        goToStep(2);
                       }}
                       className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:underline"
                     >
-                      Claim 6-Month Hardware Warranty →
+                      Review Warranty Support Options →
                     </button>
                   )}
                 </div>
@@ -614,7 +658,7 @@ function GuidedFlowContent() {
                   </p>
                 </div>
                 <Link
-                  href="/help/warranty-repair/6-month-standard-warranty-coverage"
+                  href="/account/warranty-support"
                   className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:underline"
                 >
                   Read Policy Details →
@@ -629,13 +673,15 @@ function GuidedFlowContent() {
                   Did these options resolve your issue?
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  If you still need help, raise an official support ticket and our team will get in touch within 24 hours.
+                  {config?.firstResponseSlaHours
+                    ? `If you still need help, raise a ticket. Our team aims to respond within ${config.firstResponseSlaHours} hours.`
+                    : 'If you still need help, raise a support ticket and our team will review your request.'}
                 </p>
               </div>
               <button
                 onClick={() => {
                   setIsReturnMode(false);
-                  setCurrentStep(4);
+                  goToStep(4);
                 }}
                 className="shrink-0 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
               >
@@ -654,12 +700,14 @@ function GuidedFlowContent() {
                   Step 4: Raise a Support Ticket
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Our technical support team will review your case and respond within 24 hours.
+                  {config?.firstResponseSlaHours
+                    ? `Our team aims to respond within ${config.firstResponseSlaHours} hours.`
+                    : 'Our support team will review your request.'}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setCurrentStep(3)}
+                onClick={() => goToStep(3)}
                 className="text-xs font-bold text-blue-600 hover:underline"
               >
                 Back to Solutions
@@ -774,7 +822,9 @@ function GuidedFlowContent() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold text-slate-900">
-                  Submit 7-Day Return / Replacement Request
+                  {returnWindowDays
+                    ? `Submit ${returnWindowDays}-Day Return / Replacement Request`
+                    : 'Submit Return / Replacement Request'}
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Order #{selectedOrder.orderNumber}
@@ -782,7 +832,7 @@ function GuidedFlowContent() {
               </div>
               <button
                 type="button"
-                onClick={() => setCurrentStep(3)}
+                onClick={() => goToStep(3)}
                 className="text-xs font-bold text-blue-600 hover:underline"
               >
                 Back

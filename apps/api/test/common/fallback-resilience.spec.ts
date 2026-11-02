@@ -79,6 +79,30 @@ describe('Production Database Resilience & Fallback Prevention', () => {
           }),
         ).rejects.toThrow(ServiceUnavailableException);
       });
+
+      it('updates an address city and state from the verified replacement PIN', async () => {
+        const prisma = {
+          address: {
+            findFirst: jest.fn().mockResolvedValue({ id: 'addr-1', userId: 'user-1' }),
+            update: jest.fn().mockResolvedValue({
+              id: 'addr-1', userId: 'user-1', address: 'Noida address', city: 'Noida',
+              state: 'Uttar Pradesh', pincode: '201301', isDefault: false,
+            }),
+          },
+        } as any;
+        const pincodeService = {
+          verifyPincode: jest.fn().mockResolvedValue({ valid: true, serviceable: true, city: 'Noida', state: 'Uttar Pradesh' }),
+        } as any;
+        const service = new AddressService(prisma, pincodeService);
+
+        await service.update('user-1', 'addr-1', {
+          address: 'Noida address', city: 'Bengaluru', state: 'Karnataka', pincode: '201301',
+        });
+
+        expect(prisma.address.update).toHaveBeenCalledWith(expect.objectContaining({
+          data: expect.objectContaining({ city: 'Noida', state: 'Uttar Pradesh' }),
+        }));
+      });
     });
 
     describe('NotificationService', () => {
@@ -173,7 +197,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
 
         const productService = {} as any;
 
-        const service = new OrderService(prisma, cartService, productService, notificationService, { validateDiscountCode: jest.fn() } as any);
+        const service = new OrderService(prisma, cartService, productService, notificationService, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any);
 
         await expect(
           service.createOrder(
@@ -205,7 +229,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
 
         const cartService = { getCart: jest.fn().mockResolvedValue(mockCart), clearCart: jest.fn() } as any;
         const prisma = { $transaction: jest.fn() } as any;
-        const service = new OrderService(prisma, cartService, {} as any, {} as any, { validateDiscountCode: jest.fn() } as any);
+        const service = new OrderService(prisma, cartService, {} as any, {} as any, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any);
 
         // Missing email
         await expect(
@@ -258,7 +282,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
           dispatchOrderUpdate: jest.fn().mockResolvedValue(undefined),
         } as any;
 
-        const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn(), validateOrderDiscount: jest.fn().mockResolvedValue(null) } as any);
+        const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn(), validateOrderDiscount: jest.fn().mockResolvedValue(null) } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any);
 
         const order = await service.createOrder(
           'user-1',
@@ -351,7 +375,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
         dispatchOrderUpdate: jest.fn().mockResolvedValue(undefined),
       } as any;
 
-      const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn() } as any);
+      const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any);
 
       await expect(
         service.createOrder(

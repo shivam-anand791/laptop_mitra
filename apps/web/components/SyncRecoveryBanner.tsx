@@ -30,7 +30,7 @@ export function SyncRecoveryBanner() {
   return (
     <div
       role="alert"
-      className="bg-amber-600 text-white px-4 py-3 shadow-md transition-all sticky top-0 z-50 text-xs sm:text-sm font-medium border-b border-amber-700"
+      className="relative z-[60] bg-amber-600 text-white px-4 py-3 shadow-md transition-all text-xs sm:text-sm font-medium border-b border-amber-700"
     >
       <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 text-center sm:text-left">
@@ -91,4 +91,3 @@ export function SyncRecoveryBanner() {
 }
 
 export default SyncRecoveryBanner;
-

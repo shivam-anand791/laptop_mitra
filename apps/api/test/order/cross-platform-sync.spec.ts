@@ -66,6 +66,7 @@ describe('Cross-Platform Data Synchronization (Web & Mobile)', () => {
       {} as any,
       notificationServiceMock,
       discountServiceMock,
+      { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any,
     );
     orderController = new OrderController(orderService);
   });

@@ -37,7 +37,7 @@ interface AttachmentItem {
 export default function GuidedSupportFlowScreen() {
   const route = useRoute<GuidedRouteProp>();
   const navigation = useNavigation<MainStackNavigationProp>();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isGuest } = useAuth();
 
   const prefilledOrderId = route.params?.orderId;
   const prefilledCategory = route.params?.category;
@@ -47,7 +47,7 @@ export default function GuidedSupportFlowScreen() {
   // Queries
   const { data: orders = [], isLoading: loadingOrders } = useOrders();
   const orderList: any[] = Array.isArray(orders) ? orders : ((orders as any)?.orders || []);
-  const { data: config } = useSupportConfig();
+  const { data: config, isLoading: isLoadingConfig, error: configError } = useSupportConfig();
   const createTicketMutation = useCreateTicket();
   const createReturnMutation = useCreateReturnRequest();
 
@@ -100,72 +100,21 @@ export default function GuidedSupportFlowScreen() {
     }
   }, [prefilledOrderId, prefilledCategory, orderList]);
 
-  // Categories & Issues list from config or fallback
-  const categoriesList = config?.categories || [
-    {
-      id: 'ORDER_DELIVERY',
-      label: 'Order & Delivery',
-      issues: [
-        { id: 'DELAYED_DELIVERY', label: 'Delivery is delayed beyond promised date' },
-        { id: 'INCORRECT_ADDRESS', label: 'Need to update delivery address or contact number' },
-        { id: 'DELIVERED_NOT_RECEIVED', label: 'Package marked delivered but not received' },
-      ],
-    },
-    {
-      id: 'RETURN_REFUND',
-      label: 'Return, Replacement & Refund',
-      issues: [
-        { id: 'DEFECTIVE_PRODUCT', label: 'Laptop has a technical or hardware defect' },
-        { id: 'DAMAGED_IN_TRANSIT', label: 'Packaging or laptop damaged during transit' },
-        { id: 'WRONG_SPECIFICATION', label: 'Specifications received differ from listing' },
-        { id: 'REFUND_NOT_CREDITED', label: 'Refund not credited within expected timeline' },
-      ],
-    },
-    {
-      id: 'WARRANTY_REPAIR',
-      label: 'Warranty & Protection Claim',
-      issues: [
-        { id: 'SCREEN_BATTERY_ISSUE', label: 'Screen flickering, lines or battery drain' },
-        { id: 'CHARGER_KEYBOARD', label: 'Adapter, keyboard or touchpad not responding' },
-        { id: 'CLAIM_EXTENDED_WARRANTY', label: 'Claim 1-year Mitra Extended Warranty' },
-      ],
-    },
-    {
-      id: 'PAYMENT',
-      label: 'Payment & Invoicing',
-      issues: [
-        { id: 'PAYMENT_FAILED_DEBITED', label: 'Amount debited but order not confirmed' },
-        { id: 'GST_INVOICE_REQUIRED', label: 'Need GST tax invoice with company details' },
-      ],
-    },
-    {
-      id: 'BUYBACK',
-      label: 'Buyback Guarantee Claim',
-      issues: [
-        { id: 'BUYBACK_ESTIMATE', label: 'Calculate assured buyback value for my laptop' },
-        { id: 'BUYBACK_PAYOUT', label: 'Payment inquiry for completed buyback pickup' },
-      ],
-    },
-    {
-      id: 'OTHER',
-      label: 'Other Assistance',
-      issues: [
-        { id: 'TECHNICAL_SUPPORT', label: 'Driver installation or OS assistance' },
-        { id: 'GENERAL_INQUIRY', label: 'General inquiry or feedback' },
-      ],
-    },
-  ];
+  const categoriesList = config?.categories || [];
 
   const activeCategoryObj = categoriesList.find((c: any) => c.id === selectedCategory);
   const issuesList = activeCategoryObj?.issues || [];
 
-  // Check 7-day return eligibility
+  const returnWindowDays = config?.returnWindowDays;
+
   const checkReturnEligibility = () => {
-    if (!selectedOrder) return { eligible: false, daysLeft: 0 };
+    if (!selectedOrder || !returnWindowDays || selectedOrder.status !== 'DELIVERED') {
+      return { eligible: false, daysLeft: 0 };
+    }
     const date = new Date(selectedOrder.deliveredAt || selectedOrder.createdAt);
     const diffDays = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
-    const eligible = diffDays <= 7 && selectedOrder.status === 'DELIVERED';
-    return { eligible, daysLeft: Math.max(0, 7 - diffDays), daysPast: diffDays };
+    const eligible = diffDays <= returnWindowDays;
+    return { eligible, daysLeft: Math.max(0, returnWindowDays - diffDays), daysPast: diffDays };
   };
 
   const returnEligibility = checkReturnEligibility();
@@ -297,7 +246,7 @@ export default function GuidedSupportFlowScreen() {
     });
   };
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || isGuest) {
     return (
       <View style={styles.centered}>
         <Ionicons name="lock-closed-outline" size={48} color={colors.primary} />
@@ -421,7 +370,13 @@ export default function GuidedSupportFlowScreen() {
           <Text style={styles.stepSubheading}>Select what best describes what you are experiencing.</Text>
 
           {/* Category Pills */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
+          {isLoadingConfig ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : configError ? (
+            <Text style={styles.hintText}>Support options are temporarily unavailable. Please try again later.</Text>
+          ) : categoriesList.length === 0 ? (
+            <Text style={styles.hintText}>No support options are currently available.</Text>
+          ) : <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
             {categoriesList.map((cat: any) => {
               const isSelected = selectedCategory === cat.id;
               return (
@@ -439,7 +394,7 @@ export default function GuidedSupportFlowScreen() {
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
+          </ScrollView>}
 
           {/* Issues List */}
           {selectedCategory ? (
@@ -476,7 +431,7 @@ export default function GuidedSupportFlowScreen() {
             disabled={!selectedIssue}
             onPress={() => setCurrentStep(3)}
           >
-            <Text style={styles.primaryButtonText}>View Instant Solutions</Text>
+            <Text style={styles.primaryButtonText}>Review Support Options</Text>
             <Ionicons name="arrow-forward" size={16} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -492,8 +447,8 @@ export default function GuidedSupportFlowScreen() {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.stepHeading}>Step 3: Instant Self-Serve Options</Text>
-          <Text style={styles.stepSubheading}>Most inquiries can be resolved right away without waiting.</Text>
+          <Text style={styles.stepHeading}>Step 3: Available Support Options</Text>
+          <Text style={styles.stepSubheading}>Review options for your selected order and issue.</Text>
 
           {/* Solution 1: Courier Tracking */}
           {selectedOrder && (
@@ -515,14 +470,16 @@ export default function GuidedSupportFlowScreen() {
             </View>
           )}
 
-          {/* Solution 2: 7-Day Mitra Guarantee & Returns */}
+          {/* Solution 2: Return eligibility */}
           {selectedOrder && (
             <View style={styles.solutionCard}>
               <View style={styles.solutionCardHeader}>
                 <Ionicons name="shield-checkmark" size={22} color={colors.green} />
-                <Text style={styles.solutionCardTitle}>7-Day Mitra Replacement & Return</Text>
+                <Text style={styles.solutionCardTitle}>Return &amp; Replacement</Text>
               </View>
-              {returnEligibility.eligible ? (
+              {!returnWindowDays ? (
+                <Text style={styles.solutionCardDesc}>Return eligibility could not be checked. Please contact support.</Text>
+              ) : returnEligibility.eligible ? (
                 <View>
                   <Text style={styles.solutionCardDesc}>
                     Your laptop was delivered recently and has{' '}
@@ -543,8 +500,7 @@ export default function GuidedSupportFlowScreen() {
                 </View>
               ) : (
                 <Text style={styles.solutionCardDesc}>
-                  The 7-day return window has closed. Your device remains fully covered under the 1-Year Mitra
-                  Warranty for parts and technical repair.
+                  This order is outside the {returnWindowDays}-day return window. Review warranty terms or contact support.
                 </Text>
               )}
             </View>
@@ -557,7 +513,7 @@ export default function GuidedSupportFlowScreen() {
               <Text style={styles.solutionCardTitle}>Speak with a Hardware Technician</Text>
             </View>
             <Text style={styles.solutionCardDesc}>
-              Our diagnostics engineers are available from 10:00 AM to 7:00 PM (Mon-Sat).
+              {config?.supportHoursText || 'Contact our team for current support hours.'}
             </Text>
             <TouchableOpacity
               style={[styles.outlineButton, { borderColor: colors.navy }]}

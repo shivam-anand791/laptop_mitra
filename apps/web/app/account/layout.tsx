@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
+import { useSupportConfig } from '@/lib/support-config';
+import CustomerLayout from '@/components/CustomerLayout';
 import {
   Package,
   User,
@@ -36,23 +38,27 @@ interface NavGroup {
 export default function AccountLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isAuthenticated, isGuest, isLoading, logout } = useAuth();
+  const { user, isGuest, isLoading, logout } = useAuth();
+  const { data: supportConfig } = useSupportConfig();
   const [unreadTicketsCount, setUnreadTicketsCount] = useState<number>(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isTicketDetail = pathname?.startsWith('/account/tickets/');
+  const isReturnDetail = pathname?.startsWith('/account/returns/');
+  const isOrderDetail = pathname?.startsWith('/account/orders/');
 
   // Route guard with ?next= query parameter
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (!isLoading && (!user || isGuest)) {
       const current = pathname || '/account/orders';
-      router.push(`/login?next=${encodeURIComponent(current)}`);
+      router.replace(`/login?next=${encodeURIComponent(current)}`);
     }
-  }, [isLoading, user, pathname, router]);
+  }, [isLoading, user, isGuest, pathname, router]);
 
   // Support tickets unread count
   useEffect(() => {
     let isMounted = true;
     async function loadUnreadCount() {
-      if (!user) return;
+      if (!user || user.isGuest) return;
       try {
         const tickets = await api.getTickets();
         if (isMounted && Array.isArray(tickets)) {
@@ -112,6 +118,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
           badgeCount: unreadTicketsCount,
         },
         { href: '/account/returns', label: 'Returns & Replacements', icon: RotateCcw },
+        { href: '/account/warranty-support', label: 'Warranty Support', icon: ShieldCheck },
         { href: '/help', label: 'Help Center', icon: HelpCircle },
       ],
     },
@@ -119,9 +126,31 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-6 text-slate-500 text-xs font-semibold">
-        Loading your account...
-      </div>
+      <CustomerLayout>
+        <div className="min-h-[60vh] bg-[#F8FAFC] flex items-center justify-center p-6 text-slate-500 text-xs font-semibold">
+          Loading your account...
+        </div>
+      </CustomerLayout>
+    );
+  }
+
+  if (!user || isGuest) {
+    const next = pathname || '/account/orders';
+    return (
+      <CustomerLayout>
+        <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 p-6 text-center">
+          <h1 className="text-lg font-bold text-slate-900">Sign in to access your account</h1>
+          <p className="max-w-md text-sm text-slate-600">
+            Your account pages and support requests are available after signing in.
+          </p>
+          <Link
+            href={`/login?next=${encodeURIComponent(next)}`}
+            className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700"
+          >
+            Sign in
+          </Link>
+        </div>
+      </CustomerLayout>
     );
   }
 
@@ -134,6 +163,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
   const tierLabel = user?.referralTier ? `${user.referralTier} Mitra Affiliate` : 'Mitra Affiliate';
 
   return (
+    <CustomerLayout>
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
       {/* ── Compact Sub-Header / Breadcrumbs (No giant gradient!) ── */}
       <div className="bg-white border-b border-[#E2E8F0] px-4 sm:px-6 lg:px-8 py-3.5">
@@ -160,8 +190,16 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
                 ? 'Wishlist'
                 : pathname === '/account/tickets'
                 ? 'Support Tickets'
+                : isTicketDetail
+                ? 'Ticket Details'
                 : pathname === '/account/returns'
                 ? 'Returns & Replacements'
+                : isReturnDetail
+                ? 'Return Details'
+                : isOrderDetail
+                ? 'Order Details'
+                : pathname === '/account/warranty-support'
+                ? 'Warranty Support'
                 : 'Account Hub'}
             </span>
           </nav>
@@ -267,7 +305,9 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
                 <span>32-Point Assured Quality</span>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                6-Month standard hardware warranty, verified battery health, and dedicated support.
+                {supportConfig
+                  ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))}-month standard hardware warranty, verified battery health, and dedicated support.`
+                  : 'Hardware warranty, verified battery health, and dedicated support.'}
               </p>
             </div>
           </aside>
@@ -279,5 +319,6 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
         </div>
       </div>
     </div>
+    </CustomerLayout>
   );
 }

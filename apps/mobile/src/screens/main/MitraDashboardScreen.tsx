@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useProfile } from '../../hooks/useApi';
+import { useProfile, useSupportConfig } from '../../hooks/useApi';
 import { formatIndianRupees } from '../../utils/account-helpers';
 
 const TIER_CONFIG = {
@@ -11,6 +11,7 @@ const TIER_CONFIG = {
 
 export default function MitraDashboardScreen() {
   const { data: profile, isLoading } = useProfile();
+  const { data: supportConfig } = useSupportConfig();
 
   if (isLoading) {
     return (
@@ -117,7 +118,10 @@ export default function MitraDashboardScreen() {
           </View>
           <View style={styles.howContent}>
             <Text style={styles.howItemTitle}>Earn Rewards</Text>
-            <Text style={styles.howItemDesc}>Earn ₹500 per laptop purchased. Commissions mature after the 7-day return window.</Text>
+            <Text style={styles.howItemDesc}>
+              Earn ₹500 per laptop purchased. Commissions mature after the
+              {supportConfig?.returnWindowDays ? ` ${supportConfig.returnWindowDays}-day` : ''} return window.
+            </Text>
           </View>
         </View>
       </View>

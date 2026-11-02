@@ -82,6 +82,24 @@ describe('OrderController - Security Tests', () => {
     orderService = module.get(OrderService);
   });
 
+  it('passes the selected saved address ID to the order service', async () => {
+    const body = {
+      addressId: 'address-a',
+      shippingAddress: { address: '12 Main Street', pincode: '110019' },
+      phone: '+919876543210',
+      email: 'a@test.com',
+      paymentMethod: 'razorpay',
+    };
+    orderService.createOrder.mockResolvedValue(mockOrderA);
+
+    await controller.createOrder(mockUserA, body, 'request-key');
+
+    expect(orderService.createOrder).toHaveBeenCalledWith(
+      'user-a', undefined, undefined, body.shippingAddress, body.phone, undefined,
+      body.email, mockUserA, 'razorpay', 'request-key', 'address-a',
+    );
+  });
+
   describe('GET /orders/:id (findOne)', () => {
     it('should return order when user owns it', async () => {
       orderService.findOne.mockResolvedValue(mockOrderA);
@@ -189,9 +207,13 @@ describe('OrderController - Security Tests', () => {
 describe('OrderService - Security Logic', () => {
   let orderService: OrderService;
   let prisma: any;
+  let pincodeService: { validateOrderShipping: jest.Mock };
 
   beforeEach(() => {
     prisma = {
+      address: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       $transaction: jest.fn((callback: any) => (typeof callback === 'function' ? callback(prisma) : Promise.all(callback))),
       order: {
         findUnique: jest.fn(),
@@ -216,13 +238,51 @@ describe('OrderService - Security Logic', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
     };
+    pincodeService = { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) };
     orderService = new OrderService(
       prisma,
       {} as any,
       {} as any,
       { dispatchOrderUpdate: jest.fn() } as any,
       { validateDiscountCode: jest.fn() } as any,
+      pincodeService as any,
     );
+  });
+
+  it('rejects a saved delivery address that does not belong to the ordering customer', async () => {
+    await expect(orderService.createOrder(
+      'user-a', undefined, undefined,
+      { fullName: 'Forged Recipient', address: 'Forged address', pincode: '110019' },
+      '+919876543210', undefined, 'customer@example.com', { id: 'user-a' },
+      'razorpay', undefined, 'address-user-b',
+    )).rejects.toThrow(NotFoundException);
+
+    expect(prisma.address.findFirst).toHaveBeenCalledWith({
+      where: { id: 'address-user-b', userId: 'user-a' },
+    });
+  });
+
+  it('uses the owned database address as the order shipping source', async () => {
+    const savedAddress = {
+      id: 'address-a', userId: 'user-a', fullName: 'Saved Name', phone: '+919999999999',
+      address: 'Saved Street', landmark: 'Saved Landmark', city: 'Saved City',
+      state: 'Saved State', pincode: '110019',
+    };
+    prisma.address.findFirst.mockResolvedValue(savedAddress);
+    const stopBeforeOrderCreation = new Error('stop after address validation');
+    pincodeService.validateOrderShipping.mockRejectedValue(stopBeforeOrderCreation);
+
+    await expect(orderService.createOrder(
+      'user-a', undefined, undefined,
+      { fullName: 'Forged Name', phone: '+910000000000', address: 'Forged Street', pincode: '560001' },
+      '+910000000000', undefined, 'customer@example.com', { id: 'user-a' },
+      'razorpay', undefined, 'address-a',
+    )).rejects.toBe(stopBeforeOrderCreation);
+
+    expect(pincodeService.validateOrderShipping).toHaveBeenCalledWith({
+      fullName: 'Saved Name', phone: '+919999999999', address: 'Saved Street',
+      landmark: 'Saved Landmark', city: 'Saved City', state: 'Saved State', pincode: '110019',
+    }, 'razorpay');
   });
 
   describe('findOne', () => {

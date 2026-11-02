@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useId } from 'react';
 import { api } from '@/lib/api';
+import { useSupportConfig } from '@/lib/support-config';
 import { formatIndianRupees } from '@/lib/account-helpers';
 import {
   Share2,
@@ -58,6 +59,7 @@ interface PayoutDetails {
 }
 
 export default function ReferralPage() {
+  const { data: supportConfig } = useSupportConfig();
   const [activeTab, setActiveTab] = useState<'overview' | 'payouts'>('overview');
   const [stats, setStats] = useState<ReferralStats | null>(null);
   const [payoutDetails, setPayoutDetails] = useState<PayoutDetails | null>(null);
@@ -319,7 +321,8 @@ export default function ReferralPage() {
                     Invite Friends. They Get ₹500 Off, You Earn ₹500 per Laptop!
                   </h2>
                   <p className="text-xs sm:text-sm text-blue-100 mt-2">
-                    Commissions mature 7 days after delivery (matching return policy) and are directly withdrawable to your bank or UPI.
+                    Commissions mature after the
+                    {supportConfig?.returnWindowDays ? ` ${supportConfig.returnWindowDays}-day` : ''} return window and are directly withdrawable to your bank or UPI.
                   </p>
 
                   {/* Code Box */}

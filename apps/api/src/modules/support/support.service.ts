@@ -224,14 +224,16 @@ export class SupportService {
   // 2. Guided Flow Configuration
   // ---------------------------------------------------------------------------
   async getSupportConfig() {
+    const settings = await this.getSupportSettings();
+
     return {
       categories: SUPPORT_CATEGORIES,
-      supportHoursText: 'Monday to Saturday, 9:30 AM to 6:30 PM IST',
-      firstResponseSlaHours: 24,
-      autoCloseDays: 7,
-      reopenWindowDays: 7,
-      returnWindowDays: 7,
-      standardWarrantyDays: 180,
+      supportHoursText: settings?.supportHoursText || 'Monday to Saturday, 9:30 AM to 6:30 PM IST',
+      firstResponseSlaHours: Math.ceil((settings?.firstResponseSlaMinutes ?? 1440) / 60),
+      autoCloseDays: settings?.autoCloseDays ?? 7,
+      reopenWindowDays: settings?.reopenWindowDays ?? 7,
+      returnWindowDays: settings?.returnWindowDays ?? 7,
+      standardWarrantyDays: settings?.standardWarrantyDays ?? 180,
       contact: {
         phone: '+91 98765 43210',
         whatsapp: '+91 98765 43210',
@@ -264,10 +266,17 @@ export class SupportService {
       return this.getFallbackHelpCategories();
     }
 
+    const warrantyCategory = categories.some((category) => /(?:\b\d+[- ]month\b)/i.test(category.title));
+    const warrantyMonths = warrantyCategory
+      ? Math.max(1, Math.round(((await this.getSupportSettings())?.standardWarrantyDays ?? 180) / 30))
+      : null;
+
     return categories.map((c) => ({
       id: c.id,
       slug: c.slug,
-      title: c.title,
+      title: warrantyMonths && c.slug === 'warranty-repair'
+        ? c.title.replace(/\b\d+(?=-month\b)/i, String(warrantyMonths))
+        : c.title,
       icon: c.icon,
       order: c.order,
       articleCount: c._count?.articles ?? 0,
@@ -285,12 +294,14 @@ export class SupportService {
     }
 
     if (query && query.trim()) {
-      const q = query.trim();
-      where.OR = [
-        { title: { contains: q, mode: 'insensitive' } },
-        { content: { contains: q, mode: 'insensitive' } },
-        { summary: { contains: q, mode: 'insensitive' } },
-      ];
+      const terms = query.trim().split(/[\s&/]+/).filter(Boolean).map((term) =>
+        term.length > 3 && term.endsWith('s') ? term.slice(0, -1) : term,
+      );
+      where.OR = terms.flatMap((term) => [
+        { title: { contains: term, mode: 'insensitive' } },
+        { content: { contains: term, mode: 'insensitive' } },
+        { summary: { contains: term, mode: 'insensitive' } },
+      ]);
     }
 
     const articles = await this.prisma.helpArticle.findMany({
@@ -304,16 +315,35 @@ export class SupportService {
       take: 50,
     });
 
-    if (
-      articles.length === 0 &&
-      !query &&
-      !categorySlug &&
-      await this.prisma.helpCategory.count() === 0
-    ) {
-      return this.getFallbackHelpArticles();
+    if (articles.length === 0 && await this.prisma.helpCategory.count() === 0) {
+      const settings = await this.getSupportSettings();
+      const fallbackArticles = this.getFallbackHelpArticles(
+        settings?.returnWindowDays ?? 7,
+        settings?.standardWarrantyDays ?? 180,
+      );
+      const searchTerms = query?.trim().toLowerCase().split(/[\s&/]+/).filter(Boolean).map((term) =>
+        term.length > 3 && term.endsWith('s') ? term.slice(0, -1) : term,
+      );
+      return fallbackArticles.filter((article) => {
+        const matchesCategory = !categorySlug || article.category.slug === categorySlug;
+        const searchableText = `${article.title} ${article.summary} ${article.content}`.toLowerCase();
+        const matchesQuery = !searchTerms?.length || searchTerms.some((term) => searchableText.includes(term));
+        return matchesCategory && matchesQuery;
+      });
     }
 
-    return articles;
+    const policyArticlePresent = articles.some((article) =>
+      article.slug === '7-day-replacement-return-policy'
+      || article.slug === '6-month-standard-warranty-coverage',
+    );
+    if (!policyArticlePresent) return articles;
+
+    const settings = await this.getSupportSettings();
+    return articles.map((article) => this.applySupportPolicySettings(
+      article,
+      settings?.returnWindowDays ?? 7,
+      settings?.standardWarrantyDays ?? 180,
+    ));
   }
 
   async getHelpArticleBySlug(slug: string) {
@@ -326,9 +356,25 @@ export class SupportService {
 
     if (!article || !article.isPublished || !article.category.isActive) {
       // Check fallback
-      const fallback = this.getFallbackHelpArticles().find((a) => a.slug === slug);
+      const settings = await this.getSupportSettings();
+      const fallback = this.getFallbackHelpArticles(
+        settings?.returnWindowDays ?? 7,
+        settings?.standardWarrantyDays ?? 180,
+      ).find((a) => a.slug === slug);
       if (fallback) return fallback;
       throw new NotFoundException(`Help article with slug '${slug}' not found`);
+    }
+
+    if (
+      article.slug === '7-day-replacement-return-policy'
+      || article.slug === '6-month-standard-warranty-coverage'
+    ) {
+      const settings = await this.getSupportSettings();
+      return this.applySupportPolicySettings(
+        article,
+        settings?.returnWindowDays ?? 7,
+        settings?.standardWarrantyDays ?? 180,
+      );
     }
 
     // Fire and forget viewCount increment
@@ -534,7 +580,9 @@ export class SupportService {
       throw new ServiceUnavailableException('Unable to allocate a ticket number');
     }
 
-    const firstResponseDueAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const supportSettings = await this.getSupportSettings();
+    const firstResponseSlaMinutes = supportSettings?.firstResponseSlaMinutes ?? 1440;
+    const firstResponseDueAt = new Date(Date.now() + firstResponseSlaMinutes * 60 * 1000);
 
     const ticket = await this.prisma.$transaction(async (tx) => {
       const created = await tx.supportTicket.create({
@@ -731,12 +779,16 @@ export class SupportService {
       throw new BadRequestException(`Only tickets with status 'RESOLVED' can be reopened. Current status: ${ticket.status}`);
     }
 
-    // Check 7-day reopen window
+    const settings = await this.prisma.supportSettings.findUnique({
+      where: { id: 'default' },
+    });
+    const reopenWindowDays = settings?.reopenWindowDays ?? 7;
+
     if (ticket.resolvedAt) {
       const diffMs = Date.now() - ticket.resolvedAt.getTime();
       const diffDays = diffMs / (1000 * 60 * 60 * 24);
-      if (diffDays > 7) {
-        throw new BadRequestException('The 7-day reopen window for this ticket has expired. Please raise a new ticket.');
+      if (diffDays > reopenWindowDays) {
+        throw new BadRequestException(`The ${reopenWindowDays}-day reopen window for this ticket has expired. Please raise a new ticket.`);
       }
     }
 
@@ -826,11 +878,14 @@ export class SupportService {
     if (!order) throw new NotFoundException('Order not found');
     if (order.userId !== userId) throw new ForbiddenException('You do not have permission to initiate return for this order');
 
-    // 7-day return window rule
+    const settings = await this.prisma.supportSettings.findUnique({
+      where: { id: 'default' },
+    });
+    const returnWindowDays = settings?.returnWindowDays ?? 7;
     const deliveryDate = order.status === 'DELIVERED' ? (order.updatedAt || order.createdAt) : order.createdAt;
     const diffDays = (Date.now() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays > 7) {
-      throw new BadRequestException('The 7-day return policy window has expired for this order');
+    if (diffDays > returnWindowDays) {
+      throw new BadRequestException(`The ${returnWindowDays}-day return policy window has expired for this order`);
     }
 
     // Sequence return number
@@ -1064,7 +1119,11 @@ export class SupportService {
     if (orderItem.order.userId !== userId) throw new ForbiddenException('Unauthorized');
 
     const startDate = orderItem.order.updatedAt || orderItem.order.createdAt;
-    const warrantyDays = 180; // 6 months standard warranty
+    const settings = await this.prisma.supportSettings.findUnique({
+      where: { id: 'default' },
+    });
+    const warrantyDays = settings?.standardWarrantyDays ?? 180;
+    const warrantyMonths = Math.max(1, Math.round(warrantyDays / 30));
     const endDate = new Date(startDate.getTime() + warrantyDays * 24 * 60 * 60 * 1000);
     const now = new Date();
     const isActive = now <= endDate;
@@ -1079,7 +1138,7 @@ export class SupportService {
       endDate,
       isActive,
       daysRemaining,
-      coverageType: '6-Month Comprehensive Hardware Warranty',
+      coverageType: `${warrantyMonths}-Month Comprehensive Hardware Warranty`,
       termsSummary: 'Covers motherboard, display, and internal component hardware failure. Excludes physical and liquid damage.',
     };
   }
@@ -1087,27 +1146,67 @@ export class SupportService {
   // ---------------------------------------------------------------------------
   // Seed / Fallback Helpers
   // ---------------------------------------------------------------------------
+  private getSupportSettings() {
+    return this.prisma.supportSettings.findUnique({ where: { id: 'default' } });
+  }
+
+  private applySupportPolicySettings<T extends {
+    slug: string;
+    title: string;
+    summary?: string | null;
+    content: string;
+    category?: { title?: string } | null;
+  }>(article: T, returnWindowDays: number, standardWarrantyDays: number): T {
+    if (article.slug === '7-day-replacement-return-policy') {
+      return {
+        ...article,
+        title: article.title.replace(/\b7(?=-day\b)/gi, String(returnWindowDays)),
+        summary: article.summary?.replace(/\b7(?=-day\b)/gi, String(returnWindowDays)),
+        content: article.content.replace(/\b7(?=-day\b)/gi, String(returnWindowDays)),
+      };
+    }
+
+    if (article.slug === '6-month-standard-warranty-coverage') {
+      const warrantyMonths = Math.max(1, Math.round(standardWarrantyDays / 30));
+      const replaceWarrantyTerms = (text: string) => text
+        .replace(/\b6(?=-month\b)/gi, String(warrantyMonths))
+        .replace(/\b180(?=-(?:day)\b|\s+days?\b)/gi, String(standardWarrantyDays));
+      return {
+        ...article,
+        title: replaceWarrantyTerms(article.title),
+        summary: article.summary ? replaceWarrantyTerms(article.summary) : article.summary,
+        content: replaceWarrantyTerms(article.content),
+        category: article.category
+          ? { ...article.category, title: article.category.title?.replace(/\b6(?=-month\b)/i, String(warrantyMonths)) }
+          : article.category,
+      };
+    }
+
+    return article;
+  }
+
   private getFallbackHelpCategories() {
     return [
-      { id: 'cat-returns', slug: 'returns-refunds', title: 'Returns, Replacement & Refunds', icon: 'RotateCcw', order: 1, articleCount: 3 },
-      { id: 'cat-warranty', slug: 'warranty-repair', title: '6-Month Warranty & Repair', icon: 'ShieldCheck', order: 2, articleCount: 2 },
-      { id: 'cat-buyback', slug: 'buyback-guarantee', title: 'Lifetime Buyback Guarantee', icon: 'Coins', order: 3, articleCount: 2 },
-      { id: 'cat-orders', slug: 'orders-delivery', title: 'Orders & Pan-India Delivery', icon: 'Truck', order: 4, articleCount: 2 },
-      { id: 'cat-rentals', slug: 'rentals-leasing', title: 'Corporate Rentals & Leasing', icon: 'Briefcase', order: 5, articleCount: 1 },
-      { id: 'cat-payments', slug: 'payments-security', title: 'Payments, Invoices & Safety', icon: 'CreditCard', order: 6, articleCount: 2 },
+      { id: 'cat-returns', slug: 'returns-refunds', title: 'Returns, Replacement & Refunds', icon: 'RotateCcw', order: 1, articleCount: 1 },
+      { id: 'cat-warranty', slug: 'warranty-repair', title: 'Warranty & Repair Support', icon: 'ShieldCheck', order: 2, articleCount: 1 },
+      { id: 'cat-buyback', slug: 'buyback-guarantee', title: 'Lifetime Buyback Guarantee', icon: 'Coins', order: 3, articleCount: 1 },
+      { id: 'cat-orders', slug: 'orders-delivery', title: 'Orders & Pan-India Delivery', icon: 'Truck', order: 4, articleCount: 1 },
+      { id: 'cat-rentals', slug: 'rentals-leasing', title: 'Corporate Rentals & Leasing', icon: 'Briefcase', order: 5, articleCount: 0 },
+      { id: 'cat-payments', slug: 'payments-security', title: 'Payments, Invoices & Safety', icon: 'CreditCard', order: 6, articleCount: 1 },
     ];
   }
 
-  private getFallbackHelpArticles() {
+  private getFallbackHelpArticles(returnWindowDays: number, standardWarrantyDays: number) {
+    const warrantyMonths = Math.max(1, Math.round(standardWarrantyDays / 30));
     return [
       {
         id: 'art-return-policy',
         slug: '7-day-replacement-return-policy',
-        title: 'How does LaptopMitra 7-Day Replacement & Return Policy work?',
-        summary: 'Understand eligible defect criteria, doorstep verification, and 7-10 day refund turnaround.',
-        content: `### 7-Day Replacement & Return Policy
+        title: "How does LaptopMitra's Replacement & Return Policy work?",
+        summary: 'Understand eligible defect criteria, doorstep verification, and refund processing steps.',
+        content: `### Replacement & Return Policy
 
-At LaptopMitra, all certified refurbished laptops are backed by a **7-Day Replacement or Return Policy** starting from the exact date and time of delivery.
+At LaptopMitra, eligible certified refurbished laptops are covered by a **${returnWindowDays}-day Replacement or Return Policy** starting from the exact date and time of delivery.
 
 #### 1. What issues are eligible?
 Returns and replacements are accepted if:
@@ -1118,18 +1217,18 @@ Returns and replacements are accepted if:
 #### 2. What is not eligible?
 - Accidental physical drops, liquid spills, or electrical surges after delivery.
 - Software modifications, unauthorized operating system re-installs, or BIOS tampering.
-- Requests initiated after the 7-day delivery window has closed.
+- Requests initiated after the ${returnWindowDays}-day delivery window has closed.
 
 #### 3. How to initiate a return?
 1. Go to **Help Center** > **Guided Support Flow**, or click **Need help with this order?** on your order details page.
 2. Select your order and choose **Return, Replacement & Refund**.
 3. Upload clear photos or a short video showing the issue.
 4. For Cash-on-Delivery (COD) orders, enter your Bank Account or UPI details.
-5. Our technical team approves the return within 24 hours and arranges doorstep pickup.
+5. Our technical team reviews the request and arranges doorstep pickup after approval.
 
 #### 4. Refund Timelines
-- **Prepaid Orders (Cards, NetBanking, UPI):** Refund is automatically routed back to your original payment source within 5-7 business days via Razorpay.
-- **Cash on Delivery (COD):** Transferred directly to your submitted Bank Account (NEFT/IMPS) or UPI within 3-5 business days of hub inspection. A traceable bank UTR reference will be displayed in your return dashboard.`,
+- Refunds are initiated after inspection and follow the processing timeline of your payment provider or bank.
+- Cash on Delivery refunds are transferred to the verified Bank Account or UPI details submitted with your request.`,
         helpfulCount: 42,
         notHelpfulCount: 1,
         viewCount: 180,
@@ -1139,11 +1238,11 @@ Returns and replacements are accepted if:
       {
         id: 'art-warranty-terms',
         slug: '6-month-standard-warranty-coverage',
-        title: 'What is covered under the Standard 6-Month Hardware Warranty?',
+        title: 'What is covered under the Standard Hardware Warranty?',
         summary: 'Details on motherboard, screen, battery and component coverage, plus repair procedure.',
-        content: `### Standard 6-Month Hardware Warranty
+        content: `### Standard ${warrantyMonths}-Month Hardware Warranty
 
-Every laptop sold by LaptopMitra comes with a complimentary **6-Month (180-Day) Hardware Defects Warranty**.
+Every laptop sold by LaptopMitra comes with a complimentary **${warrantyMonths}-Month (${standardWarrantyDays}-Day) Hardware Defects Warranty**.
 
 #### What is covered:
 - **Motherboard & Processor:** Logic board circuitry, integrated chips, GPU failure.
@@ -1157,15 +1256,15 @@ Every laptop sold by LaptopMitra comes with a complimentary **6-Month (180-Day) 
 - Opening the chassis or repairs attempted by non-authorized technicians.
 
 #### How to claim warranty:
-If your device encounters a hardware issue within 180 days:
+If your device encounters a hardware issue within ${standardWarrantyDays} days:
 1. Open a support ticket via **Help & Support** > **Warranty & Repair**.
 2. Our hardware engineers diagnose the issue remotely or arrange a courier pickup for our central service lab.
-3. Repaired units are tested against our 40-point checklist before being dispatched back to you at zero shipping charge.`,
+3. Repaired units are tested before being dispatched back to you.`,
         helpfulCount: 38,
         notHelpfulCount: 0,
         viewCount: 145,
         locale: 'en',
-        category: { id: 'cat-warranty', slug: 'warranty-repair', title: '6-Month Warranty & Repair', icon: 'ShieldCheck' },
+        category: { id: 'cat-warranty', slug: 'warranty-repair', title: 'Warranty & Repair Support', icon: 'ShieldCheck' },
       },
       {
         id: 'art-buyback-guarantee',

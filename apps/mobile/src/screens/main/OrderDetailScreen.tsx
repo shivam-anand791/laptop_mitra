@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIn
 import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useOrder, useCancelOrder, useReturnOrder, useReorder, useOrderInvoice, useOrderTracking } from '../../hooks/useApi';
+import { useOrder, useCancelOrder, useReturnOrder, useReorder, useOrderInvoice, useOrderTracking, useSupportConfig } from '../../hooks/useApi';
 import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
 import {
   getMobileStatusLabel,
@@ -31,6 +31,7 @@ export default function OrderDetailScreen() {
   const { data: order, isLoading, refetch: refetchOrder, isRefetching: isRefetchingOrder } = useOrder(orderId);
   const { data: invoiceData, refetch: refetchInvoice } = useOrderInvoice(orderId);
   const { data: trackData, refetch: refetchTracking } = useOrderTracking(orderId);
+  const { data: supportConfig } = useSupportConfig();
 
   useFocusEffect(
     useCallback(() => {
@@ -89,7 +90,12 @@ export default function OrderDetailScreen() {
         onSuccess: (res) => {
           setIsReturnModalOpen(false);
           setReturnReason('');
-          Alert.alert('Return Request Submitted', res.message || 'Our team will review your request within 24 hours.');
+          Alert.alert(
+            'Return Request Submitted',
+            res.message || (supportConfig?.firstResponseSlaHours
+              ? `Our team aims to review your request within ${supportConfig.firstResponseSlaHours} hours.`
+              : 'Our team will review your request.'),
+          );
         },
         onError: (err) => Alert.alert('Error', err.message),
       },
@@ -128,7 +134,7 @@ export default function OrderDetailScreen() {
   const returnEligibility = canReturnOrder({
     status: order.status,
     deliveredAt: (order as any).deliveredAt ?? null,
-    returnWindowDays: 7,
+    returnWindowDays: supportConfig?.returnWindowDays ?? 0,
     returnStatus: order.returnStatus,
     isLease: order.items?.some((it: any) => it.purchaseMode === 'lease'),
   });
@@ -426,7 +432,7 @@ export default function OrderDetailScreen() {
         <View style={styles.helpBannerContent}>
           <Text style={styles.helpBannerTitle}>Need help with this order?</Text>
           <Text style={styles.helpBannerDesc}>
-            Track delivery, check 7-day return eligibility, or connect with a specialist.
+            Track delivery, review return eligibility, or connect with a specialist.
           </Text>
         </View>
         <TouchableOpacity
@@ -460,7 +466,9 @@ export default function OrderDetailScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Request Return / Replacement</Text>
             <Text style={styles.modalSubtitle}>
-              Please describe the functional issue or reason for return. Our inspection team will review it under the 7-day Mitra Guarantee.
+              {supportConfig?.returnWindowDays
+                ? `Submit your request within ${supportConfig.returnWindowDays} days of delivery. Our inspection team will review it.`
+                : 'Return eligibility follows the current policy. Our inspection team will review your request.'}
             </Text>
 
             <TextInput

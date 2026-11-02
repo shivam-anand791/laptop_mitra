@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { RotateCcw, Search, ShieldCheck, Truck } from 'lucide-react';
 import {
   NEXT_PUBLIC_SUPPORT_PHONE,
   NEXT_PUBLIC_SUPPORT_PHONE_DISPLAY,
@@ -14,29 +15,29 @@ export default function Footer() {
       <div className="border-b border-[#132E6B]/60 bg-[#071433]/50 py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
           <div className="flex flex-col items-center p-3.5 rounded-xl bg-[#0B1F4B]/60 border border-[#132E6B]/50">
-            <div className="w-10 h-10 rounded-xl bg-[#1D6FF2]/15 text-[#3B82F6] flex items-center justify-center mb-2.5 text-xl">
-              🛡️
+            <div className="w-10 h-10 rounded-xl bg-[#1D6FF2]/15 text-[#3B82F6] flex items-center justify-center mb-2.5">
+              <ShieldCheck className="w-5 h-5" />
             </div>
-            <h4 className="text-white font-bold text-xs sm:text-sm mb-0.5">1-Year Warranty</h4>
-            <p className="text-[11px] text-slate-400 max-w-[190px]">Comprehensive hardware replacement &amp; doorstep service</p>
+            <h4 className="text-white font-bold text-xs sm:text-sm mb-0.5">Warranty Support</h4>
+            <p className="text-[11px] text-slate-400 max-w-[190px]">Hardware coverage information and claim assistance</p>
           </div>
           <div className="flex flex-col items-center p-3.5 rounded-xl bg-[#0B1F4B]/60 border border-[#132E6B]/50">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-2.5 text-xl">
-              🔍
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center mb-2.5">
+              <Search className="w-5 h-5" />
             </div>
             <h4 className="text-white font-bold text-xs sm:text-sm mb-0.5">32-Point Inspected</h4>
             <p className="text-[11px] text-slate-400 max-w-[190px]">Certified Grade A+ diagnostics, battery &amp; thermal testing</p>
           </div>
           <div className="flex flex-col items-center p-3.5 rounded-xl bg-[#0B1F4B]/60 border border-[#132E6B]/50">
-            <div className="w-10 h-10 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center mb-2.5 text-xl">
-              🔄
+            <div className="w-10 h-10 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center mb-2.5">
+              <RotateCcw className="w-5 h-5" />
             </div>
-            <h4 className="text-white font-bold text-xs sm:text-sm mb-0.5">7-Day Replacement</h4>
-            <p className="text-[11px] text-slate-400 max-w-[190px]">Zero-friction replacement guarantee for complete peace of mind</p>
+            <h4 className="text-white font-bold text-xs sm:text-sm mb-0.5">Returns &amp; Replacements</h4>
+            <p className="text-[11px] text-slate-400 max-w-[190px]">Review eligibility and track your request</p>
           </div>
           <div className="flex flex-col items-center p-3.5 rounded-xl bg-[#0B1F4B]/60 border border-[#132E6B]/50">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center mb-2.5 text-xl">
-              ⚡
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center mb-2.5">
+              <Truck className="w-5 h-5" />
             </div>
             <h4 className="text-white font-bold text-xs sm:text-sm mb-0.5">PAN India Delivery</h4>
             <p className="text-[11px] text-slate-400 max-w-[190px]">Free insured express delivery with real-time tracking</p>
@@ -126,43 +127,58 @@ export default function Footer() {
             <ul className="space-y-2 text-xs text-slate-400">
               <li>
                 <Link href="/help" className="text-blue-400 hover:text-white font-bold transition-colors">
-                  Help &amp; Support Hub
-                </Link>
-              </li>
-              <li>
-                <Link href="/help/guided-flow" className="hover:text-white transition-colors">
-                  Raise a Support Ticket
-                </Link>
-              </li>
-              <li>
-                <Link href="/buyback-guarantee" className="hover:text-white transition-colors">
-                  Guaranteed Buyback (Up to 70%)
-                </Link>
-              </li>
-              <li>
-                <Link href="/terms" className="hover:text-white transition-colors">
-                  Warranty &amp; Returns Policy
+                  Help center
                 </Link>
               </li>
               <li>
                 <Link href="/account/orders" className="hover:text-white transition-colors">
-                  Track My Order
+                  Track order
                 </Link>
               </li>
               <li>
-                <Link href="/account/referral" className="hover:text-white transition-colors">
-                  Mitra Affiliate Program
+                <Link href="/account/returns" className="hover:text-white transition-colors">
+                  Returns &amp; replacements
+                </Link>
+              </li>
+              <li>
+                <Link href="/account/warranty-support" className="hover:text-white transition-colors">
+                  Warranty
+                </Link>
+              </li>
+              <li>
+                <Link href="/buyback-guarantee" className="hover:text-white transition-colors">
+                  Buyback
+                </Link>
+              </li>
+              <li>
+                <Link href="/terms" className="hover:text-white transition-colors">
+                  Terms
+                </Link>
+              </li>
+              <li>
+                <Link href="/privacy" className="hover:text-white transition-colors">
+                  Privacy
+                </Link>
+              </li>
+              <li>
+                <Link href="/help#contact" className="hover:text-white transition-colors">
+                  Contact us
                 </Link>
               </li>
               <li>
                 <a href={`tel:${NEXT_PUBLIC_SUPPORT_PHONE}`} className="hover:text-white transition-colors">
-                  Direct Call: {NEXT_PUBLIC_SUPPORT_PHONE_DISPLAY}
+                  Contact: {NEXT_PUBLIC_SUPPORT_PHONE_DISPLAY}
                 </a>
               </li>
               <li>
                 <a href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
                   WhatsApp Support
                 </a>
+              </li>
+              <li>
+                <Link href="/privacy" className="hover:text-white transition-colors">
+                  Privacy
+                </Link>
               </li>
             </ul>
           </div>
@@ -189,9 +205,9 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <span className="text-slate-500">
-                  Mon-Sat: 10:00 AM - 7:00 PM IST
-                </span>
+                <Link href="/help#contact" className="hover:text-white transition-colors">
+                  Contact support
+                </Link>
               </li>
             </ul>
           </div>

@@ -1,12 +1,17 @@
 import { View, Text, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '../../theme/tokens';
+import { useSupportConfig } from '../../hooks/useApi';
 
 interface TrustStripProps {
   style?: StyleProp<ViewStyle>;
 }
 
 export default function TrustStrip({ style }: TrustStripProps) {
+  const { data: supportConfig } = useSupportConfig();
+  const warrantyMonths = supportConfig
+    ? Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))
+    : null;
   const items = [
     {
       icon: 'shield-checkmark' as const,
@@ -15,12 +20,14 @@ export default function TrustStrip({ style }: TrustStripProps) {
     },
     {
       icon: 'ribbon' as const,
-      title: '1-Yr Warranty',
+      title: warrantyMonths ? `${warrantyMonths}-Month Warranty` : 'Warranty',
       subtitle: 'Pan-India Cover',
     },
     {
       icon: 'swap-horizontal' as const,
-      title: '7-Day Return',
+      title: supportConfig?.returnWindowDays
+        ? `${supportConfig.returnWindowDays}-Day Return`
+        : 'Returns',
       subtitle: 'Easy Replacement',
     },
   ];

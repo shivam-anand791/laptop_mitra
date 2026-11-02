@@ -149,7 +149,7 @@ export class SupportController {
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
   @Roles('CUSTOMER', 'SUPPORT', 'ADMIN')
-  @ApiOperation({ summary: 'Reopen a resolved ticket within 7-day window' })
+  @ApiOperation({ summary: 'Reopen a resolved ticket within the configured window' })
   @ApiResponse({ status: 200, description: 'Ticket reopened' })
   async reopenTicket(@GetUser() user: any, @Param('id') id: string) {
     return this.supportService.reopenTicket(id, user.id);

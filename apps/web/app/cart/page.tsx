@@ -6,8 +6,10 @@ import Image from 'next/image';
 import CustomerLayout from '../../components/CustomerLayout';
 import EmptyState from '../../components/EmptyState';
 import { useCart } from '../../lib/cart-context';
+import { useSupportConfig } from '../../lib/support-config';
 
 export default function CartPage() {
+  const { data: supportConfig } = useSupportConfig();
   const {
     items,
     itemCount,
@@ -175,7 +177,11 @@ export default function CartPage() {
                             <div className="flex items-center gap-2">
                               <span>Unit: <strong className="text-[#0B1F4B] tabular-nums">₹{unitPrice.toLocaleString('en-IN')}</strong></span>
                               <span className="text-slate-300">•</span>
-                              <span className="text-emerald-700 font-medium">1-Yr Warranty Included</span>
+                              <span className="text-emerald-700 font-medium">
+                                {supportConfig
+                                  ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))}-Month Warranty Included`
+                                  : 'Warranty included'}
+                              </span>
                             </div>
 
                             {/* Warranty Add-on Checkbox */}
@@ -187,11 +193,15 @@ export default function CartPage() {
                                 className="w-3.5 h-3.5 rounded border-slate-300 text-[#2563EB] focus:ring-[#2563EB]"
                               />
                               <span className="font-medium">
-                                + 1-Year Extended Warranty (+₹1,999)
+                                + {supportConfig
+                                  ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))}-Month Extended Warranty`
+                                  : 'Extended Warranty'} (+₹1,999)
                               </span>
                               {item.hasWarranty && (
                                 <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                                  Active (2-Yr Total)
+                                  Active ({supportConfig
+                                    ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30)) * 2}-Month Total`
+                                    : 'Extended Coverage'})
                                 </span>
                               )}
                             </label>
@@ -393,7 +403,11 @@ export default function CartPage() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-emerald-600 font-bold">✓</span>
-                    <span>7-Day Doorstep Replacement Guarantee</span>
+                    <span>
+                      {supportConfig?.returnWindowDays
+                        ? `${supportConfig.returnWindowDays}-Day Doorstep Replacement Policy`
+                        : 'Doorstep Replacement Policy'}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-emerald-600 font-bold">✓</span>

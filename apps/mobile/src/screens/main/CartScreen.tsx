@@ -20,6 +20,7 @@ import {
   useRemoveCartItem,
   useClearCart,
   useValidateDiscount,
+  useSupportConfig,
 } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { CartItem } from '@laptopmitra/types';
@@ -32,6 +33,7 @@ export default function CartScreen() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
   const { data: cart, isLoading } = useCart();
+  const { data: supportConfig } = useSupportConfig();
   const updateQuantity = useUpdateCartItemQuantity();
   const updateCartItem = useUpdateCartItem();
   const removeItem = useRemoveCartItem();
@@ -301,7 +303,9 @@ export default function CartScreen() {
                 color={item.hasWarranty ? colors.primary : colors.textMuted}
               />
               <Text style={styles.warrantyToggleText}>
-                +1-Year Warranty ({formatPrice(item.warrantyPrice || 1999)})
+                {supportConfig
+                  ? `+${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30)) * 2}-Month Warranty`
+                  : 'Extended Warranty'} ({formatPrice(item.warrantyPrice || 1999)})
               </Text>
             </TouchableOpacity>
           )}

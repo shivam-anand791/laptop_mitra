@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import CustomerLayout from '../../components/CustomerLayout';
 
 export default function ProfileRedirectPage() {
   const router = useRouter();
@@ -20,8 +21,10 @@ export default function ProfileRedirectPage() {
   }, [router]);
 
   return (
-    <div className="bg-[#F8FAFC] min-h-[60vh] flex items-center justify-center py-20 text-center text-xs font-semibold text-slate-500">
-      Loading your account...
-    </div>
+    <CustomerLayout>
+      <div className="bg-[#F8FAFC] min-h-[60vh] flex items-center justify-center py-20 text-center text-xs font-semibold text-slate-500">
+        Loading your account...
+      </div>
+    </CustomerLayout>
   );
 }

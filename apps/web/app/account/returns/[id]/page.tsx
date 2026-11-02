@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import { useSupportConfig } from '@/lib/support-config';
 import { SkeletonList, ErrorState } from '@/components/account';
 import {
   formatIndianRupees,
@@ -70,6 +71,7 @@ interface ReturnDetail {
 }
 
 export default function ReturnDetailPage() {
+  const { data: supportConfig } = useSupportConfig();
   const params = useParams();
   const searchParams = useSearchParams();
   const returnId = params?.id as string;
@@ -222,7 +224,8 @@ export default function ReturnDetailPage() {
         <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 flex items-center gap-3 text-xs font-medium animate-in fade-in">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
           <div>
-            <strong>Return Request Logged!</strong> Reference #{returnReq.returnNumber} has been received. Our diagnostics team will contact you for reverse pickup within 24 hours.
+            <strong>Return Request Logged!</strong> Reference #{returnReq.returnNumber} has been received. Our diagnostics team will review your request
+            {supportConfig?.firstResponseSlaHours ? ` within ${supportConfig.firstResponseSlaHours} hours` : ''}.
           </div>
         </div>
       )}

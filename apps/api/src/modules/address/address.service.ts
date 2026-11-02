@@ -251,8 +251,8 @@ export class AddressService {
       if (!pinResult.serviceable) {
         throw new BadRequestException('Sorry, we currently do not deliver to this pincode');
       }
-      data.city = data.city || pinResult.city;
-      data.state = data.state || pinResult.state;
+      data.city = pinResult.city || data.city;
+      data.state = pinResult.state || data.state;
     }
 
     if (data.gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i.test(data.gstin.trim())) {

@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  ConflictException,
   ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
@@ -205,7 +206,7 @@ export class AuthService {
         throw createErr;
       }
     } catch (err: any) {
-      if (err instanceof UnauthorizedException || err instanceof BadRequestException) {
+      if (err instanceof UnauthorizedException || err instanceof BadRequestException || err instanceof ConflictException) {
         throw err;
       }
       this.logger.error(`Database error during user sync: ${err?.message || err}`);
@@ -351,14 +352,14 @@ export class AuthService {
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const code = this.randomService.generateReferralCode(rawUsername, fallbackId);
       const exists = await this.prisma.user.findFirst({
-        where: { referralCode: code },
+        where: { referralCode: { equals: code, mode: 'insensitive' } },
         select: { id: true },
       });
       if (!exists) {
         return code;
       }
     }
-    return this.randomService.generateReferralCode(rawUsername, fallbackId);
+    throw new ConflictException('Unable to generate a unique referral code. Please retry.');
   }
 
   async linkGuestAccount(_userId: string, _data: { email: string; password?: string; name?: string }) {

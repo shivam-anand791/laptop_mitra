@@ -11,6 +11,7 @@ import { Product } from '../lib/types';
 import { api } from '../lib/api';
 import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../lib/config';
 import CorporateQuoteModal from '../components/CorporateQuoteModal';
+import { useSupportConfig } from '../lib/support-config';
 
 /* ── 5 Verified Categories matching data & Image 1 ── */
 const categories = [
@@ -110,6 +111,7 @@ const partnerBrands = [
 const brandRepeats = Array.from({ length: 6 }).flatMap(() => partnerBrands);
 
 export default function HomePage() {
+  const { data: supportConfig } = useSupportConfig();
   const [products, setProducts] = useState<Product[]>([]);
   const [activeTab, setActiveTab] = useState<'featured' | 'new'>('featured');
   const [loading, setLoading] = useState(true);
@@ -513,7 +515,11 @@ export default function HomePage() {
                 <AnimatedCounter target={95} suffix="%" />
               </div>
               <p className="text-xs font-bold text-[#111827]">Satisfaction Rate</p>
-              <p className="text-[11px] text-[#475569]">Backed by 7-day returns</p>
+              <p className="text-[11px] text-[#475569]">
+                {supportConfig?.returnWindowDays
+                  ? `Backed by ${supportConfig.returnWindowDays}-day returns`
+                  : 'Return policy support'}
+              </p>
             </div>
 
             <div className="p-5 sm:p-6 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-1">
@@ -670,7 +676,9 @@ export default function HomePage() {
                   A long-term hardware partnership.
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-300 max-w-xl leading-relaxed">
-                  Every laptop delivered by LaptopMitra is covered under our 1-Year Comprehensive Warranty with doorstep pickup and 7-day replacement guarantee.
+                  {supportConfig
+                    ? `Every laptop delivered by LaptopMitra is covered under our ${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))}-month comprehensive warranty with doorstep pickup and ${supportConfig.returnWindowDays}-day replacement policy.`
+                    : 'Every laptop comes with warranty coverage and access to our return and replacement support.'}
                 </p>
                 <div className="pt-3 flex flex-wrap gap-4">
                   <Link

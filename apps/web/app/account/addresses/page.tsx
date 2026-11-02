@@ -53,22 +53,25 @@ export default function AddressesPage() {
   // Debounced pincode verification in address modal
   useEffect(() => {
     const cleanPin = form.pincode?.trim() || '';
+    let active = true;
+    setPincodeStatus(null);
     if (cleanPin.length !== 6 || !/^\d{6}$/.test(cleanPin)) {
       setPincodeStatus(null);
       setVerifyingPincode(false);
-      return;
+      return () => { active = false; };
     }
 
     const timer = setTimeout(async () => {
       setVerifyingPincode(true);
       try {
         const res = await api.verifyPincode(cleanPin);
+        if (!active) return;
         if (res.valid && res.serviceable) {
           setPincodeStatus({ valid: true, serviceable: true, text: `✓ Delivery available to ${res.city || ''}, ${res.state || ''}` });
           setForm((prev) => ({
             ...prev,
-            city: prev.city || res.city || '',
-            state: prev.state || res.state || 'Karnataka',
+            city: res.city || prev.city,
+            state: res.state || prev.state,
           }));
         } else if (!res.valid) {
           setPincodeStatus({ valid: false, serviceable: false, text: '⚠️ Please enter a valid Indian pincode.' });
@@ -76,13 +79,16 @@ export default function AddressesPage() {
           setPincodeStatus({ valid: true, serviceable: false, text: '⚠️ Sorry, we currently do not deliver to this pincode.' });
         }
       } catch {
-        setPincodeStatus({ valid: false, serviceable: false, text: '⚠️ Pincode verification is temporarily unavailable.' });
+        if (active) setPincodeStatus({ valid: false, serviceable: false, text: '⚠️ Pincode verification is temporarily unavailable.' });
       } finally {
-        setVerifyingPincode(false);
+        if (active) setVerifyingPincode(false);
       }
     }, 400);
 
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [form.pincode]);
 
   const loadAddresses = async () => {

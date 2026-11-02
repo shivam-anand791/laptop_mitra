@@ -24,6 +24,7 @@ export type DiscountValidationResponse = {
   discountValue: number;
   discountAmount: number;
   message: string;
+  isReferral?: boolean;
 };
 
 export interface OrderDiscountResult {
@@ -56,6 +57,34 @@ export class DiscountService {
 
     if (!Number.isFinite(total) || total < 0) {
       return this.invalidResult('Cart total must be a valid positive number');
+    }
+
+    let referrer = await this.prisma.user.findFirst({
+      where: { referralCode: { equals: normalizedCode, mode: 'insensitive' }, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (!referrer) {
+      const legacyCode = await this.prisma.referral.findFirst({
+        where: { code: { equals: normalizedCode, mode: 'insensitive' }, status: 'ACTIVE' },
+        select: { userId: true },
+      });
+      if (legacyCode) {
+        referrer = await this.prisma.user.findFirst({
+          where: { id: legacyCode.userId, status: 'ACTIVE' },
+          select: { id: true },
+        });
+      }
+    }
+    if (referrer) {
+      const discountValue = 500;
+      return {
+        valid: true,
+        discountType: 'fixed',
+        discountValue,
+        discountAmount: Math.min(discountValue, total),
+        message: 'Referral code applied: ₹500 off',
+        isReferral: true,
+      };
     }
 
     const discountCode: any = await this.prisma.discountCode.findFirst({
@@ -590,6 +619,7 @@ export class DiscountService {
       discountValue: 0,
       discountAmount: 0,
       message,
+      isReferral: false,
     };
   }
 }

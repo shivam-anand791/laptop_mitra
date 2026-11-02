@@ -29,6 +29,15 @@ export class OrderController {
       email?: string;
       paymentMethod?: string;
       idempotencyKey?: string;
+      addressId?: string;
+      cartItems?: Array<{
+        productId: string;
+        variantId?: string | null;
+        quantity: number;
+        purchaseMode?: 'sell' | 'lease';
+        configuration?: string;
+        hasWarranty?: boolean;
+      }>;
     },
     @Headers('idempotency-key') idempotencyKeyHeader?: string,
   ) {
@@ -44,6 +53,8 @@ export class OrderController {
       user,
       body.paymentMethod,
       idempotencyKey,
+      body.addressId,
+      body.cartItems,
     );
   }
 

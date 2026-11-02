@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { SkeletonList, ErrorState } from '@/components/account';
 import { getTicketStatusConfig } from '@/lib/account-helpers';
+import { useSupportConfig } from '@/lib/support-config';
 import {
   ArrowLeft,
   Send,
@@ -62,6 +63,7 @@ export default function TicketDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const ticketId = params?.id as string;
+  const { data: supportConfig } = useSupportConfig();
   const isNewlyCreated = searchParams?.get('new') === 'true';
 
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
@@ -192,7 +194,10 @@ export default function TicketDetailPage() {
         <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 flex items-center gap-3 text-xs font-medium animate-in fade-in">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
           <div>
-            <strong>Ticket #{ticket.ticketNumber} Created!</strong> Our certified engineering team will review your diagnostic details and respond within 2-4 business hours.
+            <strong>Ticket #{ticket.ticketNumber} Created!</strong> Our support team will review your details
+            {supportConfig?.firstResponseSlaHours
+              ? ` and aims to respond within ${supportConfig.firstResponseSlaHours} hours.`
+              : '.'}
           </div>
         </div>
       )}
@@ -346,7 +351,10 @@ export default function TicketDetailPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-slate-100 border border-slate-200 text-xs">
               <div>
                 <p className="font-semibold text-slate-800">This ticket has been marked as resolved.</p>
-                <p className="text-slate-500 mt-0.5">Still experiencing an issue with this request? You can reopen this ticket within 7 days.</p>
+                <p className="text-slate-500 mt-0.5">
+                  Still experiencing an issue with this request? You can reopen it
+                  {supportConfig?.reopenWindowDays ? ` within ${supportConfig.reopenWindowDays} days` : ' during the configured reopen window'}.
+                </p>
               </div>
               <button
                 type="button"

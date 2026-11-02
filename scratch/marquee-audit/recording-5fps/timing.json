@@ -1,0 +1,512 @@
+[
+  {
+    "timeMs": 188,
+    "x": 281.52,
+    "transform": "matrix(1, 0, 0, 1, -70.484, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311584472656,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-000.png"
+  },
+  {
+    "timeMs": 339,
+    "x": 271.94,
+    "transform": "matrix(1, 0, 0, 1, -80.0636, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313415527344,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-001.png"
+  },
+  {
+    "timeMs": 532,
+    "x": 261.66,
+    "transform": "matrix(1, 0, 0, 1, -90.3379, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.53125,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-002.png"
+  },
+  {
+    "timeMs": 743,
+    "x": 252.08,
+    "transform": "matrix(1, 0, 0, 1, -99.9223, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531219482422,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-003.png"
+  },
+  {
+    "timeMs": 928,
+    "x": 242.17,
+    "transform": "matrix(1, 0, 0, 1, -109.832, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531219482422,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-004.png"
+  },
+  {
+    "timeMs": 1129,
+    "x": 232.23,
+    "transform": "matrix(1, 0, 0, 1, -119.766, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531219482422,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-005.png"
+  },
+  {
+    "timeMs": 1331,
+    "x": 222.32,
+    "transform": "matrix(1, 0, 0, 1, -129.681, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531265258789,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-006.png"
+  },
+  {
+    "timeMs": 1523,
+    "x": 212.4,
+    "transform": "matrix(1, 0, 0, 1, -139.6, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313568115234,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-007.png"
+  },
+  {
+    "timeMs": 1726,
+    "x": 202.67,
+    "transform": "matrix(1, 0, 0, 1, -149.326, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531204223633,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-008.png"
+  },
+  {
+    "timeMs": 2016,
+    "x": 192.55,
+    "transform": "matrix(1, 0, 0, 1, -159.451, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311584472656,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-009.png"
+  },
+  {
+    "timeMs": 2174,
+    "x": 181.32,
+    "transform": "matrix(1, 0, 0, 1, -170.681, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313415527344,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-010.png"
+  },
+  {
+    "timeMs": 2315,
+    "x": 173.11,
+    "transform": "matrix(1, 0, 0, 1, -178.891, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531234741211,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-011.png"
+  },
+  {
+    "timeMs": 2572,
+    "x": 163.47,
+    "transform": "matrix(1, 0, 0, 1, -188.534, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311584472656,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-012.png"
+  },
+  {
+    "timeMs": 2815,
+    "x": 153.05,
+    "transform": "matrix(1, 0, 0, 1, -198.953, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531219482422,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-013.png"
+  },
+  {
+    "timeMs": 2977,
+    "x": 142.44,
+    "transform": "matrix(1, 0, 0, 1, -209.558, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531204223633,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-014.png"
+  },
+  {
+    "timeMs": 3144,
+    "x": 133.42,
+    "transform": "matrix(1, 0, 0, 1, -218.584, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531265258789,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-015.png"
+  },
+  {
+    "timeMs": 3359,
+    "x": 123.56,
+    "transform": "matrix(1, 0, 0, 1, -228.436, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313110351562,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-016.png"
+  },
+  {
+    "timeMs": 3641,
+    "x": 113.28,
+    "transform": "matrix(1, 0, 0, 1, -238.715, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531295776367,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-017.png"
+  },
+  {
+    "timeMs": 4072,
+    "x": 101.73,
+    "transform": "matrix(1, 0, 0, 1, -250.271, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531265258789,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-018.png"
+  },
+  {
+    "timeMs": 4197,
+    "x": 80.99,
+    "transform": "matrix(1, 0, 0, 1, -271.008, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531280517578,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-019.png"
+  },
+  {
+    "timeMs": 4315,
+    "x": 74.82,
+    "transform": "matrix(1, 0, 0, 1, -277.178, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313720703125,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-020.png"
+  },
+  {
+    "timeMs": 4432,
+    "x": 69.02,
+    "transform": "matrix(1, 0, 0, 1, -282.983, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313415527344,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-021.png"
+  },
+  {
+    "timeMs": 4551,
+    "x": 63.2,
+    "transform": "matrix(1, 0, 0, 1, -288.797, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313415527344,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-022.png"
+  },
+  {
+    "timeMs": 4735,
+    "x": 54.03,
+    "transform": "matrix(1, 0, 0, 1, -297.974, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311279296875,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-023.png"
+  },
+  {
+    "timeMs": 4926,
+    "x": 44.38,
+    "transform": "matrix(1, 0, 0, 1, -307.623, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313110351562,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-024.png"
+  },
+  {
+    "timeMs": 5124,
+    "x": 35.61,
+    "transform": "matrix(1, 0, 0, 1, -316.386, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313415527344,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-025.png"
+  },
+  {
+    "timeMs": 5332,
+    "x": 25.22,
+    "transform": "matrix(1, 0, 0, 1, -326.782, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311889648438,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-026.png"
+  },
+  {
+    "timeMs": 5528,
+    "x": 15.77,
+    "transform": "matrix(1, 0, 0, 1, -336.23, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313110351562,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-027.png"
+  },
+  {
+    "timeMs": 5726,
+    "x": 5.57,
+    "transform": "matrix(1, 0, 0, 1, -346.431, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311584472656,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-028.png"
+  },
+  {
+    "timeMs": 5927,
+    "x": -4.56,
+    "transform": "matrix(1, 0, 0, 1, -356.555, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313415527344,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-029.png"
+  },
+  {
+    "timeMs": 6127,
+    "x": -14.48,
+    "transform": "matrix(1, 0, 0, 1, -366.48, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.53125,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-030.png"
+  },
+  {
+    "timeMs": 6344,
+    "x": -24.4,
+    "transform": "matrix(1, 0, 0, 1, -376.404, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311584472656,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-031.png"
+  },
+  {
+    "timeMs": 6510,
+    "x": -33.37,
+    "transform": "matrix(1, 0, 0, 1, -385.366, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531219482422,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-032.png"
+  },
+  {
+    "timeMs": 6718,
+    "x": -43.71,
+    "transform": "matrix(1, 0, 0, 1, -395.713, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531219482422,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-033.png"
+  },
+  {
+    "timeMs": 6921,
+    "x": -53.5,
+    "transform": "matrix(1, 0, 0, 1, -405.498, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531219482422,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-034.png"
+  },
+  {
+    "timeMs": 7121,
+    "x": -63.42,
+    "transform": "matrix(1, 0, 0, 1, -415.422, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313720703125,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-035.png"
+  },
+  {
+    "timeMs": 7322,
+    "x": -73.35,
+    "transform": "matrix(1, 0, 0, 1, -425.351, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313415527344,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-036.png"
+  },
+  {
+    "timeMs": 7546,
+    "x": -83.26,
+    "transform": "matrix(1, 0, 0, 1, -435.261, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313110351562,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-037.png"
+  },
+  {
+    "timeMs": 7715,
+    "x": -92.99,
+    "transform": "matrix(1, 0, 0, 1, -444.985, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311584472656,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-038.png"
+  },
+  {
+    "timeMs": 7989,
+    "x": -102.43,
+    "transform": "matrix(1, 0, 0, 1, -454.425, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.53125,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-039.png"
+  },
+  {
+    "timeMs": 8122,
+    "x": -112.83,
+    "transform": "matrix(1, 0, 0, 1, -464.829, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313720703125,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-040.png"
+  },
+  {
+    "timeMs": 8348,
+    "x": -122.62,
+    "transform": "matrix(1, 0, 0, 1, -474.619, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531219482422,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-041.png"
+  },
+  {
+    "timeMs": 8537,
+    "x": -131.93,
+    "transform": "matrix(1, 0, 0, 1, -483.926, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.531280517578,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-042.png"
+  },
+  {
+    "timeMs": 8739,
+    "x": -142.26,
+    "transform": "matrix(1, 0, 0, 1, -494.258, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313415527344,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-043.png"
+  },
+  {
+    "timeMs": 8996,
+    "x": -152.25,
+    "transform": "matrix(1, 0, 0, 1, -504.246, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.53125,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-044.png"
+  },
+  {
+    "timeMs": 9122,
+    "x": -161.63,
+    "transform": "matrix(1, 0, 0, 1, -513.625, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311279296875,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-045.png"
+  },
+  {
+    "timeMs": 9315,
+    "x": -171.89,
+    "transform": "matrix(1, 0, 0, 1, -523.891, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311889648438,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-046.png"
+  },
+  {
+    "timeMs": 9524,
+    "x": -181.47,
+    "transform": "matrix(1, 0, 0, 1, -533.471, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313720703125,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-047.png"
+  },
+  {
+    "timeMs": 9738,
+    "x": -191.53,
+    "transform": "matrix(1, 0, 0, 1, -543.535, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5313110351562,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-048.png"
+  },
+  {
+    "timeMs": 9933,
+    "x": -202.02,
+    "transform": "matrix(1, 0, 0, 1, -554.019, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.5311889648438,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-049.png"
+  },
+  {
+    "timeMs": 10106,
+    "x": -211.11,
+    "transform": "matrix(1, 0, 0, 1, -563.108, 0)",
+    "duration": "56s",
+    "groupWidth": 2759.53125,
+    "groupDelta": 2759.53125,
+    "reduce": false,
+    "file": "scratch/marquee-audit/recording-5fps/frame-050.png"
+  }
+]

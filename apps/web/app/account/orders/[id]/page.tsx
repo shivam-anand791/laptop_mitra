@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { Order } from '@/lib/types';
+import { useSupportConfig } from '@/lib/support-config';
 import {
   getOrderTimelineSteps,
   formatIndianRupees,
@@ -51,6 +52,7 @@ export default function OrderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const orderId = params?.id as string;
+  const { data: supportConfig } = useSupportConfig();
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,13 +82,27 @@ export default function OrderDetailPage() {
     message: string;
   } | null>(null);
 
-  const showBanner = (type: 'success' | 'error', message: string) => {
+  const showBanner = useCallback((type: 'success' | 'error', message: string) => {
     setBanner({ type, message });
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => {
       setBanner((prev) => (prev?.message === message ? null : prev));
     }, 6000);
-  };
+  }, []);
+
+  const handleOpenInvoice = useCallback(async () => {
+    if (!order) return;
+    setLoadingInvoice(true);
+    try {
+      const inv = await api.getOrderInvoice(order.id);
+      setInvoiceData(inv);
+      setInvoiceModalOpen(true);
+    } catch (err: any) {
+      showBanner('error', err?.message || 'Failed to fetch tax invoice details.');
+    } finally {
+      setLoadingInvoice(false);
+    }
+  }, [order, showBanner]);
 
   const loadOrder = useCallback(async () => {
     if (!orderId) return;
@@ -137,9 +153,9 @@ export default function OrderDetailPage() {
   // Handle #invoice URL hash
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location.hash === '#invoice' && order) {
-      handleOpenInvoice();
+      void handleOpenInvoice();
     }
-  }, [order]);
+  }, [order, handleOpenInvoice]);
 
   const handleCopyOrderNumber = () => {
     if (order?.orderNumber && navigator?.clipboard) {
@@ -206,20 +222,6 @@ export default function OrderDetailPage() {
     }
   };
 
-  const handleOpenInvoice = async () => {
-    if (!order) return;
-    setLoadingInvoice(true);
-    try {
-      const inv = await api.getOrderInvoice(order.id);
-      setInvoiceData(inv);
-      setInvoiceModalOpen(true);
-    } catch (err: any) {
-      showBanner('error', err?.message || 'Failed to fetch tax invoice details.');
-    } finally {
-      setLoadingInvoice(false);
-    }
-  };
-
   // Eligibility evaluation
   const items = order?.items || [];
   const firstItem = items[0];
@@ -228,7 +230,7 @@ export default function OrderDetailPage() {
   const canCancel = order ? canCancelOrder(order.status) : false;
   const deliveredAt = order?.deliveries?.[0]?.deliveredAt || (order?.status === 'DELIVERED' ? order.updatedAt : null);
   const returnCheck = order
-    ? canReturnOrder(order.status, deliveredAt, 7, order.returnStatus, isLease)
+    ? canReturnOrder(order.status, deliveredAt, supportConfig?.returnWindowDays ?? 0, order.returnStatus, isLease)
     : { eligible: false };
   const canReturn = returnCheck.eligible;
   const canInvoice = order
@@ -498,9 +500,12 @@ export default function OrderDetailPage() {
               item.product?.images?.[0]?.url ||
               null;
 
-            const warrantyLabel = item.hasWarranty
-              ? '12-Month Assured Warranty Included'
-              : '6-Month Assured Warranty Included';
+            const standardWarrantyMonths = supportConfig
+              ? Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))
+              : null;
+            const warrantyLabel = standardWarrantyMonths
+              ? `${standardWarrantyMonths * (item.hasWarranty ? 2 : 1)}-Month Assured Warranty Included`
+              : 'Warranty duration unavailable';
 
             return (
               <div
@@ -741,7 +746,9 @@ export default function OrderDetailPage() {
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Every certified laptop is backed by LaptopMitra&apos;s 7-day hassle-free replacement and return guarantee. Please select the primary reason:
+              {supportConfig?.returnWindowDays
+                ? `Submit your request within ${supportConfig.returnWindowDays} days of delivery. Please select the primary reason:`
+                : 'Return eligibility follows the current policy. Please select the primary reason:'}
             </p>
 
             <form onSubmit={handleReturnSubmit} className="space-y-4">
@@ -874,7 +881,9 @@ export default function OrderDetailPage() {
                             </span>
                             {it.hasWarranty && !itIsLease && (
                               <span className="inline-flex px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                12-Month Assured Warranty
+                                {supportConfig
+                                  ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30)) * 2}-Month Assured Warranty`
+                                  : 'Extended Assured Warranty'}
                               </span>
                             )}
                           </div>

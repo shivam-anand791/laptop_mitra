@@ -174,6 +174,7 @@ describe('Mobile Account Area Domain Logic & Eligibility Tests', () => {
     it('renders data-driven warranty duration without hardcoded 1-Year', () => {
       expect(getWarrantyDisplayText(6, false)).toBe('6-Month Standard Warranty');
       expect(getWarrantyDisplayText(6, true)).toBe('12-Month Coverage (Standard + Add-on)');
+      expect(getWarrantyDisplayText(null, true)).toBe('Warranty duration unavailable');
     });
   });
 

@@ -15,7 +15,7 @@ import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useProduct, useAddToCart, useAddToWishlist, useWishlist, useRemoveWishlistItem } from '../../hooks/useApi';
+import { useProduct, useAddToCart, useAddToWishlist, useWishlist, useRemoveWishlistItem, useSupportConfig } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
 import Badge from '../../components/ui/Badge';
@@ -35,6 +35,7 @@ export default function ProductDetailScreen() {
   const { isAuthenticated, user } = useAuth();
 
   const { data: product, isLoading, error } = useProduct(productId);
+  const { data: supportConfig } = useSupportConfig();
   const addToCart = useAddToCart();
   const addToWishlist = useAddToWishlist();
   const removeFromWishlist = useRemoveWishlistItem();
@@ -129,7 +130,10 @@ export default function ProductDetailScreen() {
     const referralText = user?.referralCode
       ? `\nUse my Mitra code *${user.referralCode}* at checkout to get flat ₹500 instant discount!`
       : '';
-    const message = `Check out this certified refurbished laptop on LaptopMitra:\n*${product?.name || 'Laptop'}*\n${priceText}\nGrade A+ Inspected with 1-Year Warranty.${referralText}\nhttps://laptopmitra.in/products/${productId}`;
+    const warrantyText = supportConfig
+      ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))}-Month Warranty`
+      : 'Warranty duration unavailable';
+    const message = `Check out this certified refurbished laptop on LaptopMitra:\n*${product?.name || 'Laptop'}*\n${priceText}\nGrade A+ Inspected with ${warrantyText}.${referralText}\nhttps://laptopmitra.in/products/${productId}`;
     Linking.openURL(`https://wa.me/?text=${encodeURIComponent(message)}`).catch(() => {
       Alert.alert('Unable to open WhatsApp', 'Please ensure WhatsApp is installed on your device.');
     });
@@ -218,7 +222,12 @@ export default function ProductDetailScreen() {
   if (meta.graphics || meta.gpu) specItems.push({ label: 'Graphics', value: String(meta.graphics || meta.gpu) });
   if (meta.os || meta.operatingSystem) specItems.push({ label: 'Operating System', value: String(meta.os || meta.operatingSystem) });
   specItems.push({ label: 'Condition', value: String(condition) });
-  specItems.push({ label: 'Warranty', value: String(meta.warranty || '1-Year Pan-India Warranty') });
+  specItems.push({
+    label: 'Warranty',
+    value: supportConfig
+      ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))}-Month Pan-India Warranty`
+      : 'Warranty duration unavailable',
+  });
   specItems.push({ label: 'SKU / Model ID', value: product.sku || product.id.slice(0, 8).toUpperCase() });
 
   return (
@@ -465,7 +474,11 @@ export default function ProductDetailScreen() {
                   color={hasWarranty ? colors.primary : colors.textMuted}
                 />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.warrantyToggleTitle}>1-Year Extended Hardware Warranty</Text>
+                  <Text style={styles.warrantyToggleTitle}>
+                    {supportConfig
+                      ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30)) * 2}-Month Extended Hardware Warranty`
+                      : 'Extended Hardware Warranty'}
+                  </Text>
                   <Text style={styles.warrantyToggleSub}>Full motherboard & part protection across India (+₹1,999)</Text>
                 </View>
                 <Text style={styles.warrantyPriceTag}>₹1,999</Text>
@@ -604,9 +617,13 @@ export default function ProductDetailScreen() {
               <View style={styles.warrantyItem}>
                 <Ionicons name="ribbon-outline" size={20} color={colors.primary} />
                 <View style={styles.warrantyTextWrap}>
-                  <Text style={styles.warrantyTitle}>1-Year Pan-India Warranty</Text>
+                  <Text style={styles.warrantyTitle}>
+                    {supportConfig
+                      ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))}-Month Pan-India Warranty`
+                      : 'Warranty duration unavailable'}
+                  </Text>
                   <Text style={styles.warrantyDesc}>
-                    Full hardware and component coverage with doorstep pick-up & repair assistance.
+                    Full hardware and component coverage with doorstep pick-up and repair assistance.
                   </Text>
                 </View>
               </View>
@@ -614,9 +631,13 @@ export default function ProductDetailScreen() {
               <View style={styles.warrantyItem}>
                 <Ionicons name="swap-horizontal-outline" size={20} color={colors.primary} />
                 <View style={styles.warrantyTextWrap}>
-                  <Text style={styles.warrantyTitle}>7-Day Replacement Policy</Text>
+                  <Text style={styles.warrantyTitle}>
+                    {supportConfig?.returnWindowDays
+                      ? `${supportConfig.returnWindowDays}-Day Replacement Policy`
+                      : 'Return & Replacement Policy'}
+                  </Text>
                   <Text style={styles.warrantyDesc}>
-                    Hassle-free replacement in the rare case of any technical defects upon unboxing.
+                    Replacement eligibility follows the current policy for technical defects.
                   </Text>
                 </View>
               </View>

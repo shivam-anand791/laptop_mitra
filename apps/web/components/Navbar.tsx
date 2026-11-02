@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -12,6 +12,7 @@ import {
   NEXT_PUBLIC_SUPPORT_PHONE_DISPLAY,
 } from '../lib/config';
 import CorporateQuoteModal from './CorporateQuoteModal';
+import { api } from '../lib/api';
 
 export default function Navbar() {
   const router = useRouter();
@@ -27,6 +28,29 @@ export default function Navbar() {
   const [corporateModalPrefill, setCorporateModalPrefill] = useState<
     { mode?: 'sell' | 'lease'; laptopModel?: string } | undefined
   >(undefined);
+  const [hasUnreadTickets, setHasUnreadTickets] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (!user || user.isGuest) {
+      setHasUnreadTickets(false);
+      return;
+    }
+
+    api.getTickets()
+      .then((tickets) => {
+        if (active && Array.isArray(tickets)) {
+          setHasUnreadTickets(tickets.some((ticket: { hasUnread?: boolean }) => ticket.hasUnread));
+        }
+      })
+      .catch(() => {
+        if (active) setHasUnreadTickets(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,6 +138,40 @@ export default function Navbar() {
                         className="block px-4 py-1.5 text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB]"
                       >
                         Mitra Affiliate Program
+                      </Link>
+                    </div>
+                    <div className="py-1 text-xs font-semibold">
+                      <p className="px-4 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Help and Support
+                      </p>
+                      <Link
+                        href="/help"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="block px-4 py-1.5 text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB]"
+                      >
+                        Help Center
+                      </Link>
+                      <Link
+                        href="/account/tickets"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="flex items-center justify-between px-4 py-1.5 text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB]"
+                      >
+                        My Support Tickets
+                        {hasUnreadTickets && <span className="h-2 w-2 rounded-full bg-rose-600" aria-label="Unread ticket updates" />}
+                      </Link>
+                      <Link
+                        href="/account/returns"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="block px-4 py-1.5 text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB]"
+                      >
+                        Returns &amp; Replacements
+                      </Link>
+                      <Link
+                        href="/account/warranty-support"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="block px-4 py-1.5 text-slate-700 hover:bg-[#F8FAFC] hover:text-[#2563EB]"
+                      >
+                        Warranty Support
                       </Link>
                     </div>
                     <div className="pt-1">

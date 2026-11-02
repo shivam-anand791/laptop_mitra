@@ -107,7 +107,7 @@ export default function BuybackGuaranteePage() {
           <div className="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-3xl p-8 sm:p-10 text-white text-center space-y-4">
             <h3 className="text-2xl sm:text-3xl font-extrabold">Ready to browse certified laptops?</h3>
             <p className="text-sm text-blue-100 max-w-lg mx-auto">
-              Every machine comes with Grade A+ certification, 1-Year Warranty, and guaranteed buyback liquidity up to 36 months.
+              Every machine comes with Grade A+ certification, warranty coverage, and guaranteed buyback liquidity up to 36 months.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
               <Link

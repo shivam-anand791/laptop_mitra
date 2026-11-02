@@ -249,9 +249,9 @@ export function getDeliveryEstimateText(estimatedDelivery?: string | Date | null
 }
 
 export function getWarrantyDisplayText(warrantyMonths?: number | null | undefined, hasAddon?: boolean | undefined): string {
-  const baseMonths = warrantyMonths ?? 6;
+  if (!warrantyMonths) return 'Warranty duration unavailable';
   if (hasAddon) {
-    return '12-Month Coverage (Standard + Add-on)';
+    return `${warrantyMonths * 2}-Month Coverage (Standard + Add-on)`;
   }
-  return `${baseMonths}-Month Standard Warranty`;
+  return `${warrantyMonths}-Month Standard Warranty`;
 }

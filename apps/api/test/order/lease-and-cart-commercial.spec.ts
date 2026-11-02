@@ -10,6 +10,7 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
   let notificationService: any;
   let discountService: any;
   let paymentService: any;
+  let pincodeService: any;
 
   const mockProductBuy = {
     id: 'prod-buy-1',
@@ -55,6 +56,7 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
       },
       order: {
         findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
         create: jest.fn().mockImplementation(({ data }: any) => {
           return {
             id: 'ord-test-r3-1',
@@ -71,6 +73,9 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
       },
       user: {
         findFirst: jest.fn().mockResolvedValue(null),
+      },
+      referral: {
+        findFirst: jest.fn().mockResolvedValue({ userId: 'referrer-1' }),
       },
       referralRedemption: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -89,6 +94,7 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
       consumeOrderDiscount: jest.fn().mockResolvedValue(undefined),
     };
     paymentService = {};
+    pincodeService = { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) };
 
     orderService = new OrderService(
       prisma,
@@ -96,8 +102,52 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
       productService,
       notificationService,
       discountService,
+      pincodeService,
       paymentService,
     );
+  });
+
+  it('validates shipping PINs on the backend before any order can be created', async () => {
+    pincodeService.validateOrderShipping.mockRejectedValueOnce(new BadRequestException('Invalid PIN'));
+    const address = { pincode: '999999' };
+
+    await expect(orderService.createOrder(
+      'user-1', undefined, undefined, address, '9876543210', undefined, 'user@example.com',
+    )).rejects.toThrow('Invalid PIN');
+    expect(pincodeService.validateOrderShipping).toHaveBeenCalledWith(address, 'razorpay');
+  });
+
+  it('resolves a legacy referral alias to the referrer’s canonical code during order creation', async () => {
+    prisma.cart.findFirst.mockResolvedValue({
+      id: 'cart-referral',
+      items: [{
+        productId: mockProductBuy.id,
+        product: mockProductBuy,
+        quantity: 1,
+        purchaseMode: 'sell',
+        configuration: 'default',
+        hasWarranty: false,
+      }],
+    });
+    prisma.user.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'referrer-1', referralCode: 'mitrarefr1234' });
+
+    await orderService.createOrder(
+      'buyer-1', '55JAFRTN', undefined,
+      { email: 'buyer@example.com', phone: '9876543210', pincode: '560001' },
+      '9876543210', undefined, 'buyer@example.com',
+    );
+
+    expect(prisma.referral.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ code: { equals: '55JAFRTN', mode: 'insensitive' } }),
+    }));
+    expect(prisma.order.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ referralCode: 'mitrarefr1234' }),
+    }));
+    expect(prisma.referralRedemption.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ referralCode: 'mitrarefr1234', referrerUserId: 'referrer-1' }),
+    }));
   });
 
   describe('1. Price Resolution', () => {
@@ -205,6 +255,22 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
       variantName: variant.name,
       variantAttributes: variant.attributes,
     });
+    expect(prisma.cartItem.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('clears the server cart only when a COD order is created', async () => {
+    prisma.cart.findFirst.mockResolvedValue({
+      id: 'cart-cod',
+      items: [{ productId: mockProductBuy.id, product: mockProductBuy, quantity: 1, purchaseMode: 'sell', configuration: 'default', hasWarranty: false }],
+    });
+
+    await orderService.createOrder(
+      'user-1', undefined, undefined,
+      { email: 'user@example.com', phone: '9876543210' },
+      '9876543210', undefined, 'user@example.com', undefined, 'cod',
+    );
+
+    expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 'cart-cod' } });
   });
 
   describe('3. BUY and RENT Coexistence & Order Totals (Option A: Month 1 Advance)', () => {

@@ -1,0 +1,75 @@
+{
+  "createdAt": "2026-11-01T03:49:16.637Z",
+  "targets": [
+    {
+      "userId": "2c12af71-c154-4b5c-8ecf-57b646b3655b",
+      "name": "Local Admin",
+      "role": "ADMIN",
+      "oldCode": "LOCALADMIN",
+      "newCode": "mitraloca0294",
+      "orderCodeUses": 0,
+      "historicalRedemptions": 0,
+      "existingAlias": false
+    },
+    {
+      "userId": "a3f373f1-3cdc-4724-9fbe-eeb874fd75ee",
+      "name": "Local Support",
+      "role": "SUPPORT",
+      "oldCode": "LOCALSUPPORT",
+      "newCode": "mitraloca4476",
+      "orderCodeUses": 0,
+      "historicalRedemptions": 0,
+      "existingAlias": false
+    },
+    {
+      "userId": "2e96908c-1973-4581-b4bf-42d1c65f904a",
+      "name": "Local Customer",
+      "role": "CUSTOMER",
+      "oldCode": "LOCALCUSTOMER",
+      "newCode": "mitraloca1749",
+      "orderCodeUses": 0,
+      "historicalRedemptions": 0,
+      "existingAlias": false
+    },
+    {
+      "userId": "support-concurrency-1793250123180",
+      "name": "Local Concurrency Test",
+      "role": "CUSTOMER",
+      "oldCode": "LC1793250123180",
+      "newCode": "mitraloca4242",
+      "orderCodeUses": 0,
+      "historicalRedemptions": 0,
+      "existingAlias": false
+    },
+    {
+      "userId": "c2fb5c4d-51c4-48a1-8de9-71b5e39b755e",
+      "name": "DEMO ANAND SHARMA",
+      "role": "CUSTOMER",
+      "oldCode": "55JAFRTN",
+      "newCode": "mitrademo6579",
+      "orderCodeUses": 0,
+      "historicalRedemptions": 0,
+      "existingAlias": false
+    },
+    {
+      "userId": "7739fa42-b1d7-4854-8054-cc0ce4864a43",
+      "name": "LaptopMitra",
+      "role": "CUSTOMER",
+      "oldCode": "YN3XTJPT",
+      "newCode": "mitralapt8766",
+      "orderCodeUses": 0,
+      "historicalRedemptions": 0,
+      "existingAlias": false
+    },
+    {
+      "userId": "2dfd7b60-c846-4b04-9e85-cb6f666f074e",
+      "name": "Shivam Anand",
+      "role": "CUSTOMER",
+      "oldCode": "Q8KCRTZJ",
+      "newCode": "mitrashiv4099",
+      "orderCodeUses": 0,
+      "historicalRedemptions": 0,
+      "existingAlias": false
+    }
+  ]
+}

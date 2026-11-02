@@ -172,7 +172,7 @@ export default function AccountScreen() {
       items: [
         { icon: 'help-buoy-outline' as const, label: 'Help Center & Knowledge Base', route: 'HelpHome' as const },
         { icon: 'chatbubbles-outline' as const, label: 'My Support Tickets', route: 'TicketList' as const },
-        { icon: 'sparkles-outline' as const, label: 'Guided Support & 7-Day Returns', route: 'GuidedSupportFlow' as const },
+        { icon: 'sparkles-outline' as const, label: 'Guided Support', route: 'GuidedSupportFlow' as const },
         {
           icon: 'business-outline' as const,
           label: 'Corporate Leasing & Fleet Quote',
@@ -261,7 +261,7 @@ export default function AccountScreen() {
               onPress={() => void handleVerificationAction('refresh')}
               disabled={isVerificationPending}
             >
-              <Text style={styles.verificationRefreshText}>I've verified</Text>
+              <Text style={styles.verificationRefreshText}>I verified</Text>
             </TouchableOpacity>
           </View>
         </View>

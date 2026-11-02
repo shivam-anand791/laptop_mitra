@@ -2,19 +2,15 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { HelpBreadcrumbs, protectedSupportHref } from '@/components/help/HelpSubnav';
 import {
-  ArrowLeft,
   ThumbsUp,
   ThumbsDown,
   CheckCircle2,
-  Sparkles,
   ArrowRight,
-  BookOpen,
-  ShieldAlert,
-  Share2,
 } from 'lucide-react';
 
 interface ArticleData {
@@ -32,34 +28,56 @@ interface ArticleData {
 
 export default function ArticleDetailPage() {
   const params = useParams();
-  const router = useRouter();
-  const { user } = useAuth();
+  const { isAuthenticated, isGuest } = useAuth();
   const categorySlug = params?.categorySlug as string;
   const articleSlug = params?.articleSlug as string;
 
   const [article, setArticle] = useState<ArticleData | null>(null);
+  const [relatedArticles, setRelatedArticles] = useState<ArticleData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [articleLoadError, setArticleLoadError] = useState<string | null>(null);
   const [voted, setVoted] = useState<'yes' | 'no' | null>(null);
   const [voteCounts, setVoteCounts] = useState({ yes: 0, no: 0 });
 
   useEffect(() => {
+    let active = true;
     async function fetchArticle() {
       if (!articleSlug) return;
       setLoading(true);
+      setArticleLoadError(null);
       try {
         const data = await api.getHelpArticle(articleSlug);
+        if (!active) return;
         setArticle(data);
-        setVoteCounts({
-          yes: data.helpfulCount || 0,
-          no: data.notHelpfulCount || 0,
-        });
-      } catch {
-        // Handled
+        if (data.category?.slug) {
+          try {
+            const related = await api.getHelpArticles({ category: data.category.slug });
+            if (active) {
+              setRelatedArticles(related.filter((item: ArticleData) => item.slug !== data.slug).slice(0, 3));
+            }
+          } catch {
+            if (active) setRelatedArticles([]);
+          }
+        }
+        if (active) {
+          setVoteCounts({
+            yes: data.helpfulCount || 0,
+            no: data.notHelpfulCount || 0,
+          });
+        }
+      } catch (error) {
+        if (active) {
+          setArticle(null);
+          setArticleLoadError(error instanceof Error ? error.message : 'Unable to load this help article.');
+        }
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
     fetchArticle();
+    return () => {
+      active = false;
+    };
   }, [articleSlug]);
 
   const handleVote = async (isHelpful: boolean) => {
@@ -76,51 +94,50 @@ export default function ArticleDetailPage() {
     }
   };
 
-  const guidedFlowUrl = user
-    ? `/help/guided-flow?fromArticle=${articleSlug}`
-    : `/login?redirect=/help/guided-flow?fromArticle=${articleSlug}`;
+  const articleUnavailable = Boolean(
+    articleLoadError && !/not found|404/i.test(articleLoadError),
+  );
+
+  const guidedFlowUrl = protectedSupportHref(
+    `/help/guided-flow?fromArticle=${encodeURIComponent(articleSlug)}`,
+    isAuthenticated && !isGuest,
+  );
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-slate-50">
+        <HelpBreadcrumbs category={categorySlug.replace(/-/g, ' ')} article={articleSlug.replace(/-/g, ' ')} />
+        <div className="flex items-center justify-center p-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+        </div>
       </div>
     );
   }
 
   if (!article) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Help Article Not Found</h2>
-        <p className="text-sm text-slate-500 mb-6">The article you are looking for may have moved or been updated.</p>
-        <Link
-          href="/help"
-          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
-        >
-          Return to Help Center
-        </Link>
+      <div className="min-h-screen bg-slate-50">
+        <HelpBreadcrumbs category={categorySlug.replace(/-/g, ' ')} article={articleSlug.replace(/-/g, ' ')} />
+        <div className="flex flex-col items-center justify-center p-12 text-center">
+          <h2 className="text-xl font-bold text-slate-800 mb-2">
+            {articleUnavailable ? 'Help content temporarily unavailable' : 'Help Article Not Found'}
+          </h2>
+          <p className="text-sm text-slate-500 mb-6">
+            {articleUnavailable
+              ? 'We could not load this article right now. Please try again later or contact support.'
+              : 'The article you are looking for may have moved or been updated.'}
+          </p>
+          <Link href="/help" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm">
+            Return to Help Center
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
-      {/* ── Breadcrumb Bar ── */}
-      <div className="bg-white border-b border-slate-200 py-4 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto flex items-center justify-between text-xs text-slate-500">
-          <div className="flex items-center gap-2">
-            <Link href="/help" className="hover:text-blue-600 transition flex items-center gap-1 font-semibold">
-              <ArrowLeft className="w-3.5 h-3.5" /> Help Center
-            </Link>
-            <span>/</span>
-            <span className="text-slate-400">{article.category?.title || 'Policies'}</span>
-            <span>/</span>
-            <span className="text-slate-900 font-bold truncate max-w-[200px] sm:max-w-xs">
-              {article.title}
-            </span>
-          </div>
-        </div>
-      </div>
+      <HelpBreadcrumbs category={article.category?.title || 'Policies'} article={article.title} />
 
       {/* ── Main Article Card ── */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-8">
@@ -243,17 +260,32 @@ export default function ArticleDetailPage() {
           </div>
         </article>
 
+        {relatedArticles.length > 0 && (
+          <section aria-labelledby="related-articles-heading" className="rounded-2xl border border-slate-200 bg-white p-6">
+            <h2 id="related-articles-heading" className="mb-4 text-base font-bold text-slate-900">Related articles</h2>
+            <ul className="space-y-3">
+              {relatedArticles.map((related) => (
+                <li key={related.id}>
+                  <Link href={`/help/${related.category?.slug || categorySlug}/${related.slug}`} className="text-sm font-semibold text-blue-700 hover:underline">
+                    {related.title}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {/* ── Still need help? Guided Flow Banner ── */}
-        <section className="bg-gradient-to-r from-blue-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-lg">
+        <section className="bg-[#0B1F4B] text-white rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 shadow-lg">
           <div>
             <h3 className="text-lg font-bold">Still need help with your issue?</h3>
             <p className="text-xs text-blue-200 mt-1 max-w-lg">
-              Launch our guided support flow to pick your order, verify your warranty, and submit a ticket with our support specialists.
+              Select an order and issue to review support options or send a request to our team.
             </p>
           </div>
           <Link
             href={guidedFlowUrl}
-            className="shrink-0 inline-flex items-center gap-2 px-5 py-3 bg-white text-blue-950 font-bold text-xs rounded-xl shadow-md hover:bg-slate-100 transition"
+            className="shrink-0 inline-flex items-center gap-2 px-5 py-3 bg-white text-[#0B1F4B] font-bold text-xs rounded-xl shadow-md hover:bg-slate-100 transition"
           >
             Start Guided Flow <ArrowRight className="w-3.5 h-3.5" />
           </Link>

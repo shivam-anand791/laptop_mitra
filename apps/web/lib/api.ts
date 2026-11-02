@@ -342,6 +342,7 @@ export const api = {
     email?: string;
     paymentMethod?: 'razorpay' | 'cod';
     idempotencyKey?: string;
+    addressId?: string;
   }): Promise<Order> {
     const headers: Record<string, string> = {};
     if (payload.idempotencyKey) {
@@ -446,7 +447,7 @@ export const api = {
   },
 
   // Discount validation
-  async validateDiscount(code: string, cartTotal: number): Promise<{ valid: boolean; discountType: string; discountValue: number; discountAmount: number; message: string }> {
+  async validateDiscount(code: string, cartTotal: number): Promise<{ valid: boolean; discountType: string; discountValue: number; discountAmount: number; message: string; isReferral?: boolean }> {
     return await request<any>('/discount/validate', {
       method: 'POST',
       body: JSON.stringify({ code, cartTotal }),
