@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useId } from 'react';
 import { api } from '@/lib/api';
 import { useSupportConfig } from '@/lib/support-config';
+import { useAuth } from '@/lib/auth-context';
 import { formatIndianRupees } from '@/lib/account-helpers';
 import {
   Share2,
@@ -59,6 +60,7 @@ interface PayoutDetails {
 }
 
 export default function ReferralPage() {
+  const { firebaseUser, isVerificationRequired } = useAuth();
   const { data: supportConfig } = useSupportConfig();
   const [activeTab, setActiveTab] = useState<'overview' | 'payouts'>('overview');
   const [stats, setStats] = useState<ReferralStats | null>(null);
@@ -215,6 +217,12 @@ export default function ReferralPage() {
 
     if (!payoutDetails?.configured) {
       setWithdrawError('Please configure your Bank or UPI payout details before requesting a withdrawal.');
+      setWithdrawing(false);
+      return;
+    }
+
+    if (isVerificationRequired && firebaseUser && !firebaseUser.emailVerified) {
+      setWithdrawError('Email verification is required before requesting a payout withdrawal. Please verify your email first.');
       setWithdrawing(false);
       return;
     }

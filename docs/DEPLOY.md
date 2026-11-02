@@ -109,3 +109,32 @@ For the full deployment schedule and verification rationale, follow [`predeploy.
    ```bash
    ./scripts/smoke-test.sh https://<api-host> https://<web-host>
    ```
+
+
+---
+
+## 5. Release Checklist & Deploy-Skew Prevention
+
+> [!CRITICAL]
+> **Order of Deployment:** When introducing new endpoints or changing API contracts, **ALWAYS deploy and verify the backend API first**, and only deploy the web frontend after the API deployment succeeds and advertises required capabilities. Never deploy the web frontend ahead of the API.
+
+Before triggering production deployments, execute the following checklist:
+
+1. **CI Route Mismatch Verification**:
+   ```bash
+   node scripts/check-api-mismatches.cjs
+   ```
+   Ensure this step passes with 0 route mismatches between client fetch calls and backend controllers.
+2. **Deploy API on Render**:
+   - Wait for Render build and pre-deploy hooks to finish.
+   - Verify health check and capabilities:
+     ```bash
+     curl -s https://<api-host>/health
+     ```
+     Ensure `status: "ok"` and `capabilities` matches the expected features.
+3. **Enable Feature Flags Gradually**:
+   - Both `ENABLE_EMAIL_VERIFICATION` (API) and `NEXT_PUBLIC_ENABLE_EMAIL_VERIFICATION` (Web) default to `false`.
+   - Enable on the API first, verify `capabilities` includes `'email-verification'`, then enable in Vercel environment variables and redeploy the web build.
+4. **Deploy Web on Vercel**:
+   - Trigger Vercel build.
+   - Test key user journeys (login, checkout, account). Verify that if the backend API is ever rolled back, the web app degrades gracefully without locking out users.

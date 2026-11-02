@@ -24,7 +24,18 @@ export class EmailVerificationService {
     private readonly configService: ConfigService,
   ) {}
 
+  isEnabled(): boolean {
+    return (
+      this.configService?.get<string>('ENABLE_EMAIL_VERIFICATION') === 'true' ||
+      process.env.ENABLE_EMAIL_VERIFICATION === 'true'
+    );
+  }
+
   async send(uid: string): Promise<{ sent: boolean; alreadyVerified: boolean }> {
+    if (!this.isEnabled()) {
+      throw new ServiceUnavailableException('Email verification is temporarily disabled.');
+    }
+
     let firebaseUser;
     try {
       firebaseUser = await this.firebaseService.getUserRecord(uid);

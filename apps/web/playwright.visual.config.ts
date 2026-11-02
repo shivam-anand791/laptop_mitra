@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: 'theme-visual.spec.ts',
+  testMatch: ['verify-email.spec.ts', 'theme-visual.spec.ts'],
   workers: 1,
   reporter: 'list',
   webServer: {

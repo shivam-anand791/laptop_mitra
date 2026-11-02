@@ -22,7 +22,7 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { data: supportConfig } = useSupportConfig();
   const { items, subtotal, itemCount, clearCart, isSyncing: cartSyncing, syncError: cartSyncError } = useCart();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, firebaseUser, isVerificationRequired, isLoading: authLoading } = useAuth();
 
   // Form State
   const [formData, setFormData] = useState({

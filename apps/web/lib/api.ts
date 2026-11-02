@@ -142,7 +142,7 @@ export async function request<T>(
 
 export const api = {
   // Health
-  async getHealth(): Promise<{ status: string; timestamp: string; version: string }> {
+  async getHealth(): Promise<{ status: string; timestamp: string; version: string; capabilities?: string[] }> {
     return await request('/health');
   },
 
@@ -216,7 +216,14 @@ export const api = {
   },
 
   async sendVerificationEmail(): Promise<{ sent: boolean; alreadyVerified: boolean }> {
-    return await request('/auth/email-verification', { method: 'POST' });
+    try {
+      return await request('/auth/email-verification', { method: 'POST' });
+    } catch (err: any) {
+      if (err?.status === 404 || (err?.message && String(err.message).includes('Cannot POST'))) {
+        throw new ApiError(404, "We couldn't send the email right now. Try again in a few minutes.");
+      }
+      throw err;
+    }
   },
 
   async getProfile(): Promise<User> {

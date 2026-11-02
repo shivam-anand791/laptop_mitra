@@ -8,6 +8,7 @@ import {
   signInAnonymously,
   signOut,
   onIdTokenChanged,
+  sendEmailVerification,
   User as FirebaseUser,
 } from 'firebase/auth';
 
@@ -54,5 +55,6 @@ export {
   signInAnonymously,
   signOut,
   onIdTokenChanged,
+  sendEmailVerification,
 };
 export type { FirebaseUser };

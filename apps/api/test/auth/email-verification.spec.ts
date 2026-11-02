@@ -12,6 +12,7 @@ describe('EmailVerificationService', () => {
       APP_PUBLIC_URL: 'http://localhost:3000',
       NODE_ENV: 'development',
       SUPPORT_EMAIL: 'help@example.com',
+      ENABLE_EMAIL_VERIFICATION: 'true',
     })[key]),
   };
   let service: EmailVerificationService;
@@ -74,6 +75,16 @@ describe('EmailVerificationService', () => {
       NODE_ENV: 'production',
     })[key]);
     await expect(service.send('firebase-user-1')).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('rejects sending when ENABLE_EMAIL_VERIFICATION is off', async () => {
+    configService.get.mockImplementationOnce((key: string) => ({
+      APP_PUBLIC_URL: 'http://localhost:3000',
+      ENABLE_EMAIL_VERIFICATION: 'false',
+    })[key]);
+    await expect(service.send('firebase-user-1')).rejects.toThrow(
+      'Email verification is temporarily disabled.',
+    );
   });
 });
 

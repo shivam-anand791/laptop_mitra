@@ -151,6 +151,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     paymentMethod = 'razorpay',
     idempotencyKey?: string,
     savedAddressId?: string,
+    cartItems?: any[],
   ): Promise<Order> {
     if (savedAddressId) {
       const savedAddress = await this.prisma.address.findFirst({

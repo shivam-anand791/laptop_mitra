@@ -42,11 +42,11 @@ function RegisterForm() {
 
   // If already authenticated with an authoritative non-guest account, redirect immediately
   useEffect(() => {
-    if (!authLoading && isAuthenticated && user && !user.isGuest && firebaseUser?.emailVerified) {
+    if (!authLoading && isAuthenticated && user && !user.isGuest) {
       const destination = getSafeRedirectUrl(redirectParam, user.role);
       router.replace(destination);
     }
-  }, [authLoading, isAuthenticated, user, firebaseUser?.emailVerified, redirectParam, router]);
+  }, [authLoading, isAuthenticated, user, redirectParam, router]);
 
   // Sync ref param if passed
   useEffect(() => {

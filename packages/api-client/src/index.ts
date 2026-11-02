@@ -13,7 +13,6 @@ import type {
   PaymentRecord,
   SupportTicket,
   TicketMessage,
-  TicketAttachment,
   CreateTicketDto,
   AddTicketMessageDto,
   UpdateTicketDto,
@@ -355,25 +354,6 @@ export class LaptopMitraApiClient {
     });
   }
 
-  async createTicketAttachmentUploadUrl(
-    ticketId: string,
-    data: { fileName: string; fileSize: number; mimeType: string },
-  ): Promise<{ uploadUrl: string; storageKey: string; attachmentId: string }> {
-    return this.request<{ uploadUrl: string; storageKey: string; attachmentId: string }>(
-      `/support/tickets/${ticketId}/attachments/upload-url`,
-      {
-        method: 'POST',
-        body: JSON.stringify(data),
-      },
-    );
-  }
-
-  async confirmTicketAttachment(ticketId: string, attachmentId: string): Promise<TicketAttachment> {
-    return this.request<TicketAttachment>(`/support/tickets/${ticketId}/attachments/${attachmentId}/confirm`, {
-      method: 'POST',
-    });
-  }
-
   async getWarrantyStatus(orderItemId: string): Promise<{ warrantyStatus: string; validUntil: string; terms: string }> {
     return this.request<{ warrantyStatus: string; validUntil: string; terms: string }>(`/support/warranty/${orderItemId}`);
   }
@@ -424,7 +404,7 @@ export class LaptopMitraApiClient {
   }
 
   async processReturn(id: string, data: ProcessReturnDto): Promise<ReturnRequest> {
-    return this.request<ReturnRequest>(`/admin/returns/${id}/process`, {
+    return this.request<ReturnRequest>(`/support/admin/returns/${id}/process`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -462,11 +442,11 @@ export class LaptopMitraApiClient {
 
   // Support Settings
   async getSupportSettings(): Promise<SupportSettings> {
-    return this.request<SupportSettings>('/support/settings');
+    return this.request<SupportSettings>('/support/admin/settings');
   }
 
   async updateSupportSettings(data: Partial<SupportSettings>): Promise<SupportSettings> {
-    return this.request<SupportSettings>('/admin/support/settings', {
+    return this.request<SupportSettings>('/support/admin/settings', {
       method: 'PUT',
       body: JSON.stringify(data),
     });
@@ -474,7 +454,7 @@ export class LaptopMitraApiClient {
 
   // Saved Replies (Support / Admin)
   async getSavedReplies(): Promise<SavedReply[]> {
-    return this.request<SavedReply[]>('/support/saved-replies');
+    return this.request<SavedReply[]>('/support/admin/saved-replies');
   }
 
   // Referral / Affiliate

@@ -1,12 +1,14 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { isVerificationEnforced } from './verification-guard';
 import { User } from './types';
 import { api } from './api';
 import {
   auth,
   signOut,
   onIdTokenChanged,
+  sendEmailVerification as firebaseSendEmailVerification,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInAnonymously,
@@ -31,6 +33,8 @@ interface AuthContextType {
   guestLogin: () => Promise<User>;
   register: (data: { name: string; email: string; password: string; referralCode?: string; phone?: string }) => Promise<User>;
   retrySync: (data?: { name?: string; phone?: string; referralCode?: string }) => Promise<User>;
+  isVerificationRequired: boolean;
+  apiCapabilities: string[];
   sendVerificationEmail: () => Promise<{ sent: boolean; alreadyVerified: boolean }>;
   refreshAuthenticatedUser: () => Promise<User>;
   cancelSyncAndSignOut: () => Promise<void>;
@@ -48,6 +52,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<SyncErrorState | null>(null);
+  const [apiCapabilities, setApiCapabilities] = useState<string[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    api.getHealth()
+      .then((res) => {
+        if (mounted && Array.isArray(res?.capabilities)) {
+          setApiCapabilities(res.capabilities);
+        }
+      })
+      .catch(() => {
+        if (mounted) setApiCapabilities([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const isVerificationRequired = useMemo(() => {
+    return isVerificationEnforced({
+      user,
+      firebaseUser,
+      apiCapabilities,
+    });
+  }, [user, firebaseUser, apiCapabilities]);
 
   // Guards against race conditions between manual registration/login and background onIdTokenChanged
   const isRegisteringRef = useRef(false);
@@ -279,7 +308,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return await syncCurrentUser(data);
   };
 
-  const sendVerificationEmail = useCallback(async () => await api.sendVerificationEmail(), []);
+  const sendVerificationEmail = useCallback(async (): Promise<{ sent: boolean; alreadyVerified: boolean }> => {
+    const current = auth.currentUser;
+    if (!current) {
+      throw new Error('Please sign in before requesting verification.');
+    }
+    if (current.emailVerified) {
+      return { sent: false, alreadyVerified: true };
+    }
+
+    // Primary path: Firebase client-side sendEmailVerification (requires NO backend endpoint, NO Resend)
+    try {
+      const continueOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://laptop-mitra.vercel.app';
+      await firebaseSendEmailVerification(current, {
+        url: `${continueOrigin}/verify-email`,
+      });
+      return { sent: true, alreadyVerified: false };
+    } catch (fbErr: any) {
+      // If client-side fails (e.g. rate limit, auth domain) and backend advertises capability, try API fallback
+      if (apiCapabilities.includes('email-verification')) {
+        try {
+          return await api.sendVerificationEmail();
+        } catch {
+          // fall through
+        }
+      }
+      const msg = fbErr?.message || "We couldn't send the email right now. Try again in a few minutes.";
+      throw new Error(msg);
+    }
+  }, [apiCapabilities]);
 
   const refreshAuthenticatedUser = useCallback(async (): Promise<User> => {
     const current = auth.currentUser;
@@ -327,6 +384,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         guestLogin,
         register,
         retrySync,
+        isVerificationRequired,
+        apiCapabilities,
         sendVerificationEmail,
         refreshAuthenticatedUser,
         cancelSyncAndSignOut,

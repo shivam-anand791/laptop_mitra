@@ -42,10 +42,7 @@ function LoginForm() {
   // If already authenticated with a real account, redirect to destination
   useEffect(() => {
     if (!authLoading && isAuthenticated && user && !user.isGuest) {
-      if (firebaseUser && !firebaseUser.emailVerified) {
-        router.replace('/verify-email');
-        return;
-      }
+      
       if (redirectParam && !canAccessPath(redirectParam, user.role)) {
         // User lacks permission for requested target; keep them on page to display 403 state without bouncing
         return;
@@ -53,7 +50,7 @@ function LoginForm() {
       const destination = getSafeRedirectUrl(redirectParam, user.role);
       router.replace(destination);
     }
-  }, [authLoading, isAuthenticated, user, firebaseUser?.emailVerified, redirectParam, router]);
+  }, [authLoading, isAuthenticated, user, redirectParam, router]);
 
   useEffect(() => {
     if (emailParam && !email) {
@@ -68,10 +65,7 @@ function LoginForm() {
 
     try {
       const syncedUser = await login(email, password);
-      if (auth.currentUser && !auth.currentUser.emailVerified) {
-        router.replace('/verify-email');
-        return;
-      }
+      
       if (redirectParam && !canAccessPath(redirectParam, syncedUser.role)) {
         // Signed in user role lacks permission for the requested internal destination.
         // Stay on page and render the 403 state; do not redirect to /admin.
@@ -97,10 +91,7 @@ function LoginForm() {
     setError(null);
     try {
       const syncedUser = await retrySync();
-      if (auth.currentUser && !auth.currentUser.emailVerified) {
-        router.replace('/verify-email');
-        return;
-      }
+      
       if (redirectParam && !canAccessPath(redirectParam, syncedUser.role)) {
         return;
       }
@@ -147,8 +138,7 @@ function LoginForm() {
     isAuthenticated &&
     user &&
     !user.isGuest &&
-    firebaseUser?.emailVerified &&
-    redirectParam &&
+        redirectParam &&
     !canAccessPath(redirectParam, user.role)
   ) {
     return (

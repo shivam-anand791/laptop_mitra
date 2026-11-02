@@ -385,7 +385,7 @@ export class SupportController {
     return this.supportService.decryptAdminRefundDetails(id, user.id);
   }
 
-  @Get('admin/saved-replies')
+  @Get(['admin/saved-replies', 'saved-replies'])
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
   @Roles('SUPPORT', 'ADMIN')
@@ -502,7 +502,7 @@ export class SupportController {
     return this.supportService.archiveAdminHelpArticle(id);
   }
 
-  @Get('admin/settings')
+  @Get(['admin/settings', 'settings'])
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
   @Roles('SUPPORT', 'ADMIN')
@@ -511,7 +511,7 @@ export class SupportController {
     return this.supportService.getAdminSupportSettings();
   }
 
-  @Put('admin/settings')
+  @Put(['admin/settings', 'settings'])
   @ApiBearerAuth()
   @UseGuards(RolesGuard)
   @Roles('ADMIN')
