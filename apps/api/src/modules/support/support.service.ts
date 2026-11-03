@@ -11,9 +11,19 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentEncryptionService } from '../../common/encryption/payment-encryption.service';
 import { PaymentService } from '../payments/payment.service';
+import { ItemSituationKey, ItemAction, SituationResponse, isActionImplemented } from '../../types';
 import { CreateCorporateInquiryDto } from './dto/create-corporate-inquiry.dto';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { CreateReturnRequestDto } from './dto/create-return-request.dto';
+import { ChangeRequestTypeEnum, CreateOrderChangeRequestDto, ReviewChangeRequestDto } from './dto/order-change-request.dto';
+import {
+  CreateBuybackRequestDto,
+  SubmitBuybackInspectionDto,
+  DispatchBuybackReturnDto,
+  ProcessBuybackPayoutDto,
+  UpdateBuybackSettingsDto,
+  BuybackTierInputDto,
+} from './dto/buyback.dto';
 import { UpdateRefundDetailsDto } from './dto/update-refund-details.dto';
 import {
   AdminTicketQueryDto,
@@ -221,6 +231,499 @@ export class SupportService {
   }
 
   // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // Situation-Aware "Need Help" Engine (Stage 2)
+  // ---------------------------------------------------------------------------
+  async getItemSituation(
+    orderItemId: string,
+    requestingUserId?: string,
+    requestingUserRole?: string,
+    platform: 'web' | 'mobile' = 'web',
+  ): Promise<SituationResponse> {
+    const item = await this.prisma.orderItem.findUnique({
+      where: { id: orderItemId },
+      include: {
+        order: {
+          include: {
+            deliveries: { orderBy: { createdAt: 'desc' } },
+            user: {
+              include: {
+                businessProfile: true,
+              },
+            },
+            rentalSubscription: true,
+            returnRequests: {
+              include: { items: true },
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+        },
+        product: true,
+        buybackRequests: {
+          orderBy: { createdAt: 'desc' },
+        },
+        leaseContract: {
+          include: { installments: true },
+        },
+      },
+    });
+
+    if (!item) {
+      throw new NotFoundException(`Order item #${orderItemId} not found`);
+    }
+
+    const order = item.order;
+    if (
+      requestingUserId &&
+      requestingUserRole !== 'ADMIN' &&
+      requestingUserRole !== 'SUPPORT' &&
+      order.userId !== requestingUserId
+    ) {
+      throw new ForbiddenException('You do not have permission to view this item situation');
+    }
+
+    const businessProfile = order.user?.businessProfile ? {
+      isBusinessAccount: true,
+      companyName: order.user.businessProfile.companyName,
+      priorityEnabled: order.user.businessProfile.priorityEnabled,
+    } : null;
+
+    // Delivery info
+    const latestDelivery = order.deliveries?.[0] || null;
+    const deliveredAt = latestDelivery?.deliveredAt || (order.status === 'DELIVERED' ? order.createdAt : null);
+
+    // IST date computations
+    const now = new Date();
+    const IST_OFFSET_MS = 5.5 * 3600 * 1000;
+
+    let daysSinceDelivery: number | null = null;
+    let isWithin7DayReturnWindow = false;
+    let returnDeadlineIso: string | null = null;
+    let deviceAgeMonths = 0;
+
+    if (deliveredAt) {
+      const deliveredTime = new Date(deliveredAt).getTime();
+      const diffMs = now.getTime() - deliveredTime;
+      daysSinceDelivery = Math.floor(diffMs / (24 * 3600 * 1000));
+
+      // 7 calendar days IST deadline (day 7 23:59:59.999 IST)
+      const delIst = new Date(deliveredTime + IST_OFFSET_MS);
+      const deadlineIst = new Date(delIst);
+      deadlineIst.setUTCDate(deadlineIst.getUTCDate() + 7);
+      deadlineIst.setUTCHours(23, 59, 59, 999);
+      const deadlineUtc = new Date(deadlineIst.getTime() - IST_OFFSET_MS);
+      returnDeadlineIso = deadlineUtc.toISOString();
+      isWithin7DayReturnWindow = now <= deadlineUtc;
+
+      // Calendar months in IST:
+      const delYear = delIst.getUTCFullYear();
+      const delMonth = delIst.getUTCMonth();
+      const delDay = delIst.getUTCDate();
+
+      const nowIst = new Date(now.getTime() + IST_OFFSET_MS);
+      const nowYear = nowIst.getUTCFullYear();
+      const nowMonth = nowIst.getUTCMonth();
+      const nowDay = nowIst.getUTCDate();
+
+      let months = (nowYear - delYear) * 12 + (nowMonth - delMonth);
+      if (nowDay < delDay) {
+        months -= 1;
+      }
+      deviceAgeMonths = Math.max(0, months);
+    }
+
+    // Warranty calculation:
+    const supportSettings = await this.getSupportSettings();
+    const warrantyDays = supportSettings?.standardWarrantyDays ?? 180;
+    let isInWarranty = false;
+    let warrantyExpiresAt: string | null = null;
+
+    if (deliveredAt) {
+      const warrantyEnd = new Date(new Date(deliveredAt).getTime() + (warrantyDays * 24 * 3600 * 1000));
+      warrantyExpiresAt = warrantyEnd.toISOString();
+      isInWarranty = now <= warrantyEnd;
+    }
+
+    // Active Return State
+    const activeReturn = order.returnRequests?.find((r) =>
+      r.items.some((ri) => ri.orderItemId === item.id) &&
+      !['COMPLETED', 'REJECTED', 'CANCELLED'].includes(r.status)
+    );
+
+    // Active Buyback State
+    const activeBuyback = item.buybackRequests?.find((b) =>
+      !['PAID', 'REJECTED', 'CANCELLED', 'QUOTE_DECLINED', 'QUOTE_EXPIRED', 'REVISED_OFFER_DECLINED', 'RETURNED_TO_CUSTOMER'].includes(b.status)
+    );
+
+    // Buyback Eligibility & Pricing
+    const isLease = item.purchaseMode === 'lease';
+    let buybackEligible = false;
+    let buybackTierPercentage: number | null = null;
+    let buybackEstimatedPayout: number | null = null;
+    let convenienceCharge = 0;
+    let buybackIneligibilityReason: string | null = null;
+
+    if (isLease) {
+      buybackIneligibilityReason = 'Buyback guarantee applies only to outright purchases.';
+    } else if (order.status !== 'DELIVERED') {
+      buybackIneligibilityReason = 'Buyback quote is available after the item has been delivered.';
+    } else if (isWithin7DayReturnWindow) {
+      buybackIneligibilityReason = 'Item is within the 7-day return window. You can return or replace it instead.';
+    } else if (activeReturn) {
+      buybackIneligibilityReason = 'A return request is already in progress for this item.';
+    } else if (activeBuyback) {
+      buybackIneligibilityReason = 'A buyback request is already active for this device.';
+    } else if (deviceAgeMonths > 36) {
+      buybackIneligibilityReason = 'Buyback guarantee is valid up to 36 months from delivery date.';
+    } else {
+      // Query BuybackTier from DB
+      const activeTiers = await this.prisma.buybackTier.findMany({
+        where: { isActive: true },
+        orderBy: { fromMonths: 'asc' },
+      });
+      const buybackSettings = await this.prisma.buybackSettings.findUnique({
+        where: { id: 'singleton' },
+      });
+      convenienceCharge = buybackSettings ? Number(buybackSettings.convenienceCharge) : 0;
+
+      // Match tier: Upper bound inclusive (e.g. at 6 months -> 70%)
+      let matchedTier = null;
+      if (deviceAgeMonths <= 6) {
+        matchedTier = activeTiers.find((t) => t.toMonths === 6);
+      } else if (deviceAgeMonths <= 12) {
+        matchedTier = activeTiers.find((t) => t.toMonths === 12);
+      } else if (deviceAgeMonths <= 18) {
+        matchedTier = activeTiers.find((t) => t.toMonths === 18);
+      } else if (deviceAgeMonths <= 24) {
+        matchedTier = activeTiers.find((t) => t.toMonths === 24);
+      } else if (deviceAgeMonths <= 30) {
+        matchedTier = activeTiers.find((t) => t.toMonths === 30);
+      } else if (deviceAgeMonths <= 36) {
+        matchedTier = activeTiers.find((t) => t.toMonths === 36);
+      }
+
+      if (matchedTier) {
+        buybackEligible = true;
+        buybackTierPercentage = Number(matchedTier.percentage);
+        const unitPrice = Number(item.price);
+        const netBasis = unitPrice;
+        const grossQuote = netBasis * (buybackTierPercentage / 100);
+        buybackEstimatedPayout = Math.max(0, Math.round((grossQuote - convenienceCharge) * 100) / 100);
+      } else {
+        buybackIneligibilityReason = 'No active buyback tier found for device age.';
+      }
+    }
+
+    // Determine Situation Key:
+    let situation: ItemSituationKey = 'GENERAL_HELP';
+    let situationTitle = 'Order Support';
+    let situationDescription = 'Assistance for your purchase.';
+
+    if (item.status === 'CANCELLED') {
+      situation = 'ORDER_CANCELLED';
+      situationTitle = 'Item Cancelled';
+      situationDescription = 'This item was cancelled before dispatch.';
+    } else if (order.status === 'CANCELLED') {
+      situation = 'ORDER_CANCELLED';
+      situationTitle = 'Order Cancelled';
+      situationDescription = 'This order was cancelled. Support options are available below.';
+    } else if (isLease) {
+      if (['PENDING', 'CONFIRMED'].includes(order.status)) {
+        situation = 'LEASE_PENDING_DISPATCH';
+        situationTitle = 'Lease Before Dispatch';
+        situationDescription = 'Your lease order is being prepared for fulfillment.';
+      } else {
+        situation = 'LEASE_ACTIVE';
+        situationTitle = 'Active Rental / Lease';
+        situationDescription = 'Your leased laptop is active. Manage maintenance, renewals, and buyout requests.';
+      }
+    } else if (activeReturn) {
+      situation = 'OUTRIGHT_RETURN_ACTIVE';
+      situationTitle = 'Return / Replacement in Progress';
+      situationDescription = `Return request #${activeReturn.returnNumber} is currently ${activeReturn.status.replace(/_/g, ' ').toLowerCase()}.`;
+    } else if (activeBuyback) {
+      situation = 'OUTRIGHT_BUYBACK_ACTIVE';
+      situationTitle = 'Buyback Request Active';
+      situationDescription = `Buyback request #${activeBuyback.requestNumber} is currently ${activeBuyback.status.replace(/_/g, ' ').toLowerCase()}.`;
+    } else if (['PENDING', 'CONFIRMED'].includes(order.status)) {
+      situation = 'OUTRIGHT_BEFORE_DISPATCH';
+      situationTitle = 'Order Placed (Before Dispatch)';
+      situationDescription = 'Your order is confirmed and being prepared at our fulfillment center.';
+    } else if (order.status === 'SHIPPING') {
+      situation = 'OUTRIGHT_IN_TRANSIT';
+      situationTitle = 'Shipped / In Transit';
+      situationDescription = 'Your laptop is in transit with our logistics partner.';
+    } else if (order.status === 'DELIVERED') {
+      if (isWithin7DayReturnWindow) {
+        situation = 'OUTRIGHT_DELIVERED_RETURN_WINDOW';
+        situationTitle = 'Delivered (Inside 7-Day Return Window)';
+        situationDescription = 'You can request a replacement or return for defective or damaged items.';
+      } else if (isInWarranty) {
+        situation = 'OUTRIGHT_DELIVERED_IN_WARRANTY';
+        situationTitle = 'In Standard Warranty';
+        situationDescription = 'Your item is covered under LaptopMitra hardware warranty.';
+      } else if (buybackEligible) {
+        situation = 'OUTRIGHT_DELIVERED_BUYBACK_ELIGIBLE';
+        situationTitle = 'Buyback Guarantee Eligible';
+        situationDescription = `Sell this laptop back to us for an estimated ₹${buybackEstimatedPayout?.toLocaleString('en-IN') || 0}.`;
+      } else {
+        situation = 'OUTRIGHT_DELIVERED_OUT_OF_WARRANTY';
+        situationTitle = 'Delivered (Out of Warranty)';
+        situationDescription = 'Warranty and buyback guarantee periods have concluded. Paid servicing is available.';
+      }
+    }
+
+    // Invoice rule:
+    let canDownloadInvoice = false;
+    let invoiceIneligibilityReason: string | null = null;
+    if (isLease) {
+      invoiceIneligibilityReason = 'Rental invoices are generated monthly by our finance department.';
+    } else if (order.paymentMethod === 'cod' && order.status !== 'DELIVERED') {
+      invoiceIneligibilityReason = 'Tax invoice will be available after delivery and cash collection.';
+    } else if (order.paymentStatus === 'COMPLETED' || (order.paymentMethod === 'cod' && order.status === 'DELIVERED')) {
+      canDownloadInvoice = true;
+    } else {
+      invoiceIneligibilityReason = 'Invoice is generated after payment confirmation.';
+    }
+
+    // Build Action Catalog (EVERY situation gets complete catalog with enabled/disabled reasons):
+    const actions: ItemAction[] = [];
+
+    // 1. Order / Item Cancellation
+    const canCancel = ['PENDING', 'CONFIRMED'].includes(order.status) && item.status !== 'CANCELLED';
+    actions.push({
+      id: 'CANCEL_ORDER',
+      label: 'Cancel Item',
+      category: 'ORDER_CHANGE',
+      enabled: canCancel,
+      disabledReason: canCancel ? undefined : (
+        item.status === 'CANCELLED' ? 'Item is already cancelled.' :
+        order.status === 'CANCELLED' ? 'Order is already cancelled.' :
+        order.status === 'SHIPPING' ? 'Order has already been dispatched. It cannot be cancelled in transit.' :
+        'Order has already been delivered. Use Return or Replacement if eligible.'
+      ),
+      actionType: 'SELF_SERVE',
+      targetUrl: `/account/orders/${order.id}?action=cancel&itemId=${item.id}`,
+    });
+
+    // 2. Address or Phone Change
+    const canChangeAddress = ['PENDING', 'CONFIRMED'].includes(order.status);
+    actions.push({
+      id: 'REQUEST_ADDRESS_CHANGE',
+      label: 'Change Delivery Address or Phone',
+      category: 'ORDER_CHANGE',
+      enabled: canChangeAddress,
+      disabledReason: canChangeAddress ? undefined : 'Address cannot be modified once the shipment is in transit or delivered.',
+      actionType: 'REQUEST_FORM',
+      targetUrl: `/account/orders/${order.id}/change-request`,
+    });
+
+    // 3. Return or Replacement
+    const canReturn = order.status === 'DELIVERED' && isWithin7DayReturnWindow && !isLease && !activeReturn;
+    actions.push({
+      id: 'REQUEST_RETURN',
+      label: 'Return or Replacement',
+      category: 'RETURN',
+      enabled: canReturn,
+      disabledReason: canReturn ? undefined : (
+        isLease ? 'Leased items cannot be returned through self-serve returns. Please raise a lease support ticket.' :
+        activeReturn ? 'A return request is already in progress for this item.' :
+        order.status !== 'DELIVERED' ? 'Returns can only be requested after the item has been delivered.' :
+        `The 7-day return window expired on ${new Date(returnDeadlineIso || '').toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}. Warranty claims apply.`
+      ),
+      actionType: 'REQUEST_FORM',
+      targetUrl: `/help/guided-flow?orderId=${order.id}&itemId=${item.id}&category=RETURNS_REFUNDS`,
+    });
+
+    // 4. Warranty Claim
+    const canClaimWarranty = order.status === 'DELIVERED' && !isWithin7DayReturnWindow && isInWarranty && !isLease;
+    actions.push({
+      id: 'CLAIM_WARRANTY',
+      label: 'Claim Warranty Service',
+      category: 'WARRANTY',
+      enabled: canClaimWarranty,
+      disabledReason: canClaimWarranty ? undefined : (
+        isLease ? 'Hardware support for rental units is covered under lease maintenance.' :
+        isWithin7DayReturnWindow ? 'Item is within the 7-day replacement window. Please use Return or Replacement for faster resolution.' :
+        order.status !== 'DELIVERED' ? 'Warranty begins upon delivery.' :
+        `Standard warranty expired on ${warrantyExpiresAt ? new Date(warrantyExpiresAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}. Paid repair support is available.`
+      ),
+      actionType: 'TICKET',
+      targetUrl: `/help/guided-flow?orderId=${order.id}&itemId=${item.id}&category=WARRANTY_CLAIMS`,
+    });
+
+    // 5. Buyback Guarantee
+    actions.push({
+      id: 'REQUEST_BUYBACK',
+      label: 'Sell Laptop Back (Buyback Guarantee)',
+      category: 'BUYBACK',
+      enabled: buybackEligible,
+      disabledReason: buybackEligible ? undefined : (buybackIneligibilityReason || 'Device is not eligible for buyback.'),
+      actionType: 'REQUEST_FORM',
+      targetUrl: `/account/orders/${order.id}/buyback?itemId=${item.id}`,
+    });
+
+    // 6. Download Tax Invoice
+    actions.push({
+      id: 'DOWNLOAD_INVOICE',
+      label: 'Download Tax Invoice',
+      category: 'INVOICE',
+      enabled: canDownloadInvoice,
+      disabledReason: canDownloadInvoice ? undefined : (invoiceIneligibilityReason || 'Invoice is not available.'),
+      actionType: 'LINK',
+      targetUrl: `/api/orders/${order.id}/invoice`,
+    });
+
+    // 7. Track Shipment
+    const canTrack = ['SHIPPING', 'DELIVERED'].includes(order.status);
+    actions.push({
+      id: 'TRACK_SHIPMENT',
+      label: 'Track Delivery',
+      category: 'SUPPORT',
+      enabled: canTrack,
+      disabledReason: canTrack ? undefined : 'Live tracking is available once package is dispatched with our courier partner.',
+      actionType: 'MODAL',
+    });
+
+    // 8. Lease Actions (if leased)
+    if (isLease) {
+      actions.push({
+        id: 'LEASE_MAINTENANCE',
+        label: 'Request Device Service / Repair',
+        category: 'LEASE',
+        enabled: true,
+        actionType: 'TICKET',
+        targetUrl: `/help/guided-flow?orderId=${order.id}&itemId=${item.id}&category=RENTAL_LEASE`,
+      });
+      actions.push({
+        id: 'LEASE_EXTEND',
+        label: 'Extend Lease Tenure',
+        category: 'LEASE',
+        enabled: false,
+        disabledReason: "Lease extension workflow will be available upon contract engine activation (Stage 2 B').",
+        actionType: 'REQUEST_FORM',
+      });
+      actions.push({
+        id: 'LEASE_BUYOUT',
+        label: 'Buyout / Own This Device',
+        category: 'LEASE',
+        enabled: item.leaseContract ? item.leaseContract.status === 'ACTIVE' : true,
+        disabledReason: item.leaseContract && item.leaseContract.status !== 'ACTIVE'
+          ? `Lease contract is ${item.leaseContract.status.toLowerCase()}`
+          : undefined,
+        actionType: 'REQUEST_FORM',
+        targetUrl: `/lease/contracts/${item.leaseContract?.id || item.id}/buyout-request`,
+      });
+    }
+
+    // 8b. Corporate Business Overlay Actions (if business profile attached)
+    if (businessProfile?.isBusinessAccount) {
+      actions.push({
+        id: 'CORP_GST_CORRECTION',
+        label: 'Request GST Invoice Correction',
+        category: 'CORPORATE',
+        enabled: true,
+        actionType: 'TICKET',
+        targetUrl: `/help/guided-flow?orderId=${order.id}&itemId=${item.id}&category=BILLING`,
+      });
+      actions.push({
+        id: 'CORP_ADD_UNITS',
+        label: 'Add Corporate Units (Bulk Quote)',
+        category: 'CORPORATE',
+        enabled: true,
+        actionType: 'REQUEST_FORM',
+        targetUrl: `/help/guided-flow?orderId=${order.id}&itemId=${item.id}&quote=true`,
+      });
+      if (order.user?.businessProfile?.accountManager) {
+        actions.push({
+          id: 'CORP_ACCOUNT_MANAGER_CALLBACK',
+          label: `Contact Account Manager (${order.user.businessProfile.accountManager})`,
+          category: 'CORPORATE',
+          enabled: true,
+          actionType: 'TICKET',
+          targetUrl: `/help/guided-flow?orderId=${order.id}&itemId=${item.id}&category=ACCOUNT_MANAGER`,
+        });
+      }
+    }
+
+    // 9. Contact Support Callback (Always enabled catch-all)
+    actions.push({
+      id: 'REQUEST_CALLBACK',
+      label: 'Request Support Callback',
+      category: 'GENERAL',
+      enabled: true,
+      actionType: 'TICKET',
+      targetUrl: `/help/guided-flow?orderId=${order.id}&itemId=${item.id}&category=GENERAL_INQUIRY`,
+    });
+
+    return {
+      orderItemId: item.id,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      productTitle: item.product?.name || 'Laptop',
+      quantity: item.quantity,
+      unitPrice: Number(item.price),
+      purchaseMode: item.purchaseMode as 'sell' | 'lease',
+      itemStatus: item.status,
+      leaseContract: item.leaseContract ? {
+        id: item.leaseContract.id,
+        contractNumber: item.leaseContract.contractNumber,
+        tenureMonths: item.leaseContract.tenureMonths,
+        monthlyAmount: Number(item.leaseContract.monthlyAmount),
+        status: item.leaseContract.status,
+        buyoutQuoteAmount: item.leaseContract.buyoutQuoteAmount ? Number(item.leaseContract.buyoutQuoteAmount) : null,
+        buyoutQuoteExpiresAt: item.leaseContract.buyoutQuoteExpiresAt ? item.leaseContract.buyoutQuoteExpiresAt.toISOString() : null,
+        buyoutStatus: item.leaseContract.buyoutStatus,
+      } : null,
+      situation,
+      situationTitle,
+      situationDescription,
+      actions: actions.filter((a) => isActionImplemented(a.id, platform)),
+      delivery: latestDelivery ? {
+        status: latestDelivery.status,
+        deliveredAt: deliveredAt ? new Date(deliveredAt).toISOString() : null,
+        daysSinceDelivery,
+      } : null,
+      warranty: {
+        hasWarranty: item.hasWarranty,
+        warrantyDays,
+        warrantyExpiresAt,
+        isInWarranty,
+      },
+      buyback: {
+        isEligible: buybackEligible,
+        deviceAgeMonths,
+        tierPercentage: buybackTierPercentage,
+        estimatedPayout: buybackEstimatedPayout,
+        convenienceCharge,
+        ineligibilityReason: buybackIneligibilityReason,
+        activeRequest: activeBuyback ? {
+          id: activeBuyback.id,
+          requestNumber: activeBuyback.requestNumber,
+          status: activeBuyback.status,
+          initialQuotedAmount: Number(activeBuyback.initialQuotedAmount),
+          revisedQuotedAmount: activeBuyback.revisedQuotedAmount ? Number(activeBuyback.revisedQuotedAmount) : null,
+          finalPayoutAmount: activeBuyback.finalPayoutAmount ? Number(activeBuyback.finalPayoutAmount) : null,
+        } : null,
+      },
+      returnState: {
+        hasActiveReturn: Boolean(activeReturn),
+        returnRequest: activeReturn ? {
+          id: activeReturn.id,
+          returnNumber: activeReturn.returnNumber,
+          status: activeReturn.status,
+          type: activeReturn.type,
+        } : null,
+      },
+      businessProfile,
+      invoice: {
+        canDownload: canDownloadInvoice,
+        ineligibilityReason: invoiceIneligibilityReason,
+      },
+    };
+  }
+
   // 2. Guided Flow Configuration
   // ---------------------------------------------------------------------------
   async getSupportConfig() {
@@ -585,6 +1088,12 @@ export class SupportService {
     const firstResponseDueAt = new Date(Date.now() + firstResponseSlaMinutes * 60 * 1000);
 
     const ticket = await this.prisma.$transaction(async (tx) => {
+      const priorityStr = dto.priority || 'MEDIUM';
+      const weightMap: Record<string, number> = { URGENT: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+      const priorityWeight = weightMap[priorityStr] ?? 2;
+      const bizProfile = tx.businessProfile ? await tx.businessProfile.findUnique({ where: { userId } }) : null;
+      const isPriorityClient = Boolean(bizProfile?.priorityEnabled);
+
       const created = await tx.supportTicket.create({
         data: {
           ticketNumber,
@@ -595,7 +1104,9 @@ export class SupportService {
           category: dto.category.trim(),
           issueType: dto.issueType?.trim() || null,
           type: dto.type || 'QUERY',
-          priority: dto.priority || 'MEDIUM',
+          priority: priorityStr,
+          priorityWeight,
+          isPriorityClient,
           source: dto.source || 'web',
           status: 'NEW',
           callbackPhone: dto.callbackPhone?.trim() || null,
@@ -872,19 +1383,45 @@ export class SupportService {
 
     const order = await this.prisma.order.findUnique({
       where: { id: dto.orderId },
-      include: { items: true },
+      include: { items: true, deliveries: true },
     });
 
     if (!order) throw new NotFoundException('Order not found');
     if (order.userId !== userId) throw new ForbiddenException('You do not have permission to initiate return for this order');
 
+    // Block self-serve return for leased items (routed to support ticket)
+    const selectedItemIds = new Set(dto.items.map((i) => i.orderItemId));
+    const leasedItemsRequested = order.items.filter(
+      (item) => selectedItemIds.has(item.id) && item.purchaseMode === 'lease',
+    );
+    if (leasedItemsRequested.length > 0) {
+      throw new BadRequestException(
+        'Leased items cannot be returned through self-serve returns. Please raise a lease support ticket to arrange servicing, renewal, or device return.',
+      );
+    }
+
     const settings = await this.prisma.supportSettings.findUnique({
       where: { id: 'default' },
     });
     const returnWindowDays = settings?.returnWindowDays ?? 7;
-    const deliveryDate = order.status === 'DELIVERED' ? (order.updatedAt || order.createdAt) : order.createdAt;
-    const diffDays = (Date.now() - deliveryDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays > returnWindowDays) {
+
+    // Delivery date enforcement: must use Delivery.deliveredAt, never order.updatedAt
+    const delivery = order.deliveries && order.deliveries.length > 0 ? order.deliveries[0] : null;
+    const deliveredAt = delivery?.deliveredAt ?? (order.status === 'DELIVERED' ? order.createdAt : null);
+
+    if (!deliveredAt) {
+      throw new BadRequestException('Order must be delivered before initiating a return request');
+    }
+
+    // Calendar-based 7-day window in IST (+05:30)
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const deliveredIST = new Date(new Date(deliveredAt).getTime() + IST_OFFSET_MS);
+    const deadlineIST = new Date(deliveredIST);
+    deadlineIST.setUTCDate(deadlineIST.getUTCDate() + returnWindowDays);
+    deadlineIST.setUTCHours(23, 59, 59, 999);
+    const deadlineUTC = new Date(deadlineIST.getTime() - IST_OFFSET_MS);
+
+    if (Date.now() > deadlineUTC.getTime()) {
       throw new BadRequestException(`The ${returnWindowDays}-day return policy window has expired for this order`);
     }
 
@@ -960,12 +1497,17 @@ export class SupportService {
         const orderItem = order.items.find((oi) => oi.id === item.orderItemId);
         if (!orderItem) continue;
 
+        const effectiveUnitPrice =
+          (orderItem as any).netPrice && Number((orderItem as any).netPrice) > 0
+            ? (orderItem as any).netPrice
+            : orderItem.price;
+
         await tx.returnItem.create({
           data: {
             returnRequestId: created.id,
             orderItemId: item.orderItemId,
             quantity: item.quantity || 1,
-            unitPrice: orderItem.price,
+            unitPrice: effectiveUnitPrice,
             reason: item.reason?.trim() || dto.reason.trim(),
           },
         });
@@ -1510,11 +2052,16 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
       ];
     }
 
-    const [total, items, openCount, breachedCount] = await Promise.all([
+    const [total, rawItems, openCount, breachedCount] = await Promise.all([
       this.prisma.supportTicket.count({ where }),
       this.prisma.supportTicket.findMany({
         where,
-        orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [
+          { priorityWeight: 'desc' },
+          { isPriorityClient: 'desc' },
+          { firstResponseDueAt: 'asc' },
+          { createdAt: 'asc' },
+        ],
         skip,
         take: pageSize,
         include: {
@@ -1553,7 +2100,22 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
       }),
     ]);
 
-    const mappedItems = (items as any[]).map((t: any) => {
+    const PRIORITY_RANK: Record<string, number> = {
+      URGENT: 4,
+      HIGH: 3,
+      MEDIUM: 2,
+      LOW: 1,
+    };
+
+    // Sort in-memory as safety fallback (e.g. for mocked unit tests where SQL ORDER BY doesn't run)
+    const sortedItems = [...rawItems].sort((a, b) => {
+      const pA = a.priorityWeight ?? PRIORITY_RANK[String(a.priority).toUpperCase()] ?? 0;
+      const pB = b.priorityWeight ?? PRIORITY_RANK[String(b.priority).toUpperCase()] ?? 0;
+      if (pB !== pA) return pB - pA;
+      return 0;
+    });
+
+    const mappedItems = (sortedItems as any[]).map((t: any) => {
       const isBreached =
         t.slaBreached || (t.status === 'NEW' && t.firstResponseDueAt && new Date() > t.firstResponseDueAt && !t.firstResponseAt);
       return {
@@ -1651,6 +2213,8 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
       // Priority change
       if (dto.priority && dto.priority !== ticket.priority) {
         dataToUpdate.priority = dto.priority;
+        const weightMap: Record<string, number> = { URGENT: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+        dataToUpdate.priorityWeight = weightMap[dto.priority] ?? 2;
         eventsToCreate.push({
           ticketId: id,
           actorUserId: staffUserId,
@@ -2493,5 +3057,999 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
         byReason: returnsByReason.map((r) => ({ reason: r.reason, count: r._count.id })),
       },
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 13. Order Change Requests (Pre-dispatch address & phone changes)
+  // ---------------------------------------------------------------------------
+  async createOrderChangeRequest(userId: string, dto: CreateOrderChangeRequestDto) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: dto.orderId },
+      include: {
+        items: true,
+        deliveries: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order with ID ${dto.orderId} not found`);
+    }
+
+    if (order.userId !== userId) {
+      throw new ForbiddenException('You do not have access to this order');
+    }
+
+    const latestDelivery = order.deliveries?.[0];
+
+    // Pre-dispatch check for address/phone changes
+    if (dto.type === ChangeRequestTypeEnum.ADDRESS_CHANGE || dto.type === ChangeRequestTypeEnum.PHONE_CHANGE) {
+      if (!['PENDING', 'CONFIRMED', 'PROCESSING'].includes(order.status)) {
+        throw new BadRequestException('Contact and address changes are only permitted before the order is dispatched.');
+      }
+      if (latestDelivery && ['SHIPPED', 'DELIVERED'].includes(latestDelivery.status)) {
+        throw new BadRequestException('The shipment has already been dispatched. Address changes cannot be processed.');
+      }
+    }
+
+    // Check for duplicate pending change request of the same type
+    const existingPending = await this.prisma.orderChangeRequest.findFirst({
+      where: {
+        orderId: dto.orderId,
+        type: dto.type,
+        status: 'PENDING',
+      },
+    });
+
+    if (existingPending) {
+      throw new BadRequestException(`A pending ${dto.type.toLowerCase().replace('_', ' ')} request already exists for this order.`);
+    }
+
+    // Extract previous data for audit diff
+    let previousData: any = {};
+    if (dto.type === ChangeRequestTypeEnum.ADDRESS_CHANGE) {
+      previousData = order.shippingAddress || {};
+    } else if (dto.type === ChangeRequestTypeEnum.PHONE_CHANGE) {
+      previousData = { phone: order.phone || '' };
+    } else if (dto.orderItemId) {
+      const item = order.items.find((i) => i.id === dto.orderItemId);
+      previousData = {
+        purchaseMode: item?.purchaseMode,
+        tenureMonths: item?.tenureMonths,
+      };
+    }
+
+    // Generate requestNumber sequence LM-CR-XXXXXX
+    const seqResult = await this.prisma.$queryRaw<{ nextval: bigint }[]>`SELECT nextval('order_change_request_seq')`;
+    const seqNum = Number(seqResult[0]?.nextval || 1001);
+    const requestNumber = `LM-CR-${String(seqNum).padStart(6, '0')}`;
+
+    const created = await this.prisma.orderChangeRequest.create({
+      data: {
+        requestNumber,
+        orderId: dto.orderId,
+        orderItemId: dto.orderItemId || null,
+        userId,
+        type: dto.type,
+        status: 'PENDING',
+        requestedData: dto.requestedData,
+        previousData,
+      },
+      include: {
+        order: {
+          select: { id: true, orderNumber: true, status: true },
+        },
+      },
+    });
+
+    return created;
+  }
+
+  async getCustomerChangeRequests(userId: string, orderId?: string) {
+    const where: any = { userId };
+    if (orderId) where.orderId = orderId;
+    return this.prisma.orderChangeRequest.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        order: {
+          select: { id: true, orderNumber: true, status: true },
+        },
+      },
+    });
+  }
+
+  async getAdminChangeRequests(query: { status?: string; type?: string; page?: number; limit?: number }) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (query.status && query.status !== 'all') where.status = query.status;
+    if (query.type && query.type !== 'all') where.type = query.type;
+
+    const [total, items] = await Promise.all([
+      this.prisma.orderChangeRequest.count({ where }),
+      this.prisma.orderChangeRequest.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          order: {
+            select: { id: true, orderNumber: true, status: true, phone: true, shippingAddress: true },
+          },
+          user: {
+            select: { id: true, name: true, email: true, phone: true },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async reviewChangeRequest(id: string, adminUserId: string, dto: ReviewChangeRequestDto) {
+    const request = await this.prisma.orderChangeRequest.findUnique({ where: { id } });
+    if (!request) throw new NotFoundException(`Change request #${id} not found`);
+
+    if (request.status !== 'PENDING') {
+      throw new BadRequestException(`Cannot review change request with status ${request.status}`);
+    }
+
+    const updated = await this.prisma.orderChangeRequest.update({
+      where: { id },
+      data: {
+        status: dto.action,
+        reviewedBy: adminUserId,
+        reviewedAt: new Date(),
+        adminNotes: dto.adminNotes?.trim() || null,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: adminUserId,
+        action: `CHANGE_REQUEST_${dto.action}`,
+        entityType: 'ORDER_CHANGE_REQUEST',
+        entityId: id,
+        metadata: {
+          requestNumber: request.requestNumber,
+          type: request.type,
+          adminNotes: dto.adminNotes,
+        },
+      },
+    });
+
+    return updated;
+  }
+
+  async applyChangeRequest(id: string, adminUserId: string) {
+    const request = await this.prisma.orderChangeRequest.findUnique({
+      where: { id },
+    });
+
+    if (!request) throw new NotFoundException(`Change request #${id} not found`);
+
+    // Idempotent return
+    if (request.status === 'APPLIED') {
+      return { success: true, message: 'Change request was already applied.', request };
+    }
+
+    if (request.status !== 'APPROVED') {
+      throw new BadRequestException(`Cannot apply change request with status ${request.status}. Must be APPROVED first.`);
+    }
+
+    const requested = request.requestedData as any;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (request.type === 'ADDRESS_CHANGE') {
+        await tx.order.update({
+          where: { id: request.orderId },
+          data: { shippingAddress: requested },
+        });
+      } else if (request.type === 'PHONE_CHANGE') {
+        const phone = requested.phone || requested.customerPhone;
+        if (!phone) throw new BadRequestException('Phone number is missing from change request data');
+        await tx.order.update({
+          where: { id: request.orderId },
+          data: { phone },
+        });
+      }
+
+      await tx.orderChangeRequest.update({
+        where: { id },
+        data: {
+          status: 'APPLIED',
+          appliedAt: new Date(),
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: adminUserId,
+          action: 'APPLY_ORDER_CHANGE_REQUEST',
+          entityType: 'ORDER_CHANGE_REQUEST',
+          entityId: id,
+          metadata: {
+            requestNumber: request.requestNumber,
+            type: request.type,
+            appliedData: requested,
+          },
+        },
+      });
+    });
+
+    return { success: true, message: 'Change request applied successfully' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 14. Buyback Engine (Customer & Admin Operations)
+  // ---------------------------------------------------------------------------
+  async getBuybackSettingsAndTiers() {
+    const [settings, tiers] = await Promise.all([
+      this.prisma.buybackSettings.findUnique({ where: { id: 'singleton' } }),
+      this.prisma.buybackTier.findMany({
+        where: { isActive: true },
+        orderBy: { fromMonths: 'asc' },
+      }),
+    ]);
+
+    return {
+      settings: settings || {
+        quoteValidityDays: 15,
+        convenienceCharge: 0,
+        batteryMinPercent: 70,
+      },
+      tiers,
+    };
+  }
+
+  async createBuybackRequest(userId: string, dto: CreateBuybackRequestDto) {
+    const item = await this.prisma.orderItem.findUnique({
+      where: { id: dto.orderItemId },
+      include: {
+        order: {
+          include: {
+            deliveries: true,
+          },
+        },
+        product: true,
+      },
+    });
+
+    if (!item) throw new NotFoundException('Order item not found');
+    if (item.order.userId !== userId) throw new ForbiddenException('You do not have access to this order item');
+
+    const order = item.order;
+    const latestDelivery = order.deliveries?.[0];
+    const isDelivered = latestDelivery?.status === 'DELIVERED' || order.status === 'DELIVERED';
+    if (!isDelivered) {
+      throw new BadRequestException('Buyback guarantee is only available for delivered laptops.');
+    }
+
+    if (item.purchaseMode === 'lease') {
+      throw new BadRequestException('Rented or leased laptops are not eligible for buyback. Request a lease buyout instead.');
+    }
+
+    // Condition Checklist Verification
+    const cl = dto.conditionChecklist;
+    if (!cl.bootsToOs || !cl.motherboardWorking || !cl.displayIntact || !cl.originalCharger) {
+      throw new BadRequestException('All core functional checks (boots to OS, working motherboard, intact display, OEM charger) must be satisfied.');
+    }
+
+    const settings = await this.prisma.buybackSettings.findUnique({ where: { id: 'singleton' } });
+    const minBattery = settings?.batteryMinPercent ?? 70;
+    if (cl.batteryHealthPercent < minBattery) {
+      throw new BadRequestException(`Battery health must be at least ${minBattery}% for instant buyback guarantee.`);
+    }
+
+    // Age in IST calendar months from delivery
+    const deliveredAt = latestDelivery?.deliveredAt || order.createdAt;
+    const IST_OFFSET_MS = 5.5 * 3600 * 1000;
+    const delIst = new Date(deliveredAt.getTime() + IST_OFFSET_MS);
+    const now = new Date();
+    const nowIst = new Date(now.getTime() + IST_OFFSET_MS);
+
+    let months = (nowIst.getUTCFullYear() - delIst.getUTCFullYear()) * 12 + (nowIst.getUTCMonth() - delIst.getUTCMonth());
+    if (nowIst.getUTCDate() < delIst.getUTCDate()) {
+      months -= 1;
+    }
+    const deviceAgeMonths = Math.max(0, months);
+
+    if (deviceAgeMonths > 36) {
+      throw new BadRequestException('Buyback guarantee is valid up to 36 months from delivery date.');
+    }
+
+    // Query active tiers and match with upper bound inclusive
+    const activeTiers = await this.prisma.buybackTier.findMany({
+      where: { isActive: true },
+      orderBy: { fromMonths: 'asc' },
+    });
+
+    let matchedTier = null;
+    if (deviceAgeMonths <= 6) matchedTier = activeTiers.find((t) => t.toMonths === 6);
+    else if (deviceAgeMonths <= 12) matchedTier = activeTiers.find((t) => t.toMonths === 12);
+    else if (deviceAgeMonths <= 18) matchedTier = activeTiers.find((t) => t.toMonths === 18);
+    else if (deviceAgeMonths <= 24) matchedTier = activeTiers.find((t) => t.toMonths === 24);
+    else if (deviceAgeMonths <= 30) matchedTier = activeTiers.find((t) => t.toMonths === 30);
+    else if (deviceAgeMonths <= 36) matchedTier = activeTiers.find((t) => t.toMonths === 36);
+
+    if (!matchedTier) {
+      throw new BadRequestException('No active buyback tier found matching device age.');
+    }
+
+    const unitNumber = dto.unitNumber || 1;
+    const existingActive = await this.prisma.buybackRequest.findFirst({
+      where: {
+        orderItemId: dto.orderItemId,
+        unitNumber,
+        status: {
+          in: [
+            'REQUESTED',
+            'QUOTE_ISSUED',
+            'QUOTE_ACCEPTED',
+            'PICKUP_SCHEDULED',
+            'PICKED_UP',
+            'INSPECTING',
+            'INSPECTION_PASSED',
+            'REVISED_OFFER_PENDING',
+            'REVISED_OFFER_ACCEPTED',
+            'PAYOUT_PENDING',
+          ],
+        },
+      },
+    });
+
+    if (existingActive) {
+      throw new BadRequestException('A buyback request is already active for this device unit.');
+    }
+
+    const unitPrice = Number(item.price);
+    const convenienceCharge = settings ? Number(settings.convenienceCharge) : 0;
+    const tierPercent = Number(matchedTier.percentage);
+    const grossQuote = unitPrice * (tierPercent / 100);
+    const quotedAmount = Math.max(0, Math.round((grossQuote - convenienceCharge) * 100) / 100);
+
+    const quoteValidityDays = settings?.quoteValidityDays ?? 15;
+    const quoteExpiresAt = new Date(Date.now() + quoteValidityDays * 24 * 3600 * 1000);
+
+    // Payout details encryption and masking
+    let payoutKeyId: string | null = null;
+    let payoutEncryptedData: string | null = null;
+    let payoutMaskedAccount: string | null = null;
+    let payoutMaskedIfsc: string | null = null;
+    let payoutMaskedUpi: string | null = null;
+
+    if (dto.payoutDetails) {
+      const pd = dto.payoutDetails;
+      if (pd.method === 'BANK_TRANSFER' && pd.accountNumber && pd.ifscCode) {
+        const acc = pd.accountNumber.trim();
+        const ifsc = pd.ifscCode.trim().toUpperCase();
+        payoutMaskedAccount = `•••• •••• ${acc.slice(-4)}`;
+        payoutMaskedIfsc = `${ifsc.slice(0, 4)}••••`;
+        const payload = JSON.stringify({
+          method: 'BANK_TRANSFER',
+          accountNumber: acc,
+          ifscCode: ifsc,
+          accountHolderName: pd.accountHolderName?.trim() || '',
+        });
+        payoutEncryptedData = this.encryptionService ? this.encryptionService.encrypt(payload) : payload;
+      } else if (pd.method === 'UPI' && pd.upiId) {
+        const upi = pd.upiId.trim();
+        const parts = upi.split('@');
+        payoutMaskedUpi = `${upi.slice(0, 2)}••••@${parts[1] || 'upi'}`;
+        const payload = JSON.stringify({ method: 'UPI', upiId: upi });
+        payoutEncryptedData = this.encryptionService ? this.encryptionService.encrypt(payload) : payload;
+      }
+    }
+
+    // Generate sequence LM-BB-XXXXXX
+    const seqResult = await this.prisma.$queryRaw<{ nextval: bigint }[]>`SELECT nextval('buyback_request_seq')`;
+    const seqNum = Number(seqResult[0]?.nextval || 1001);
+    const requestNumber = `LM-BB-${String(seqNum).padStart(6, '0')}`;
+
+    const request = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.buybackRequest.create({
+        data: {
+          requestNumber,
+          orderId: order.id,
+          orderItemId: item.id,
+          unitNumber,
+          userId,
+          tierId: matchedTier.id,
+          originalNetPrice: unitPrice,
+          deviceAgeMonths,
+          tierPercentApplied: tierPercent,
+          convenienceCharge,
+          initialQuotedAmount: quotedAmount,
+          finalPayoutAmount: quotedAmount,
+          status: 'QUOTE_ACCEPTED',
+          quoteIssuedAt: now,
+          quoteExpiresAt,
+          quoteAcceptedAt: now,
+          customerAcceptedAt: now,
+          bootsToOs: cl.bootsToOs,
+          motherboardWorking: cl.motherboardWorking,
+          displayIntact: cl.displayIntact,
+          originalCharger: cl.originalCharger,
+          batteryHealthPercent: cl.batteryHealthPercent,
+          payoutKeyId,
+          payoutEncryptedData,
+          payoutMaskedAccount,
+          payoutMaskedIfsc,
+          payoutMaskedUpi,
+          payoutDetailsUpdatedAt: payoutEncryptedData ? now : null,
+        },
+      });
+
+      await tx.buybackEvent.create({
+        data: {
+          requestId: created.id,
+          actorId: userId,
+          actorRole: 'CUSTOMER',
+          eventType: 'QUOTE_ACCEPTED',
+          notes: `Customer accepted initial quote of ₹${quotedAmount} (${tierPercent}% of original invoice ₹${unitPrice})`,
+          metadata: {
+            ageMonths: deviceAgeMonths,
+            convenienceCharge,
+            batteryHealth: cl.batteryHealthPercent,
+          },
+        },
+      });
+
+      return created;
+    });
+
+    return request;
+  }
+
+  async getCustomerBuybacks(userId: string, orderId?: string) {
+    const where: any = { userId };
+    if (orderId) where.orderId = orderId;
+
+    const list = await this.prisma.buybackRequest.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        order: { select: { id: true, orderNumber: true } },
+        orderItem: {
+          select: {
+            id: true,
+            product: { select: { name: true, images: { where: { isPrimary: true }, take: 1 } } },
+          },
+        },
+        tier: true,
+      },
+    });
+
+    // Strip payout encrypted data
+    return list.map(({ payoutEncryptedData, ...safe }) => safe);
+  }
+
+  async getBuybackById(id: string, userId?: string, isStaff: boolean = false) {
+    const buyback = await this.prisma.buybackRequest.findUnique({
+      where: { id },
+      include: {
+        order: { select: { id: true, orderNumber: true, createdAt: true, shippingAddress: true } },
+        orderItem: {
+          select: {
+            id: true,
+            product: { select: { name: true, images: { where: { isPrimary: true }, take: 1 } } },
+          },
+        },
+        tier: true,
+        events: { orderBy: { createdAt: 'asc' } },
+        attachments: true,
+      },
+    });
+
+    if (!buyback) throw new NotFoundException(`Buyback request #${id} not found`);
+    if (!isStaff && buyback.userId !== userId) {
+      throw new ForbiddenException('You do not have access to this buyback request');
+    }
+
+    const { payoutEncryptedData, ...safe } = buyback;
+    return safe;
+  }
+
+  async acceptRevisedOffer(id: string, userId: string) {
+    const buyback = await this.prisma.buybackRequest.findUnique({ where: { id } });
+    if (!buyback) throw new NotFoundException('Buyback request not found');
+    if (buyback.userId !== userId) throw new ForbiddenException('Access denied');
+
+    if (buyback.status !== 'REVISED_OFFER_PENDING') {
+      throw new BadRequestException('No revised offer is currently pending customer response.');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.buybackRequest.update({
+        where: { id },
+        data: {
+          status: 'REVISED_OFFER_ACCEPTED',
+          finalPayoutAmount: buyback.revisedQuotedAmount,
+          customerAcceptedAt: new Date(),
+        },
+      });
+
+      await tx.buybackEvent.create({
+        data: {
+          requestId: id,
+          actorId: userId,
+          actorRole: 'CUSTOMER',
+          eventType: 'REVISED_OFFER_ACCEPTED',
+          notes: `Customer accepted revised offer of ₹${buyback.revisedQuotedAmount}`,
+        },
+      });
+
+      return res;
+    });
+
+    return updated;
+  }
+
+  async declineRevisedOffer(id: string, userId: string) {
+    const buyback = await this.prisma.buybackRequest.findUnique({ where: { id } });
+    if (!buyback) throw new NotFoundException('Buyback request not found');
+    if (buyback.userId !== userId) throw new ForbiddenException('Access denied');
+
+    if (buyback.status !== 'REVISED_OFFER_PENDING') {
+      throw new BadRequestException('No revised offer is currently pending customer response.');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.buybackRequest.update({
+        where: { id },
+        data: {
+          status: 'REVISED_OFFER_DECLINED',
+        },
+      });
+
+      await tx.buybackEvent.create({
+        data: {
+          requestId: id,
+          actorId: userId,
+          actorRole: 'CUSTOMER',
+          eventType: 'REVISED_OFFER_DECLINED',
+          notes: 'Customer declined revised offer. Laptop will be returned free of charge.',
+        },
+      });
+
+      return res;
+    });
+
+    return updated;
+  }
+
+  async getAdminBuybacks(query: { status?: string; search?: string; page?: number; limit?: number }) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (query.status && query.status !== 'all') where.status = query.status;
+    if (query.search && query.search.trim()) {
+      const q = query.search.trim();
+      where.OR = [
+        { requestNumber: { contains: q, mode: 'insensitive' } },
+        { order: { orderNumber: { contains: q, mode: 'insensitive' } } },
+        { user: { name: { contains: q, mode: 'insensitive' } } },
+        { user: { email: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [total, items] = await Promise.all([
+      this.prisma.buybackRequest.count({ where }),
+      this.prisma.buybackRequest.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          order: { select: { id: true, orderNumber: true } },
+          orderItem: {
+            select: {
+              id: true,
+              product: { select: { name: true } },
+            },
+          },
+          user: { select: { id: true, name: true, email: true, phone: true } },
+          tier: true,
+        },
+      }),
+    ]);
+
+    return {
+      items: items.map(({ payoutEncryptedData, ...safe }) => safe),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  async updateBuybackStatus(id: string, adminUserId: string, status: string, notes?: string) {
+    const buyback = await this.prisma.buybackRequest.findUnique({ where: { id } });
+    if (!buyback) throw new NotFoundException('Buyback request not found');
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.buybackRequest.update({
+        where: { id },
+        data: { status },
+      });
+
+      await tx.buybackEvent.create({
+        data: {
+          requestId: id,
+          actorId: adminUserId,
+          actorRole: 'STAFF',
+          eventType: 'STATUS_CHANGE',
+          notes: notes || `Status changed to ${status}`,
+          metadata: { oldStatus: buyback.status, newStatus: status },
+        },
+      });
+
+      return res;
+    });
+
+    return updated;
+  }
+
+  async submitBuybackInspection(id: string, adminUserId: string, dto: SubmitBuybackInspectionDto) {
+    const buyback = await this.prisma.buybackRequest.findUnique({ where: { id } });
+    if (!buyback) throw new NotFoundException('Buyback request not found');
+
+    const now = new Date();
+    const isPassing = dto.bootsToOs && dto.motherboardWorking && dto.displayIntact && dto.originalCharger && dto.batteryHealthPercent >= 70;
+
+    let targetStatus = 'INSPECTION_PASSED';
+    let revisedQuotedAmount: number | null = null;
+    let quoteExpiresAt: Date | undefined = undefined;
+
+    if (!isPassing || (dto.revisedQuotedAmount !== undefined && dto.revisedQuotedAmount !== null)) {
+      if (dto.revisedQuotedAmount !== undefined && dto.revisedQuotedAmount !== null) {
+        targetStatus = 'REVISED_OFFER_PENDING';
+        revisedQuotedAmount = dto.revisedQuotedAmount;
+        const settings = await this.prisma.buybackSettings.findUnique({ where: { id: 'singleton' } });
+        const validityDays = settings?.quoteValidityDays ?? 15;
+        quoteExpiresAt = new Date(Date.now() + validityDays * 24 * 3600 * 1000);
+      } else {
+        targetStatus = 'REJECTED';
+      }
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.buybackRequest.update({
+        where: { id },
+        data: {
+          bootsToOs: dto.bootsToOs,
+          motherboardWorking: dto.motherboardWorking,
+          displayIntact: dto.displayIntact,
+          originalCharger: dto.originalCharger,
+          batteryHealthPercent: dto.batteryHealthPercent,
+          inspectionNotes: dto.inspectionNotes?.trim() || null,
+          inspectedBy: adminUserId,
+          inspectedAt: now,
+          status: targetStatus,
+          revisedQuotedAmount,
+          quoteExpiresAt,
+          quoteVersion: revisedQuotedAmount ? buyback.quoteVersion + 1 : buyback.quoteVersion,
+        },
+      });
+
+      await tx.buybackEvent.create({
+        data: {
+          requestId: id,
+          actorId: adminUserId,
+          actorRole: 'STAFF',
+          eventType: targetStatus === 'REVISED_OFFER_PENDING' ? 'REVISED_OFFER_ISSUED' : 'INSPECTION_COMPLETED',
+          notes: dto.inspectionNotes || `Inspection completed with outcome: ${targetStatus}`,
+          metadata: {
+            isPassing,
+            revisedQuotedAmount,
+            batteryTested: dto.batteryHealthPercent,
+          },
+        },
+      });
+
+      return res;
+    });
+
+    return updated;
+  }
+
+  async dispatchBuybackReturn(id: string, adminUserId: string, dto: DispatchBuybackReturnDto) {
+    const buyback = await this.prisma.buybackRequest.findUnique({ where: { id } });
+    if (!buyback) throw new NotFoundException('Buyback request not found');
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.buybackRequest.update({
+        where: { id },
+        data: {
+          status: 'RETURNING_TO_CUSTOMER',
+          returnCourierName: dto.courierName.trim(),
+          returnTrackingNumber: dto.trackingNumber.trim(),
+          returnDispatchedAt: new Date(),
+        },
+      });
+
+      await tx.buybackEvent.create({
+        data: {
+          requestId: id,
+          actorId: adminUserId,
+          actorRole: 'STAFF',
+          eventType: 'RETURN_DISPATCHED',
+          notes: `Dispatched via ${dto.courierName} (AWB: ${dto.trackingNumber}) at zero cost to customer.`,
+          metadata: {
+            courier: dto.courierName,
+            tracking: dto.trackingNumber,
+          },
+        },
+      });
+
+      return res;
+    });
+
+    return updated;
+  }
+
+  async processBuybackPayout(id: string, adminUserId: string, dto: ProcessBuybackPayoutDto) {
+    const buyback = await this.prisma.buybackRequest.findUnique({ where: { id } });
+    if (!buyback) throw new NotFoundException('Buyback request not found');
+
+    const finalAmount = dto.finalAmount !== undefined ? dto.finalAmount : Number(buyback.finalPayoutAmount || buyback.initialQuotedAmount);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.buybackRequest.update({
+        where: { id },
+        data: {
+          status: 'PAID',
+          payoutUtr: dto.payoutUtr.trim(),
+          finalPayoutAmount: finalAmount,
+          payoutProcessedAt: new Date(),
+        },
+      });
+
+      await tx.buybackEvent.create({
+        data: {
+          requestId: id,
+          actorId: adminUserId,
+          actorRole: 'STAFF',
+          eventType: 'PAYOUT_PROCESSED',
+          notes: `Payout of ₹${finalAmount} processed with reference UTR: ${dto.payoutUtr.trim()}`,
+          metadata: {
+            utr: dto.payoutUtr.trim(),
+            amount: finalAmount,
+          },
+        },
+      });
+
+      return res;
+    });
+
+    return updated;
+  }
+
+  async decryptAdminBuybackPayout(id: string, adminUserId: string) {
+    const buyback = await this.prisma.buybackRequest.findUnique({ where: { id } });
+    if (!buyback) throw new NotFoundException('Buyback request not found');
+
+    if (!buyback.payoutEncryptedData) {
+      throw new BadRequestException('No encrypted payout details stored for this request');
+    }
+
+    let decryptedStr: string;
+    try {
+      decryptedStr = this.encryptionService
+        ? this.encryptionService.decrypt(buyback.payoutEncryptedData)
+        : buyback.payoutEncryptedData;
+    } catch (err: any) {
+      throw new BadRequestException('Failed to decrypt payout details: Invalid key or corrupted data');
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: adminUserId,
+        action: 'DECRYPT_BUYBACK_PAYOUT_DETAILS',
+        entityType: 'BUYBACK_REQUEST',
+        entityId: id,
+        metadata: { requestNumber: buyback.requestNumber },
+      },
+    });
+
+    try {
+      return JSON.parse(decryptedStr);
+    } catch {
+      return { raw: decryptedStr };
+    }
+  }
+
+  async getAdminBuybackSettings() {
+    const [settings, tiers] = await Promise.all([
+      this.prisma.buybackSettings.findUnique({ where: { id: 'singleton' } }),
+      this.prisma.buybackTier.findMany({ orderBy: { fromMonths: 'asc' } }),
+    ]);
+
+    return { settings, tiers };
+  }
+
+  async updateAdminBuybackSettings(adminUserId: string, dto: UpdateBuybackSettingsDto) {
+    const data: any = {};
+    if (dto.quoteValidityDays !== undefined) data.quoteValidityDays = dto.quoteValidityDays;
+    if (dto.convenienceCharge !== undefined) data.convenienceCharge = dto.convenienceCharge;
+    if (dto.batteryMinPercent !== undefined) data.batteryMinPercent = dto.batteryMinPercent;
+    data.updatedById = adminUserId;
+
+    const updated = await this.prisma.buybackSettings.upsert({
+      where: { id: 'singleton' },
+      create: {
+        id: 'singleton',
+        quoteValidityDays: dto.quoteValidityDays ?? 15,
+        convenienceCharge: dto.convenienceCharge ?? 0,
+        batteryMinPercent: dto.batteryMinPercent ?? 70,
+        updatedById: adminUserId,
+      },
+      update: data,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: adminUserId,
+        action: 'UPDATE_BUYBACK_SETTINGS',
+        entityType: 'BUYBACK_SETTINGS',
+        entityId: 'singleton',
+        metadata: dto as any,
+      },
+    });
+
+    return updated;
+  }
+
+  async updateAdminBuybackTiers(adminUserId: string, tiers: BuybackTierInputDto[]) {
+    // Validate bounds
+    for (const t of tiers) {
+      if (t.fromMonths >= t.toMonths) {
+        throw new BadRequestException(`Invalid tier bounds: ${t.fromMonths} must be less than ${t.toMonths}`);
+      }
+      if (t.percentage < 0 || t.percentage > 100) {
+        throw new BadRequestException(`Invalid percentage ${t.percentage}%`);
+      }
+    }
+
+    // Inactivate existing active tiers and insert new active tier snapshots
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.buybackTier.updateMany({
+        where: { isActive: true },
+        data: { isActive: false },
+      });
+
+      for (const t of tiers) {
+        await tx.buybackTier.create({
+          data: {
+            fromMonths: t.fromMonths,
+            toMonths: t.toMonths,
+            percentage: t.percentage,
+            effectiveDate: now,
+            isActive: true,
+            createdById: adminUserId,
+          },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: adminUserId,
+          action: 'UPDATE_BUYBACK_TIERS',
+          entityType: 'BUYBACK_TIER',
+          entityId: 'all',
+          metadata: { newTiers: tiers as any },
+        },
+      });
+    });
+
+    return this.prisma.buybackTier.findMany({
+      where: { isActive: true },
+      orderBy: { fromMonths: 'asc' },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // 15. Corporate Business Profiles & Staff Client Notes
+  // ---------------------------------------------------------------------------
+  async getBusinessProfile(userId: string) {
+    return this.prisma.businessProfile.findUnique({
+      where: { userId },
+    });
+  }
+
+  async upsertBusinessProfile(adminUserId: string, userId: string, dto: any) {
+    const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+    const gstin = dto.gstin?.trim().toUpperCase();
+    if (!gstin || !GSTIN_REGEX.test(gstin)) {
+      throw new BadRequestException('Invalid GSTIN format. Must be a valid 15-character Indian GSTIN.');
+    }
+
+    const priorityEnabled = dto.priorityEnabled !== undefined ? Boolean(dto.priorityEnabled) : true;
+
+    const profile = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.businessProfile.upsert({
+        where: { userId },
+        create: {
+          userId,
+          companyName: dto.companyName.trim(),
+          gstin,
+          billingAddress: dto.billingAddress,
+          contactPerson: dto.contactPerson.trim(),
+          contactPhone: dto.contactPhone.trim(),
+          contactEmail: dto.contactEmail.trim().toLowerCase(),
+          priorityEnabled,
+          accountManager: dto.accountManager?.trim() || null,
+        },
+        update: {
+          companyName: dto.companyName.trim(),
+          gstin,
+          billingAddress: dto.billingAddress,
+          contactPerson: dto.contactPerson.trim(),
+          contactPhone: dto.contactPhone.trim(),
+          contactEmail: dto.contactEmail.trim().toLowerCase(),
+          priorityEnabled,
+          accountManager: dto.accountManager?.trim() || null,
+        },
+      });
+
+      // Synchronize active support tickets priority flag
+      await tx.supportTicket.updateMany({
+        where: {
+          userId,
+          status: { in: ['NEW', 'OPEN', 'WAITING_ON_CUSTOMER', 'IN_PROGRESS', 'REOPENED'] },
+        },
+        data: {
+          isPriorityClient: priorityEnabled,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: adminUserId,
+          action: 'UPSERT_BUSINESS_PROFILE',
+          entityType: 'BUSINESS_PROFILE',
+          entityId: p.id,
+          metadata: { userId, companyName: dto.companyName, priorityEnabled },
+        },
+      });
+
+      return p;
+    });
+
+    return profile;
+  }
+
+  async getClientNotes(userId: string) {
+    return this.prisma.clientNote.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createClientNote(adminUserId: string, adminName: string, adminRole: string, userId: string, note: string) {
+    if (!note || !note.trim()) {
+      throw new BadRequestException('Note content cannot be empty');
+    }
+
+    return this.prisma.clientNote.create({
+      data: {
+        userId,
+        authorId: adminUserId,
+        authorName: adminName || 'Staff',
+        authorRole: adminRole || 'ADMIN',
+        note: note.trim(),
+      },
+    });
   }
 }

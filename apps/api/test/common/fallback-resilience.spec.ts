@@ -4,6 +4,7 @@ import { AddressService } from '../../src/modules/address/address.service';
 import { NotificationService } from '../../src/modules/notifications/notification.service';
 import { SupportService } from '../../src/modules/support/support.service';
 import { OrderService } from '../../src/modules/order/order.service';
+import { createNoTaxService } from '../helpers/no-tax-service';
 
 describe('Production Database Resilience & Fallback Prevention', () => {
   const originalEnv = process.env;
@@ -197,7 +198,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
 
         const productService = {} as any;
 
-        const service = new OrderService(prisma, cartService, productService, notificationService, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any);
+        const service = new OrderService(prisma, cartService, productService, notificationService, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any, createNoTaxService());
 
         await expect(
           service.createOrder(
@@ -229,7 +230,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
 
         const cartService = { getCart: jest.fn().mockResolvedValue(mockCart), clearCart: jest.fn() } as any;
         const prisma = { $transaction: jest.fn() } as any;
-        const service = new OrderService(prisma, cartService, {} as any, {} as any, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any);
+        const service = new OrderService(prisma, cartService, {} as any, {} as any, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any, createNoTaxService());
 
         // Missing email
         await expect(
@@ -282,7 +283,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
           dispatchOrderUpdate: jest.fn().mockResolvedValue(undefined),
         } as any;
 
-        const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn(), validateOrderDiscount: jest.fn().mockResolvedValue(null) } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any);
+        const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn(), validateOrderDiscount: jest.fn().mockResolvedValue(null) } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any, createNoTaxService());
 
         const order = await service.createOrder(
           'user-1',
@@ -297,7 +298,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
         expect(order.carrier).toBeNull();
         expect(order.trackingNumber).toBeNull();
         expect(order.email).toBe('buyer@example.com');
-        expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 'cart-1' } });
+        expect(prisma.cartItem.deleteMany).not.toHaveBeenCalled();
       });
     });
   });
@@ -338,6 +339,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
       };
       const prisma = {
         $queryRaw: jest.fn().mockResolvedValue([{ nextval: 1234 }]),
+        supportSettings: { findUnique: jest.fn().mockResolvedValue(null) },
         $transaction: jest.fn((callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
       } as any;
 
@@ -375,7 +377,7 @@ describe('Production Database Resilience & Fallback Prevention', () => {
         dispatchOrderUpdate: jest.fn().mockResolvedValue(undefined),
       } as any;
 
-      const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any);
+      const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any, createNoTaxService());
 
       await expect(
         service.createOrder(

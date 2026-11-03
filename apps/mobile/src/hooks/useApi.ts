@@ -70,13 +70,17 @@ export function useAddToCart() {
       purchaseMode,
       configuration,
       hasWarranty,
+      variantId,
+      tenureMonths,
     }: {
       productId: string;
       quantity?: number;
       purchaseMode?: 'sell' | 'lease';
       configuration?: string;
       hasWarranty?: boolean;
-    }) => getClient().addToCart(productId, quantity, purchaseMode, configuration, hasWarranty),
+      variantId?: string;
+      tenureMonths?: 1 | 3 | 6 | 12 | 24;
+    }) => getClient().addToCart(productId, quantity, purchaseMode, configuration, hasWarranty, variantId, tenureMonths),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cart'] });
     },
@@ -288,6 +292,75 @@ export function useCancelOrder() {
   });
 }
 
+export function useCreateRazorpayOrder() {
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (orderId: string) => getClient().createRazorpayOrder(orderId),
+  });
+}
+
+export function useCreateRazorpaySubscription() {
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (orderId: string) => getClient().createRazorpaySubscription(orderId),
+  });
+}
+
+export function useVerifyRazorpayPayment() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (payload: {
+      orderId: string;
+      razorpayOrderId: string;
+      razorpayPaymentId: string;
+      razorpaySignature: string;
+    }) => getClient().verifyRazorpayPayment(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['cart'] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+    },
+  });
+}
+
+export function useVerifyRentalSubscription() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (payload: {
+      orderId: string;
+      razorpaySubscriptionId: string;
+      razorpayPaymentId: string;
+      razorpaySignature: string;
+    }) => getClient().verifyRentalSubscription(payload),
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['order', variables.orderId] });
+      queryClient.invalidateQueries({ queryKey: ['cart'] });
+    },
+  });
+}
+
+export function useRequestRentalTermination() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (subscriptionId: string) => getClient().requestRentalTermination(subscriptionId),
+    onSuccess: (_result, subscriptionId) => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['rental', subscriptionId] });
+    },
+  });
+}
+
+export function useVerifyPincode() {
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (pincode: string) => getClient().verifyPincode(pincode),
+  });
+}
+
 // Profile hooks
 export function useProfile() {
   const { getClient, isAuthenticated } = useAuth();
@@ -362,6 +435,32 @@ export function useValidateDiscount() {
   return useMutation({
     mutationFn: ({ code, cartTotal }: { code: string; cartTotal: number }) =>
       getClient().validateDiscount(code, cartTotal),
+  });
+}
+
+export function useAvailableCoupons(payload: {
+  items?: any[];
+  referralCode?: string;
+  paymentMethod?: string;
+}, options?: { enabled?: boolean }) {
+  const { getClient } = useAuth();
+  return useQuery({
+    queryKey: ['availableCoupons', payload],
+    queryFn: () => getClient().getAvailableCoupons(payload),
+    staleTime: 30000,
+    enabled: options?.enabled !== false,
+  });
+}
+
+export function usePreviewCoupon() {
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (payload: {
+      code: string;
+      items?: any[];
+      referralCode?: string;
+      paymentMethod?: string;
+    }) => getClient().previewCoupon(payload),
   });
 }
 
@@ -667,5 +766,111 @@ export function useWarrantyStatus(orderItemId: string) {
   });
 }
 
+// Situation-Aware Support & Change Requests Hooks
+export function useItemSituation(orderItemId: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['item-situation', orderItemId],
+    queryFn: () => getClient().getItemSituation(orderItemId),
+    enabled: isAuthenticated && !!orderItemId,
+  });
+}
 
+export function useCreateChangeRequest() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (data: {
+      orderId: string;
+      orderItemId?: string;
+      type: string;
+      requestedData: Record<string, any>;
+    }) => getClient().createChangeRequest(data),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['change-requests', variables.orderId] });
+      queryClient.invalidateQueries({ queryKey: ['order', variables.orderId] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
 
+export function useCustomerChangeRequests(orderId?: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['change-requests', orderId],
+    queryFn: () => getClient().getCustomerChangeRequests(orderId),
+    enabled: isAuthenticated,
+  });
+}
+
+// Buyback Guarantee Hooks
+export function useBuybackConfig() {
+  const { getClient } = useAuth();
+  return useQuery({
+    queryKey: ['buyback-config'],
+    queryFn: () => getClient().getBuybackConfig(),
+    staleTime: 1000 * 60 * 15,
+  });
+}
+
+export function useCreateBuybackRequest() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (data: {
+      orderId: string;
+      orderItemId: string;
+      unitNumber?: number;
+      conditionChecklist: any;
+      payoutDetails?: any;
+      photos?: string[];
+      pickupAddress?: any;
+    }) => getClient().createBuybackRequest(data),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['buyback-requests', variables.orderId] });
+      queryClient.invalidateQueries({ queryKey: ['item-situation', variables.orderItemId] });
+    },
+  });
+}
+
+export function useCustomerBuybacks(orderId?: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['buyback-requests', orderId],
+    queryFn: () => getClient().getCustomerBuybacks(orderId),
+    enabled: isAuthenticated,
+  });
+}
+
+export function useBuybackById(id: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['buyback-detail', id],
+    queryFn: () => getClient().getBuybackById(id),
+    enabled: isAuthenticated && !!id,
+  });
+}
+
+export function useAcceptRevisedBuyback() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (id: string) => getClient().acceptRevisedBuybackOffer(id),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['buyback-detail', id] });
+      queryClient.invalidateQueries({ queryKey: ['buyback-requests'] });
+    },
+  });
+}
+
+export function useDeclineRevisedBuyback() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (id: string) => getClient().declineRevisedBuybackOffer(id),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['buyback-detail', id] });
+      queryClient.invalidateQueries({ queryKey: ['buyback-requests'] });
+    },
+  });
+}

@@ -17,11 +17,36 @@ import { RolesGuard } from '../../guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
 import { SavePayoutDetailsDto } from './dto/save-payout-details.dto';
 import { WithdrawRequestDto } from './dto/withdraw-request.dto';
+import { AvailableCouponsDto, PreviewCouponDto } from './dto/coupon.dto';
 
 @ApiTags('discount')
-@Controller(['discount', 'discounts'])
+@Controller(['discount', 'discounts', 'coupons'])
 export class DiscountController {
   constructor(private readonly discountService: DiscountService) {}
+
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Post('available')
+  @ApiOperation({ summary: 'List all available and unlockable coupons for cart items' })
+  @ApiResponse({ status: 200, description: 'Available and ineligible coupons' })
+  async getAvailableCoupons(
+    @GetUser() user: any,
+    @Body() dto: AvailableCouponsDto,
+  ) {
+    return this.discountService.getAvailableCoupons(user?.id || null, dto);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Post('preview')
+  @ApiOperation({ summary: 'Preview discount calculation and line allocations for a coupon' })
+  @ApiResponse({ status: 200, description: 'Coupon preview calculation' })
+  async previewCoupon(
+    @GetUser() user: any,
+    @Body() dto: PreviewCouponDto,
+  ) {
+    return this.discountService.previewCoupon(user?.id || null, dto);
+  }
 
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60000 } })
@@ -99,7 +124,6 @@ export class DiscountController {
     @GetUser() user: any,
     @Body() dto: WithdrawRequestDto,
   ) {
-    return this.discountService.requestWithdrawal(user.id, dto.amount);
+    return this.discountService.requestWithdrawal(user.id, dto);
   }
 }
-

@@ -16,7 +16,7 @@ import { useSupportConfig } from '../../../lib/support-config';
 import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../../lib/config';
 import CorporateQuoteModal from '../../../components/CorporateQuoteModal';
 import QualityPromiseSection from '../../../components/QualityPromiseSection';
-import { BUYBACK_POLICY, calculateRentalPlans, RentalPlanCalculation, RentalTenureMonths } from '@laptopmitra/types';
+import { BUYBACK_POLICY, RentalTenureMonths } from '@laptopmitra/types';
 import {
   Check,
   ShieldCheck,
@@ -81,16 +81,19 @@ function formatAttributeLabel(key: string): string {
     condition: 'Condition',
     warranty: 'Warranty',
   };
-  return map[key.toLowerCase()] || key
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return (
+    map[key.toLowerCase()] ||
+    key
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
 }
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { addItem } = useCart();
+  const { addItem, items: cartItems } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
   const { user } = useAuth();
   const { data: supportConfig } = useSupportConfig();
@@ -102,7 +105,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [quantity, setQuantity] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [added, setAdded] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'specs' | 'inspection' | 'box' | 'warranty' | 'faq'>('specs');
+  const [activeTab, setActiveTab] = useState<'specs' | 'inspection' | 'box' | 'warranty' | 'faq'>(
+    'specs',
+  );
   const [procurementModel, setProcurementModel] = useState<'buy' | 'lease'>('buy');
   const [selectedRentalTenure, setSelectedRentalTenure] = useState<RentalTenureMonths>(12);
   const [hasWarranty, setHasWarranty] = useState<boolean>(false);
@@ -119,34 +124,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       try {
         const prod = await api.getProduct(resolvedParams.id);
         const rawVariants = prod.variants?.filter((variant) => variant.isActive) || [];
-        const activeVariants = rawVariants.length > 0
-          ? rawVariants
-          : [
-              {
-                id: `var-${prod.id}-base`,
-                productId: prod.id,
-                sku: prod.sku,
-                name: `${prod.metadata?.ram || '8GB RAM'} / ${prod.metadata?.storage || '256GB SSD'}`,
-                price: Number(prod.price),
-                compareAtPrice: prod.compareAtPrice ? Number(prod.compareAtPrice) : null,
-                stock: prod.stock ?? 10,
-                isActive: true,
-                isDefault: true,
-                attributes: {
-                  ram: prod.metadata?.ram ? String(prod.metadata.ram).split(' ')[0] : '8GB',
-                  storage: prod.metadata?.storage ? String(prod.metadata.storage).split(' ')[0] : '256GB SSD',
-                  processor: prod.metadata?.processor ? String(prod.metadata.processor).split(' ')[0] : 'Standard',
-                },
-                images: [],
-              } as ProductVariant,
-            ];
-        prod.variants = activeVariants;
+        prod.variants = rawVariants;
         setProduct(prod);
         const defaultVariant =
-          activeVariants.find((variant) => variant.isDefault && (variant.stock > 0 || variant.allowBackorder)) ||
-          activeVariants.find((variant) => variant.stock > 0 || variant.allowBackorder) ||
-          activeVariants.find((variant) => variant.isDefault) ||
-          activeVariants[0];
+          rawVariants.find(
+            (variant) => variant.isDefault && (variant.stock > 0 || variant.allowBackorder),
+          ) ||
+          rawVariants.find((variant) => variant.stock > 0 || variant.allowBackorder) ||
+          rawVariants.find((variant) => variant.isDefault) ||
+          rawVariants[0];
 
         setSelectedVariantId(defaultVariant?.id || '');
         const variantImages = defaultVariant?.images || [];
@@ -185,6 +171,16 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   }, [product, selectedVariantId]);
 
   useEffect(() => {
+    const plans =
+      product?.variants?.find((variant) => variant.id === selectedVariantId)?.rentalPlans ??
+      product?.rentalPlans ??
+      [];
+    if (plans.length && !plans.some((plan) => plan.tenureMonths === selectedRentalTenure)) {
+      setSelectedRentalTenure(plans[0].tenureMonths);
+    }
+  }, [product, selectedVariantId, selectedRentalTenure]);
+
+  useEffect(() => {
     if (!product) return;
     const variant = product.variants?.find((item) => item.id === selectedVariantId);
     const stock = variant?.stock ?? product.stock;
@@ -204,7 +200,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       <CustomerLayout>
         <div className="max-w-7xl mx-auto px-4 py-24 text-center">
           <div className="w-12 h-12 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm font-semibold text-[#0B1F4B]">Loading certified laptop specifications...</p>
+          <p className="text-sm font-semibold text-[#0B1F4B]">
+            Loading certified laptop specifications...
+          </p>
         </div>
       </CustomerLayout>
     );
@@ -219,7 +217,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           </div>
           <h2 className="text-2xl font-bold text-[#0B1F4B]">Laptop Listing Not Found</h2>
           <p className="text-sm text-slate-600">
-            The laptop you are looking for is either out of stock or no longer listed in our inventory.
+            The laptop you are looking for is either out of stock or no longer listed in our
+            inventory.
           </p>
           <Link
             href="/products"
@@ -235,28 +234,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const isWish = isInWishlist(product.id);
   const isLease = procurementModel === 'lease';
   const rawVariants = product.variants?.filter((variant) => variant.isActive) || [];
-  const activeVariants = rawVariants.length > 0
-    ? rawVariants
-    : [
-        {
-          id: `var-${product.id}-base`,
-          productId: product.id,
-          sku: product.sku,
-          name: `${product.metadata?.ram || '8GB RAM'} / ${product.metadata?.storage || '256GB SSD'}`,
-          price: Number(product.price),
-          compareAtPrice: product.compareAtPrice ? Number(product.compareAtPrice) : null,
-          stock: product.stock ?? 10,
-          isActive: true,
-          isDefault: true,
-          attributes: {
-            ram: product.metadata?.ram ? String(product.metadata.ram).split(' ')[0] : '8GB',
-            storage: product.metadata?.storage ? String(product.metadata.storage).split(' ')[0] : '256GB SSD',
-            processor: product.metadata?.processor ? String(product.metadata.processor).split(' ')[0] : 'Standard',
-          },
-          images: [],
-        } as ProductVariant,
-      ];
-  const selectedVariant = product.variants?.find((variant) => variant.id === selectedVariantId && variant.isActive) || activeVariants[0];
+  const activeVariants = rawVariants;
+  const selectedVariant = activeVariants.find((variant) => variant.id === selectedVariantId);
   const availableStock = selectedVariant?.stock ?? product.stock;
   const allowBackorder = selectedVariant?.allowBackorder ?? product.allowBackorder ?? false;
   const outOfStock = availableStock <= 0 && !allowBackorder;
@@ -265,34 +244,38 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     selectedVariant?.compareAtPrice != null
       ? Number(selectedVariant.compareAtPrice)
       : selectedVariant
-      ? null
-      : product.compareAtPrice
-      ? Number(product.compareAtPrice)
-      : null;
+        ? null
+        : product.compareAtPrice
+          ? Number(product.compareAtPrice)
+          : null;
   const savings = compareNum && compareNum > priceNum ? compareNum - priceNum : 0;
-  const discountPercent = compareNum && compareNum > priceNum ? Math.round((savings / compareNum) * 100) : 0;
+  const discountPercent =
+    compareNum && compareNum > priceNum ? Math.round((savings / compareNum) * 100) : 0;
 
-  // Lease & Rental pricing: authoritative calculation based on database baseline
-  const leasePrice = selectedVariant ? selectedVariant.leasePriceMonthly : product.leasePriceMonthly;
-  const hasLeasePrice = leasePrice !== null && leasePrice !== undefined && Number(leasePrice) > 0;
-  const baseLeasePrice = hasLeasePrice ? Number(leasePrice) : null;
-
-  const rentalPlans = baseLeasePrice ? calculateRentalPlans(baseLeasePrice) : [];
-  const activeRentalPlan = rentalPlans.find((p) => p.tenureMonths === selectedRentalTenure) || rentalPlans.find((p) => p.isBestValue) || rentalPlans[0];
-  const activeMonthlyRate = activeRentalPlan?.monthlyRate ?? baseLeasePrice;
+  const rentalPlans = selectedVariant?.rentalPlans ?? product.rentalPlans ?? [];
+  const hasLeasePrice = rentalPlans.length > 0;
+  const activeRentalPlan =
+    rentalPlans.find((plan) => plan.tenureMonths === selectedRentalTenure) || rentalPlans[0];
+  const activeMonthlyRate = activeRentalPlan?.monthlyPrice;
   const currentUnitPrice = isLease ? activeMonthlyRate : priceNum;
 
   const bulkPrice = selectedVariant
     ? null
     : isLease
-    ? product.bulkLeasePrice
-      ? Number(product.bulkLeasePrice)
-      : null
-    : product.bulkSellPrice
-    ? Number(product.bulkSellPrice)
-    : null;
+      ? product.bulkLeasePrice
+        ? Number(product.bulkLeasePrice)
+        : null
+      : product.bulkSellPrice
+        ? Number(product.bulkSellPrice)
+        : null;
 
   const handleAddToCart = () => {
+    if (cartItems.some((item) => (item.purchaseMode === 'lease') !== isLease)) {
+      window.alert(
+        'Buy and rent items must be kept in separate carts. Remove the existing cart items first.',
+      );
+      return;
+    }
     if (isLease && !hasLeasePrice) {
       setCorporateModalOpen(true);
       return;
@@ -300,6 +283,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     addItem(product, quantity, {
       purchaseMode: isLease ? 'lease' : 'sell',
       hasWarranty: !isLease && hasWarranty,
+      ...(isLease ? { tenureMonths: selectedRentalTenure } : {}),
       ...(selectedVariant ? { variantId: selectedVariant.id } : {}),
     });
     setAdded(true);
@@ -307,6 +291,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   };
 
   const handleBuyNow = () => {
+    if (cartItems.some((item) => (item.purchaseMode === 'lease') !== isLease)) {
+      window.alert(
+        'Buy and rent items must be kept in separate carts. Remove the existing cart items first.',
+      );
+      return;
+    }
     if (isLease && !hasLeasePrice) {
       setCorporateModalOpen(true);
       return;
@@ -314,6 +304,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     addItem(product, quantity, {
       purchaseMode: isLease ? 'lease' : 'sell',
       hasWarranty: !isLease && hasWarranty,
+      ...(isLease ? { tenureMonths: selectedRentalTenure } : {}),
       ...(selectedVariant ? { variantId: selectedVariant.id } : {}),
     });
     router.push('/checkout');
@@ -326,8 +317,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
-  const galleryImages = selectedVariant?.images?.length ? selectedVariant.images : product.images || [];
-  const displayImageSrc = selectedImage || galleryImages[0]?.url || '/images/generated/cat-business.webp';
+  const galleryImages = selectedVariant?.images?.length
+    ? selectedVariant.images
+    : product.images || [];
+  const displayImageSrc =
+    selectedImage || galleryImages[0]?.url || '/images/generated/cat-business.webp';
 
   const buybackPlans = BUYBACK_POLICY.tiers.map((tier) => ({
     ...tier,
@@ -342,7 +336,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   ).sort();
 
   const chooseVariantForAttribute = (attributeKey: string, value: string) => {
-    const matching = activeVariants.filter((variant) => String(variant.attributes[attributeKey]) === value);
+    const matching = activeVariants.filter(
+      (variant) => String(variant.attributes[attributeKey]) === value,
+    );
     if (!matching.length) return;
 
     // Try to find a variant that preserves as many existing attribute choices as possible
@@ -372,18 +368,34 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   };
 
   // Structured Blue-and-White Specification Themed Cards
-  const activeRam = getVariantSpecValue(selectedVariant, 'ram', product.metadata?.ram) || '16GB DDR5';
-  const activeStorage = getVariantSpecValue(selectedVariant, 'storage', product.metadata?.storage) || '512GB NVMe SSD';
-  const activeProcessor = getVariantSpecValue(selectedVariant, 'processor', product.metadata?.processor) || 'Intel Core / Apple Silicon';
-  const activeGraphics = getVariantSpecValue(selectedVariant, 'graphics', product.metadata?.graphics) || 'Integrated / Dedicated';
-  const activeDisplay = getVariantSpecValue(selectedVariant, 'display', product.metadata?.display) || 'Full HD+ Anti-Glare IPS';
-  const activeBattery = getVariantSpecValue(selectedVariant, 'batteryHealth', product.metadata?.batteryHealth) || '95%+ Original Battery Health';
-  const activeOs = getVariantSpecValue(selectedVariant, 'os', product.metadata?.os) || 'Genuine Windows 11 Pro / macOS';
-  const activeCondition = getVariantSpecValue(selectedVariant, 'condition', product.metadata?.condition) || 'Grade A+ Pristine (Like New)';
+  const activeRam =
+    getVariantSpecValue(selectedVariant, 'ram', product.metadata?.ram) || '16GB DDR5';
+  const activeStorage =
+    getVariantSpecValue(selectedVariant, 'storage', product.metadata?.storage) || '512GB NVMe SSD';
+  const activeProcessor =
+    getVariantSpecValue(selectedVariant, 'processor', product.metadata?.processor) ||
+    'Intel Core / Apple Silicon';
+  const activeGraphics =
+    getVariantSpecValue(selectedVariant, 'graphics', product.metadata?.graphics) ||
+    'Integrated / Dedicated';
+  const activeDisplay =
+    getVariantSpecValue(selectedVariant, 'display', product.metadata?.display) ||
+    'Full HD+ Anti-Glare IPS';
+  const activeBattery =
+    getVariantSpecValue(selectedVariant, 'batteryHealth', product.metadata?.batteryHealth) ||
+    '95%+ Original Battery Health';
+  const activeOs =
+    getVariantSpecValue(selectedVariant, 'os', product.metadata?.os) ||
+    'Genuine Windows 11 Pro / macOS';
+  const activeCondition =
+    getVariantSpecValue(selectedVariant, 'condition', product.metadata?.condition) ||
+    'Grade A+ Pristine (Like New)';
   const warrantyMonths = supportConfig
     ? Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))
     : null;
-  const warrantyLabel = warrantyMonths ? `${warrantyMonths}-Month Doorstep Warranty` : 'the configured warranty period';
+  const warrantyLabel = warrantyMonths
+    ? `${warrantyMonths}-Month Doorstep Warranty`
+    : 'the configured warranty period';
   const returnLabel = supportConfig?.returnWindowDays
     ? `${supportConfig.returnWindowDays}-Day Replacement`
     : 'Return and replacement policy';
@@ -465,27 +477,37 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     <CustomerLayout>
       <div className="bg-[#F8FAFC] min-h-screen py-6 sm:py-8 lg:py-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          
           {/* Breadcrumbs */}
-          <nav aria-label="Breadcrumb" className="flex items-center space-x-2 text-xs text-slate-500 mb-4 sm:mb-6 overflow-x-auto whitespace-nowrap py-1">
-            <Link href="/" className="hover:text-[#2563EB] transition-colors font-medium">Home</Link>
+          <nav
+            aria-label="Breadcrumb"
+            className="flex items-center space-x-2 text-xs text-slate-500 mb-4 sm:mb-6 overflow-x-auto whitespace-nowrap py-1"
+          >
+            <Link href="/" className="hover:text-[#2563EB] transition-colors font-medium">
+              Home
+            </Link>
             <span className="text-slate-400">/</span>
-            <Link href="/products" className="hover:text-[#2563EB] transition-colors font-medium">Certified Refurbished Laptops</Link>
+            <Link href="/products" className="hover:text-[#2563EB] transition-colors font-medium">
+              Certified Refurbished Laptops
+            </Link>
             {product.category && (
               <>
                 <span className="text-slate-400">/</span>
-                <Link href={`/products?category=${product.category.slug}`} className="hover:text-[#2563EB] transition-colors font-medium">
+                <Link
+                  href={`/products?category=${product.category.slug}`}
+                  className="hover:text-[#2563EB] transition-colors font-medium"
+                >
                   {product.category.name}
                 </Link>
               </>
             )}
             <span className="text-slate-400">/</span>
-            <span className="text-slate-800 font-bold truncate max-w-[200px] sm:max-w-xs">{product.name}</span>
+            <span className="text-slate-800 font-bold truncate max-w-[200px] sm:max-w-xs">
+              {product.name}
+            </span>
           </nav>
 
           {/* MAIN PRODUCT VIEWPORT */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-start">
-            
             {/* LEFT COLUMN: Gallery & Certification (7 cols) */}
             <div className="lg:col-span-6 xl:col-span-7 space-y-3.5 lg:sticky lg:top-24 self-start">
               {/* Main Hero Image in Clean Blue-and-White Frame */}
@@ -513,7 +535,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 {/* Doorstep Warranty Floater */}
                 <div className="absolute top-4 left-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-blue-200 shadow-sm flex items-center gap-1.5 text-xs font-bold text-[#0B1F4B]">
                   <ShieldCheck size={16} className="text-[#2563EB]" />
-                  <span>{warrantyMonths ? `${warrantyMonths}-Month Comprehensive Warranty` : 'Comprehensive Warranty'}</span>
+                  <span>
+                    {warrantyMonths
+                      ? `${warrantyMonths}-Month Comprehensive Warranty`
+                      : 'Comprehensive Warranty'}
+                  </span>
                 </div>
 
                 {/* Wishlist Button */}
@@ -549,7 +575,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                         }`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={img.url} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-contain" />
+                        <img
+                          src={img.url}
+                          alt={`Thumbnail ${idx + 1}`}
+                          className="w-full h-full object-contain"
+                        />
                       </button>
                     );
                   })}
@@ -560,19 +590,35 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               <div className="p-3 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs grid grid-cols-4 gap-2 text-center text-[10px]">
                 <div className="flex flex-col items-center gap-1">
                   <Truck size={15} className="text-[#2563EB]" />
-                  <span className="font-bold text-slate-700 leading-tight">Free Air<br/>Shipping</span>
+                  <span className="font-bold text-slate-700 leading-tight">
+                    Free Air
+                    <br />
+                    Shipping
+                  </span>
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <ShieldCheck size={15} className="text-[#2563EB]" />
-                  <span className="font-bold text-slate-700 leading-tight">{warrantyMonths ? `${warrantyMonths}-Month Doorstep` : 'Doorstep'}<br/>Warranty</span>
+                  <span className="font-bold text-slate-700 leading-tight">
+                    {warrantyMonths ? `${warrantyMonths}-Month Doorstep` : 'Doorstep'}
+                    <br />
+                    Warranty
+                  </span>
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <RotateCcw size={15} className="text-[#2563EB]" />
-                  <span className="font-bold text-slate-700 leading-tight">{returnLabel}<br/>Policy</span>
+                  <span className="font-bold text-slate-700 leading-tight">
+                    {returnLabel}
+                    <br />
+                    Policy
+                  </span>
                 </div>
                 <div className="flex flex-col items-center gap-1">
                   <FileText size={15} className="text-[#2563EB]" />
-                  <span className="font-bold text-slate-700 leading-tight">18% GST<br/>Tax Invoice</span>
+                  <span className="font-bold text-slate-700 leading-tight">
+                    Tax
+                    <br />
+                    Invoice
+                  </span>
                 </div>
               </div>
 
@@ -587,7 +633,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       <h4 className="text-xs font-extrabold text-[#0B1F4B]">
                         32-Point Quality Inspection — 100% Passed
                       </h4>
-                      <p className="text-[10px] text-slate-500">Every unit bench-tested, cleaned, and certified</p>
+                      <p className="text-[10px] text-slate-500">
+                        Every unit bench-tested, cleaned, and certified
+                      </p>
                     </div>
                   </div>
                   <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
@@ -597,20 +645,32 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
                   <div className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">Battery Health</span>
-                    <span className="font-extrabold text-emerald-700 block truncate">{activeBattery}</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">
+                      Battery Health
+                    </span>
+                    <span className="font-extrabold text-emerald-700 block truncate">
+                      {activeBattery}
+                    </span>
                   </div>
                   <div className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">Thermals</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">
+                      Thermals
+                    </span>
                     <span className="font-extrabold text-[#0B1F4B] block">Fresh Arctic MX-4</span>
                   </div>
                   <div className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">Display</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">
+                      Display
+                    </span>
                     <span className="font-extrabold text-[#0B1F4B] block">Zero Dead Pixels</span>
                   </div>
                   <div className="p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                    <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">Warranty</span>
-                    <span className="font-extrabold text-[#2563EB] block">{warrantyMonths ? `${warrantyMonths}-Month Doorstep` : 'Doorstep'}</span>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">
+                      Warranty
+                    </span>
+                    <span className="font-extrabold text-[#2563EB] block">
+                      {warrantyMonths ? `${warrantyMonths}-Month Doorstep` : 'Doorstep'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -625,29 +685,39 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   <div className="flex items-center gap-2 p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
                     <span className="text-base sm:text-lg">💻</span>
                     <div>
-                      <span className="font-extrabold text-slate-900 block leading-tight">Laptop</span>
+                      <span className="font-extrabold text-slate-900 block leading-tight">
+                        Laptop
+                      </span>
                       <span className="text-[9px] text-slate-500">Grade A+</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
                     <span className="text-base sm:text-lg">⚡</span>
                     <div>
-                      <span className="font-extrabold text-slate-900 block leading-tight">OEM Charger</span>
+                      <span className="font-extrabold text-slate-900 block leading-tight">
+                        OEM Charger
+                      </span>
                       <span className="text-[9px] text-slate-500">Original</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
                     <span className="text-base sm:text-lg">📜</span>
                     <div>
-                      <span className="font-extrabold text-slate-900 block leading-tight">Certificate</span>
+                      <span className="font-extrabold text-slate-900 block leading-tight">
+                        Certificate
+                      </span>
                       <span className="text-[9px] text-slate-500">32-Point QC</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
                     <span className="text-base sm:text-lg">🛡️</span>
                     <div>
-                      <span className="font-extrabold text-slate-900 block leading-tight">Warranty</span>
-                      <span className="text-[9px] text-slate-500">{warrantyMonths ? `${warrantyMonths}-Month Doorstep` : 'Warranty coverage'}</span>
+                      <span className="font-extrabold text-slate-900 block leading-tight">
+                        Warranty
+                      </span>
+                      <span className="text-[9px] text-slate-500">
+                        {warrantyMonths ? `${warrantyMonths}-Month Doorstep` : 'Warranty coverage'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -656,7 +726,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
             {/* RIGHT COLUMN: Product Header, Buy Box, Pricing & Actions (5 cols) */}
             <div className="lg:col-span-6 xl:col-span-5 space-y-3">
-              
               {/* Product Header */}
               <div className="space-y-1.5">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -683,7 +752,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   {availableStock > 0 || allowBackorder ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      {availableStock > 0 ? `In Stock • ${availableStock} units` : 'Available to Backorder'}
+                      {availableStock > 0
+                        ? `In Stock • ${availableStock} units`
+                        : 'Available to Backorder'}
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
@@ -696,7 +767,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   </span>
                 </div>
               </div>
-              
+
               {/* Procurement Model Selector (Buy vs Lease) */}
               <div className="space-y-1">
                 <div className="grid grid-cols-2 gap-1.5 bg-[#F1F5F9] p-1 rounded-xl border border-[#E2E8F0]">
@@ -762,10 +833,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
                     <div className="pt-2 border-t border-blue-200/80 flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-700">
                       <div>
-                        💳 No-Cost EMI from <strong className="text-[#0B1F4B] font-bold tabular-nums">₹{Math.round((currentUnitPrice || priceNum) / 12).toLocaleString('en-IN')}/mo</strong>
+                        💳 No-Cost EMI from{' '}
+                        <strong className="text-[#0B1F4B] font-bold tabular-nums">
+                          ₹{Math.round((currentUnitPrice || priceNum) / 12).toLocaleString('en-IN')}
+                          /mo
+                        </strong>
                       </div>
                       <div className="text-slate-500 font-semibold">
-                        18% GST Input Credit Eligible
+                        Taxes, if applicable, are calculated at checkout
                       </div>
                     </div>
                   </>
@@ -774,21 +849,16 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     {/* Rate Display */}
                     <div className="flex flex-wrap items-baseline gap-2">
                       <span className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tabular-nums tracking-tight">
-                        ₹{activeRentalPlan.monthlyRate.toLocaleString('en-IN')}
+                        ₹{activeRentalPlan.monthlyPrice.toLocaleString('en-IN')}
                       </span>
-                      <span className="text-xs font-bold text-slate-500">/ month + 18% GST</span>
-                      {activeRentalPlan.discountPercentage > 0 && (
-                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-600 text-white shadow-2xs">
-                          Save {activeRentalPlan.discountPercentage}%
-                        </span>
-                      )}
+                      <span className="text-xs font-bold text-slate-500">/ month</span>
                     </div>
 
                     {/* Interactive Rental Duration Selector */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-extrabold text-[#0B1F4B]">Rental Tenure:</span>
-                        <span className="text-[10px] text-[#2563EB] font-bold">Doorstep Service Included</span>
+                        <span className="text-[10px] text-[#2563EB] font-bold">Monthly rental</span>
                       </div>
                       <div className="grid grid-cols-4 gap-1.5">
                         {rentalPlans.map((plan) => {
@@ -804,13 +874,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                                   : 'bg-white/60 border-blue-200/70 hover:bg-white hover:border-blue-300'
                               }`}
                             >
-                              {plan.isBestValue && (
-                                <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 bg-[#2563EB] text-white text-[7px] font-black px-1 rounded-full uppercase tracking-wider whitespace-nowrap shadow-2xs">
-                                  Best
-                                </span>
-                              )}
-                              <span className="block text-xs font-black text-[#0B1F4B]">{plan.tenureMonths}m</span>
-                              <span className="block text-[10px] font-bold text-[#2563EB] tabular-nums">₹{plan.monthlyRate.toLocaleString('en-IN')}</span>
+                              <span className="block text-xs font-black text-[#0B1F4B]">
+                                {plan.tenureMonths}m
+                              </span>
+                              <span className="block text-[10px] font-bold text-[#2563EB] tabular-nums">
+                                ₹{plan.monthlyPrice.toLocaleString('en-IN')}
+                              </span>
                             </button>
                           );
                         })}
@@ -818,7 +887,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     </div>
 
                     {/* Rental Details Grid */}
-                    <div className="grid grid-cols-2 gap-2 text-[10px] pt-1.5 border-t border-blue-200">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[10px] pt-1.5 border-t border-blue-200">
                       <div className="p-1.5 rounded-lg bg-white/70 border border-blue-100">
                         <span className="text-slate-500 block">Total Commitment</span>
                         <span className="font-extrabold text-[#0B1F4B] tabular-nums">
@@ -827,8 +896,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       </div>
                       <div className="p-1.5 rounded-lg bg-white/70 border border-blue-100">
                         <span className="text-slate-500 block">Refundable Deposit</span>
-                        <span className="font-extrabold text-emerald-700 tabular-nums">
-                          ₹{activeRentalPlan.refundableDeposit.toLocaleString('en-IN')}
+                        <span className="font-extrabold text-emerald-700">
+                          ₹{(activeRentalPlan.securityDeposit ?? 0).toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                      <div className="p-1.5 rounded-lg bg-white/70 border border-blue-100">
+                        <span className="text-slate-500 block">One-time Delivery</span>
+                        <span className="font-extrabold text-[#0B1F4B] tabular-nums">
+                          ₹{(activeRentalPlan.deliveryCharge ?? 0).toLocaleString('en-IN')}
                         </span>
                       </div>
                     </div>
@@ -859,11 +934,17 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
               {/* DYNAMIC VARIANT CONFIGURATION SELECTORS */}
               {activeVariants.length > 0 && (
-                <section aria-labelledby="configuration-title" className="p-3.5 sm:p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-3">
+                <section
+                  aria-labelledby="configuration-title"
+                  className="p-3.5 sm:p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-3"
+                >
                   <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-2">
                     <div className="flex items-center gap-1.5">
                       <SlidersHorizontal size={15} className="text-[#2563EB]" />
-                      <h3 id="configuration-title" className="text-xs font-extrabold text-[#0B1F4B]">
+                      <h3
+                        id="configuration-title"
+                        className="text-xs font-extrabold text-[#0B1F4B]"
+                      >
                         Choose Configuration
                       </h3>
                     </div>
@@ -878,16 +959,19 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       const distinctValues = Array.from(
                         new Set(
                           activeVariants.flatMap((variant) =>
-                            variant.attributes[attributeKey] === undefined ? [] : [String(variant.attributes[attributeKey])],
+                            variant.attributes[attributeKey] === undefined
+                              ? []
+                              : [String(variant.attributes[attributeKey])],
                           ),
                         ),
                       );
 
                       if (distinctValues.length <= 1) return null;
 
-                      const selectedValue = selectedVariant?.attributes[attributeKey] === undefined
-                        ? ''
-                        : String(selectedVariant.attributes[attributeKey]);
+                      const selectedValue =
+                        selectedVariant?.attributes[attributeKey] === undefined
+                          ? ''
+                          : String(selectedVariant.attributes[attributeKey]);
 
                       return (
                         <div key={attributeKey} className="space-y-1">
@@ -895,7 +979,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                             <span className="font-extrabold text-slate-800">
                               {formatAttributeLabel(attributeKey)}:
                             </span>
-                            <span className="text-[#2563EB] font-bold text-[11px]">{selectedValue}</span>
+                            <span className="text-[#2563EB] font-bold text-[11px]">
+                              {selectedValue}
+                            </span>
                           </div>
 
                           <div className="flex flex-wrap gap-1.5">
@@ -918,13 +1004,17 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                                     isSelected
                                       ? 'bg-blue-50 border-2 border-[#2563EB] text-[#0B1F4B] ring-2 ring-blue-500/20 shadow-xs'
                                       : !hasStock
-                                      ? 'bg-slate-100 border border-slate-200 text-slate-400 line-through cursor-not-allowed opacity-50'
-                                      : 'bg-white border border-[#CBD5E1] text-slate-700 hover:border-blue-300 hover:bg-blue-50/30'
+                                        ? 'bg-slate-100 border border-slate-200 text-slate-400 line-through cursor-not-allowed opacity-50'
+                                        : 'bg-white border border-[#CBD5E1] text-slate-700 hover:border-blue-300 hover:bg-blue-50/30'
                                   }`}
                                 >
-                                  {isSelected && <Check size={12} className="text-[#2563EB] stroke-[3]" />}
+                                  {isSelected && (
+                                    <Check size={12} className="text-[#2563EB] stroke-[3]" />
+                                  )}
                                   <span>{val}</span>
-                                  {!hasStock && <span className="text-[9px] text-rose-500">(Sold Out)</span>}
+                                  {!hasStock && (
+                                    <span className="text-[9px] text-rose-500">(Sold Out)</span>
+                                  )}
                                 </button>
                               );
                             })}
@@ -946,7 +1036,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                         </span>
                       </div>
                       <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 shrink-0 text-[10px]">
-                        {availableStock > 0 ? `${availableStock} in stock` : allowBackorder ? 'Backorder' : 'Sold Out'}
+                        {availableStock > 0
+                          ? `${availableStock} in stock`
+                          : allowBackorder
+                            ? 'Backorder'
+                            : 'Sold Out'}
                       </span>
                     </div>
                   )}
@@ -966,7 +1060,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     </span>
                   </div>
                   {isLease ? (
-                    <span className="text-[10px] text-slate-500">Quarterly maintenance & swaps included.</span>
+                    <span className="text-[10px] text-slate-500">
+                      Maintenance terms are confirmed in the rental agreement.
+                    </span>
                   ) : (
                     <label className="flex items-center gap-2 cursor-pointer pt-0.5">
                       <input
@@ -989,7 +1085,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       <Truck size={13} className="text-[#2563EB]" /> Check Pincode
                     </span>
                     {pincodeChecked && (
-                      <span className="text-[9px] text-emerald-700 font-bold">2-3 Day Dispatch</span>
+                      <span className="text-[9px] text-emerald-700 font-bold">
+                        2-3 Day Dispatch
+                      </span>
                     )}
                   </div>
                   <form onSubmit={handlePincodeCheck} className="flex gap-1.5">
@@ -1038,13 +1136,22 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       >
                         -
                       </button>
-                      <span aria-live="polite" className="px-2 h-full flex items-center justify-center text-xs font-black min-w-[24px] text-center text-[#0B1F4B] tabular-nums">
+                      <span
+                        aria-live="polite"
+                        className="px-2 h-full flex items-center justify-center text-xs font-black min-w-[24px] text-center text-[#0B1F4B] tabular-nums"
+                      >
                         {quantity}
                       </span>
                       <button
                         type="button"
                         aria-label="Increase quantity"
-                        onClick={() => setQuantity(allowBackorder ? quantity + 1 : Math.min(availableStock || 1, quantity + 1))}
+                        onClick={() =>
+                          setQuantity(
+                            allowBackorder
+                              ? quantity + 1
+                              : Math.min(availableStock || 1, quantity + 1),
+                          )
+                        }
                         className="px-2.5 h-full text-xs font-bold hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
                         disabled={outOfStock || (!allowBackorder && quantity >= availableStock)}
                       >
@@ -1060,8 +1167,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                         outOfStock
                           ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           : added
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-white hover:bg-blue-50 text-[#2563EB] border-2 border-[#2563EB]'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-white hover:bg-blue-50 text-[#2563EB] border-2 border-[#2563EB]'
                       }`}
                     >
                       <ShoppingCart size={14} />
@@ -1142,29 +1249,38 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     </span>
                   </div>
                   <p className="mt-1 text-[10px] text-slate-500 leading-tight">
-                    Custom discounts with GST Tax Invoice.
+                    Custom discounts with tax invoices where applicable.
                   </p>
                   <span className="mt-1 text-[10px] font-bold text-[#2563EB] flex items-center gap-0.5 group-hover:underline">
                     Request quote →
                   </span>
                 </button>
               </div>
-
             </div>
           </div>
 
           {/* DEDICATED TECHNICAL SPECIFICATIONS SECTION (PHASE 6 REDESIGNED) */}
-          <section id="technical-specifications" aria-labelledby="technical-specifications-title" className="mt-12 sm:mt-16 bg-white rounded-3xl border border-[#E2E8F0] shadow-sm overflow-hidden">
+          <section
+            id="technical-specifications"
+            aria-labelledby="technical-specifications-title"
+            className="mt-12 sm:mt-16 bg-white rounded-3xl border border-[#E2E8F0] shadow-sm overflow-hidden"
+          >
             <div className="px-6 pt-7 sm:px-8 sm:pt-8 border-b border-[#F1F5F9] pb-6 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <span className="text-xs font-bold text-[#2563EB] uppercase tracking-wider block mb-1">
                   Inside this laptop
                 </span>
-                <h2 id="technical-specifications-title" className="text-2xl font-black text-[#0B1F4B] tracking-tight">
+                <h2
+                  id="technical-specifications-title"
+                  className="text-2xl font-black text-[#0B1F4B] tracking-tight"
+                >
                   What's inside?
                 </h2>
                 <p className="mt-1 text-xs sm:text-sm text-slate-500">
-                  Viewing specs for <strong className="text-slate-800">{product.name}</strong> — <strong className="text-[#2563EB]">{selectedVariant?.name || 'Base Configuration'}</strong>
+                  Viewing specs for <strong className="text-slate-800">{product.name}</strong> —{' '}
+                  <strong className="text-[#2563EB]">
+                    {selectedVariant?.name || 'Base Configuration'}
+                  </strong>
                 </p>
               </div>
 
@@ -1190,10 +1306,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     {group.cards.map((card) => {
                       const Icon = card.Icon;
                       // Parse battery percentage for progress bar
-                      const batteryMatch = 'isBattery' in card && card.isBattery
-                        ? card.value.match(/(\d+)/)
+                      const batteryMatch =
+                        'isBattery' in card && card.isBattery ? card.value.match(/(\d+)/) : null;
+                      const batteryPct = batteryMatch
+                        ? Math.min(100, Math.max(0, Number(batteryMatch[1])))
                         : null;
-                      const batteryPct = batteryMatch ? Math.min(100, Math.max(0, Number(batteryMatch[1]))) : null;
                       return (
                         <div
                           key={card.label}
@@ -1217,12 +1334,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                                     style={{ width: `${batteryPct}%` }}
                                   />
                                 </div>
-                                <span className="text-[10px] font-semibold text-slate-500">{batteryPct}% of original capacity remaining</span>
+                                <span className="text-[10px] font-semibold text-slate-500">
+                                  {batteryPct}% of original capacity remaining
+                                </span>
                               </div>
                             )}
-                            <span className="text-[11px] text-slate-500 block">
-                              {card.subtext}
-                            </span>
+                            <span className="text-[11px] text-slate-500 block">{card.subtext}</span>
                           </div>
                         </div>
                       );
@@ -1233,7 +1350,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             </div>
 
             {/* TABBED REPORTS: Quality Inspection, Box, Warranty, FAQ */}
-            <div role="tablist" aria-label="Product details" className="border-t border-[#E2E8F0] bg-[#F8FAFC] flex overflow-x-auto">
+            <div
+              role="tablist"
+              aria-label="Product details"
+              className="border-t border-[#E2E8F0] bg-[#F8FAFC] flex overflow-x-auto"
+            >
               {[
                 { id: 'specs', label: 'Detailed Description' },
                 { id: 'inspection', label: '32-Point Quality Report' },
@@ -1266,18 +1387,28 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   <p>{product.description}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 not-prose">
                     <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                      <span className="text-xs font-bold text-slate-400 block mb-1">Manufacturer</span>
+                      <span className="text-xs font-bold text-slate-400 block mb-1">
+                        Manufacturer
+                      </span>
                       <span className="text-sm font-extrabold text-[#0B1F4B]">
                         {(product.metadata as any)?.brand || 'OEM Certified'}
                       </span>
                     </div>
                     <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                      <span className="text-xs font-bold text-slate-400 block mb-1">Authentic Windows / Mac License</span>
-                      <span className="text-sm font-extrabold text-[#0B1F4B]">OEM Motherboard Key Activated</span>
+                      <span className="text-xs font-bold text-slate-400 block mb-1">
+                        Authentic Windows / Mac License
+                      </span>
+                      <span className="text-sm font-extrabold text-[#0B1F4B]">
+                        OEM Motherboard Key Activated
+                      </span>
                     </div>
                     <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                      <span className="text-xs font-bold text-slate-400 block mb-1">Sanitization Standard</span>
-                      <span className="text-sm font-extrabold text-[#0B1F4B]">32-Point ISO Cleaned</span>
+                      <span className="text-xs font-bold text-slate-400 block mb-1">
+                        Sanitization Standard
+                      </span>
+                      <span className="text-sm font-extrabold text-[#0B1F4B]">
+                        32-Point ISO Cleaned
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1290,22 +1421,63 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       <CheckCircle2 size={18} className="text-emerald-700" />
                       <span>Certified 32-Point Hardware Quality Score: 100/100</span>
                     </div>
-                    <span className="font-mono text-emerald-800 font-bold">Inspection ID: QC-LM-{product.id.slice(0, 8).toUpperCase()}</span>
+                    <span className="font-mono text-emerald-800 font-bold">
+                      Inspection ID: QC-LM-{product.id.slice(0, 8).toUpperCase()}
+                    </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
                     {[
-                      { area: 'Motherboard & CPU', test: 'Stress testing for clock stability and VRM thermal headroom', status: 'Passed (No Throttling)' },
-                      { area: 'RAM Modules', test: 'MemTest86 4-pass verification for bit error zero-tolerance', status: 'Passed (0 Errors)' },
-                      { area: 'SSD Health', test: 'S.M.A.R.T. health test, read/write speed validation', status: 'Passed (100% Healthy)' },
-                      { area: 'Battery Endurance', test: 'Full charge/discharge cycle benchmark (>85% original retention)', status: activeBattery },
-                      { area: 'Display Panel', test: 'Dead pixel test, backlight bleed check, ProMotion/refresh sync', status: 'Passed (Flawless)' },
-                      { area: 'Keyboard & Trackpad', test: 'All keys tactile test, multi-touch gestures, haptic click', status: 'Passed (100% Functional)' },
-                      { area: 'Ports & I/O', test: 'Thunderbolt / USB-C PD charging, HDMI output, audio jack', status: 'Passed (All Ports Active)' },
-                      { area: 'Wireless & Audio', test: 'Wi-Fi 6E speed test, Bluetooth latency, stereo mic/speaker check', status: 'Passed (Pristine)' },
-                      { area: 'Chassis & Hinges', test: 'Opening resistance, corner drop inspection, zero dent policy', status: activeCondition },
+                      {
+                        area: 'Motherboard & CPU',
+                        test: 'Stress testing for clock stability and VRM thermal headroom',
+                        status: 'Passed (No Throttling)',
+                      },
+                      {
+                        area: 'RAM Modules',
+                        test: 'MemTest86 4-pass verification for bit error zero-tolerance',
+                        status: 'Passed (0 Errors)',
+                      },
+                      {
+                        area: 'SSD Health',
+                        test: 'S.M.A.R.T. health test, read/write speed validation',
+                        status: 'Passed (100% Healthy)',
+                      },
+                      {
+                        area: 'Battery Endurance',
+                        test: 'Full charge/discharge cycle benchmark (>85% original retention)',
+                        status: activeBattery,
+                      },
+                      {
+                        area: 'Display Panel',
+                        test: 'Dead pixel test, backlight bleed check, ProMotion/refresh sync',
+                        status: 'Passed (Flawless)',
+                      },
+                      {
+                        area: 'Keyboard & Trackpad',
+                        test: 'All keys tactile test, multi-touch gestures, haptic click',
+                        status: 'Passed (100% Functional)',
+                      },
+                      {
+                        area: 'Ports & I/O',
+                        test: 'Thunderbolt / USB-C PD charging, HDMI output, audio jack',
+                        status: 'Passed (All Ports Active)',
+                      },
+                      {
+                        area: 'Wireless & Audio',
+                        test: 'Wi-Fi 6E speed test, Bluetooth latency, stereo mic/speaker check',
+                        status: 'Passed (Pristine)',
+                      },
+                      {
+                        area: 'Chassis & Hinges',
+                        test: 'Opening resistance, corner drop inspection, zero dent policy',
+                        status: activeCondition,
+                      },
                     ].map((item, idx) => (
-                      <div key={idx} className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5">
+                      <div
+                        key={idx}
+                        className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1.5"
+                      >
                         <div className="flex items-center justify-between">
                           <strong className="text-slate-900 font-extrabold">{item.area}</strong>
                           <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
@@ -1313,7 +1485,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                           </span>
                         </div>
                         <p className="text-slate-500 text-[11px]">{item.test}</p>
-                        <span className="text-[11px] font-bold text-[#2563EB] block">{item.status}</span>
+                        <span className="text-[11px] font-bold text-[#2563EB] block">
+                          {item.status}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -1324,35 +1498,56 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
                   <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-center gap-3">
                     <ShieldCheck size={20} className="text-[#2563EB]" />
-                    <span className="font-bold text-[#0B1F4B]">All laptops are sealed in electrostatic anti-shock bubble cushions with tamper-evident security tape.</span>
+                    <span className="font-bold text-[#0B1F4B]">
+                      All laptops are sealed in electrostatic anti-shock bubble cushions with
+                      tamper-evident security tape.
+                    </span>
                   </div>
                   <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                     <li className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center gap-3">
                       <span className="text-2xl">💻</span>
                       <div>
-                        <strong className="text-[#0B1F4B] block text-sm">Certified Refurbished Laptop</strong>
-                        <span className="text-slate-500">Fully sanitized with genuine OS pre-installed</span>
+                        <strong className="text-[#0B1F4B] block text-sm">
+                          Certified Refurbished Laptop
+                        </strong>
+                        <span className="text-slate-500">
+                          Fully sanitized with genuine OS pre-installed
+                        </span>
                       </div>
                     </li>
                     <li className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center gap-3">
                       <span className="text-2xl">⚡</span>
                       <div>
-                        <strong className="text-[#0B1F4B] block text-sm">Original Power Adapter</strong>
-                        <span className="text-slate-500">Authentic manufacturer charger with high-wattage power cable</span>
+                        <strong className="text-[#0B1F4B] block text-sm">
+                          Original Power Adapter
+                        </strong>
+                        <span className="text-slate-500">
+                          Authentic manufacturer charger with high-wattage power cable
+                        </span>
                       </div>
                     </li>
                     <li className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center gap-3">
                       <span className="text-2xl">📜</span>
                       <div>
-                        <strong className="text-[#0B1F4B] block text-sm">QC Pass Certificate</strong>
-                        <span className="text-slate-500">Physical paper audit certificate with technician signature</span>
+                        <strong className="text-[#0B1F4B] block text-sm">
+                          QC Pass Certificate
+                        </strong>
+                        <span className="text-slate-500">
+                          Physical paper audit certificate with technician signature
+                        </span>
                       </div>
                     </li>
                     <li className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center gap-3">
                       <span className="text-2xl">🛡️</span>
                       <div>
-                        <strong className="text-[#0B1F4B] block text-sm">{warrantyMonths ? `${warrantyMonths}-Month Warranty Card` : 'Warranty Card'}</strong>
-                        <span className="text-slate-500">Official serial-tagged warranty card with doorstep QR code</span>
+                        <strong className="text-[#0B1F4B] block text-sm">
+                          {warrantyMonths
+                            ? `${warrantyMonths}-Month Warranty Card`
+                            : 'Warranty Card'}
+                        </strong>
+                        <span className="text-slate-500">
+                          Official serial-tagged warranty card with doorstep QR code
+                        </span>
                       </div>
                     </li>
                   </ul>
@@ -1365,7 +1560,8 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     <div className="p-5 rounded-2xl bg-blue-50/60 border border-blue-200 space-y-2.5">
                       <h4 className="font-extrabold text-[#2563EB] text-sm flex items-center gap-1.5">
                         <ShieldCheck size={18} />
-                        What is Covered ({warrantyMonths ? `${warrantyMonths} Months` : 'the configured period'}):
+                        What is Covered (
+                        {warrantyMonths ? `${warrantyMonths} Months` : 'the configured period'}):
                       </h4>
                       <ul className="list-disc pl-4 space-y-1.5 text-slate-700">
                         <li>Motherboard, processor, integrated RAM, and SSD hardware.</li>
@@ -1383,7 +1579,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                           : 'Return and Replacement Policy:'}
                       </h4>
                       <p className="text-slate-600 leading-relaxed">
-                        If your laptop demonstrates a functional discrepancy or fails to meet its performance standards upon arrival, contact support during the applicable return window to request inspection, replacement, or refund.
+                        If your laptop demonstrates a functional discrepancy or fails to meet its
+                        performance standards upon arrival, contact support during the applicable
+                        return window to request inspection, replacement, or refund.
                       </p>
                     </div>
 
@@ -1393,13 +1591,21 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                           <HandCoins size={18} className="text-[#2563EB]" />
                           36-Month Assured Buyback Guarantee:
                         </h4>
-                        <Link href="/buyback-guarantee" className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1">
+                        <Link
+                          href="/buyback-guarantee"
+                          className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1"
+                        >
                           <span>View Policy T&amp;C</span>
                           <ArrowRight size={14} />
                         </Link>
                       </div>
                       <p className="text-slate-600 leading-relaxed">
-                        Sell your device back to LaptopMitra at any point within 36 months for an assured recovery valuation ({BUYBACK_POLICY.tiers.map((t) => `${t.period}: ${t.percentage}%`).join(', ')}).
+                        Sell your device back to LaptopMitra at any point within 36 months for an
+                        assured recovery valuation (
+                        {BUYBACK_POLICY.tiers
+                          .map((t) => `${t.period}: ${t.percentage}%`)
+                          .join(', ')}
+                        ).
                       </p>
                     </div>
                   </div>
@@ -1409,21 +1615,32 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               {activeTab === 'faq' && (
                 <div className="space-y-3.5 text-xs">
                   <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
-                    <strong className="text-[#0B1F4B] block font-bold text-sm">What cosmetic condition is this laptop in?</strong>
+                    <strong className="text-[#0B1F4B] block font-bold text-sm">
+                      What cosmetic condition is this laptop in?
+                    </strong>
                     <p className="text-slate-600 leading-relaxed">
-                      Every laptop listed under this grade is rated <strong>{activeCondition}</strong>. There are zero structural dents, no deep scratches, and the display has zero dead pixels or keyboard marks.
+                      Every laptop listed under this grade is rated{' '}
+                      <strong>{activeCondition}</strong>. There are zero structural dents, no deep
+                      scratches, and the display has zero dead pixels or keyboard marks.
                     </p>
                   </div>
                   <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
-                    <strong className="text-[#0B1F4B] block font-bold text-sm">How does doorstep warranty service work?</strong>
+                    <strong className="text-[#0B1F4B] block font-bold text-sm">
+                      How does doorstep warranty service work?
+                    </strong>
                     <p className="text-slate-600 leading-relaxed">
-                      If you ever experience a hardware issue, simply contact our support hotline or WhatsApp. A courier will pick up the device from your address, our certified technicians repair or replace the hardware, and return it to you at zero cost.
+                      If you ever experience a hardware issue, simply contact our support hotline or
+                      WhatsApp. A courier will pick up the device from your address, our certified
+                      technicians repair or replace the hardware, and return it to you at zero cost.
                     </p>
                   </div>
                   <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
-                    <strong className="text-[#0B1F4B] block font-bold text-sm">Can I claim 18% GST input credit for business purchases?</strong>
+                    <strong className="text-[#0B1F4B] block font-bold text-sm">
+                      How are taxes calculated?
+                    </strong>
                     <p className="text-slate-600 leading-relaxed">
-                      Yes! Enter your company GSTIN during checkout, and a fully compliant Tax Invoice will be generated automatically for your account to claim 18% input credit.
+                      Any applicable tax is calculated by the server using the current business tax
+                      settings and shown in your order total before payment.
                     </p>
                   </div>
                 </div>
@@ -1441,8 +1658,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             <div className="mt-12 sm:mt-16 space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl sm:text-2xl font-black text-[#0B1F4B] tracking-tight">Similar Certified Laptops</h3>
-                  <p className="text-xs text-slate-500">Explore comparable business-class laptops tested and backed by 1-year warranty</p>
+                  <h3 className="text-xl sm:text-2xl font-black text-[#0B1F4B] tracking-tight">
+                    Similar Certified Laptops
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Explore comparable business-class laptops tested and backed by 1-year warranty
+                  </p>
                 </div>
                 <Link
                   href="/products"
@@ -1559,19 +1780,31 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             </div>
 
             <div className="overflow-y-auto p-5 sm:p-6 space-y-4">
-              <section aria-labelledby="buyback-summary-label" className="rounded-2xl bg-blue-50/70 border border-blue-200 p-4 text-center">
-                <p id="buyback-summary-label" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <section
+                aria-labelledby="buyback-summary-label"
+                className="rounded-2xl bg-blue-50/70 border border-blue-200 p-4 text-center"
+              >
+                <p
+                  id="buyback-summary-label"
+                  className="text-xs font-bold text-slate-500 uppercase tracking-wider"
+                >
                   You'll receive at least — {selectedBuybackPlan.period}
                 </p>
                 <p className="mt-1 text-3xl font-black text-[#0B1F4B] tabular-nums">
                   ₹{selectedBuybackPlan.estimatedValue.toLocaleString('en-IN')}
                 </p>
-                <p className="mt-1 text-xs text-slate-600">Calculated directly against the current variant selling price.</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Calculated directly against the current variant selling price.
+                </p>
               </section>
 
               <section aria-labelledby="buyback-duration-label" className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <label id="buyback-duration-label" htmlFor="buyback-duration" className="text-sm font-bold text-[#0B1F4B]">
+                  <label
+                    id="buyback-duration-label"
+                    htmlFor="buyback-duration"
+                    className="text-sm font-bold text-[#0B1F4B]"
+                  >
                     Choose Return Tenure
                   </label>
                   <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
@@ -1591,26 +1824,42 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   onChange={(event) => setSelectedBuybackIndex(Number(event.target.value))}
                   className="h-11 w-full cursor-pointer accent-[#2563EB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
                 />
-                <div className="grid grid-cols-6 text-center text-[10px] font-medium text-slate-500" aria-hidden="true">
+                <div
+                  className="grid grid-cols-6 text-center text-[10px] font-medium text-slate-500"
+                  aria-hidden="true"
+                >
                   {buybackPlans.map((plan) => (
-                    <span key={plan.period} className="px-0.5">{plan.period.split(' ')[0]}m</span>
+                    <span key={plan.period} className="px-0.5">
+                      {plan.period.split(' ')[0]}m
+                    </span>
                   ))}
                 </div>
               </section>
 
-              <section aria-label="Selected buyback plan" className="rounded-2xl border border-slate-200 bg-[#F8FAFC] p-4">
+              <section
+                aria-label="Selected buyback plan"
+                className="rounded-2xl border border-slate-200 bg-[#F8FAFC] p-4"
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold text-slate-500">Selected Plan</p>
-                    <p className="mt-1 text-sm font-bold text-[#0B1F4B]">{selectedBuybackPlan.period} from purchase date</p>
+                    <p className="mt-1 text-sm font-bold text-[#0B1F4B]">
+                      {selectedBuybackPlan.period} from purchase date
+                    </p>
                   </div>
-                  <span className="rounded-full bg-sky-100 px-3 py-1 text-sm font-extrabold text-sky-800">{selectedBuybackPercentage}% Value</span>
+                  <span className="rounded-full bg-sky-100 px-3 py-1 text-sm font-extrabold text-sky-800">
+                    {selectedBuybackPercentage}% Value
+                  </span>
                 </div>
                 <div className="mt-3 flex items-end justify-between gap-3 border-t border-slate-200 pt-3">
                   <p className="text-xs font-medium text-slate-600">Estimated Buyback Valuation</p>
-                  <p className="text-lg font-black tabular-nums text-[#0B1F4B]">₹{selectedBuybackPlan.estimatedValue.toLocaleString('en-IN')}</p>
+                  <p className="text-lg font-black tabular-nums text-[#0B1F4B]">
+                    ₹{selectedBuybackPlan.estimatedValue.toLocaleString('en-IN')}
+                  </p>
                 </div>
-                <p className="mt-2 text-xs leading-relaxed text-slate-600">{BUYBACK_POLICY.eligibility[0]}</p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                  {BUYBACK_POLICY.eligibility[0]}
+                </p>
               </section>
 
               <div className="text-center pt-2">

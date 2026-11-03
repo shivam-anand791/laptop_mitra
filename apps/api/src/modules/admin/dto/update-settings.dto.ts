@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsEmail, IsInt, Min, IsNumber } from 'class-validator';
+import { IsOptional, IsString, IsEmail, IsInt, Min, Max, IsNumber, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -46,4 +46,32 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsString()
   expressDeliveryDays?: string;
+
+  @ApiPropertyOptional({ example: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  gstEnabled?: boolean;
+
+  @ApiPropertyOptional({ example: 18, default: 18, minimum: 0, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  gstRate?: number;
+
+  @ApiPropertyOptional({ example: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  gstAppliesToPurchases?: boolean;
+
+  @ApiPropertyOptional({ example: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  gstAppliesToRentals?: boolean;
+
+  @ApiPropertyOptional({ example: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  gstPriceInclusive?: boolean;
 }

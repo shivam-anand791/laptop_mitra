@@ -26,6 +26,7 @@ export class CartController {
     @Body('configuration') configuration?: string,
     @Body('hasWarranty') hasWarranty?: boolean,
     @Body('variantId') variantId?: string,
+    @Body('tenureMonths') tenureMonths?: number,
   ) {
     const result = await this.cartService.addItem(
       user.id,
@@ -35,6 +36,7 @@ export class CartController {
       configuration,
       hasWarranty,
       variantId,
+      tenureMonths,
     );
     return { cartItem: result, message: 'Item added to cart' };
   }

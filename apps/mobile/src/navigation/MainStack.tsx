@@ -21,6 +21,7 @@ import GuidedSupportFlowScreen from '../screens/main/GuidedSupportFlowScreen';
 import TicketListScreen from '../screens/main/TicketListScreen';
 import TicketDetailScreen from '../screens/main/TicketDetailScreen';
 import ReturnDetailScreen from '../screens/main/ReturnDetailScreen';
+import MyCouponsScreen from '../screens/main/MyCouponsScreen';
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
@@ -139,6 +140,11 @@ export default function MainStack() {
           title: 'Ticket Details',
           headerTintColor: '#2563eb',
         }}
+      />
+      <Stack.Screen
+        name="MyCoupons"
+        component={MyCouponsScreen}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="ReturnDetail"

@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Menu,
   X,
+  Tag,
 } from 'lucide-react';
 
 interface NavGroup {
@@ -99,6 +100,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
     {
       title: 'Rewards',
       items: [
+        { href: '/account/coupons', label: 'My Coupons & Offers', icon: Tag },
         { href: '/account/referral', label: 'Mitra Affiliate Program', icon: Share2 },
       ],
     },

@@ -512,5 +512,90 @@ describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
         service.updateRefundDetails('ret-101', mockUserB.id, { upiId: 'b@okaxis' }),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('blocks self-serve returns for leased items and routes to support', async () => {
+      const leasedOrder = {
+        ...mockOrderA,
+        id: 'ord-lease-1',
+        items: [
+          { id: 'item-leased', price: 1800, quantity: 1, purchaseMode: 'lease' },
+        ],
+        deliveries: [{ deliveredAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }],
+      };
+      prisma.order.findUnique.mockResolvedValue(leasedOrder);
+
+      await expect(
+        service.createReturnRequest(mockUserA.id, {
+          orderId: 'ord-lease-1',
+          reason: 'Defective screen',
+          items: [{ orderItemId: 'item-leased', quantity: 1 }],
+        }),
+      ).rejects.toThrow(/Leased items cannot be returned through self-serve returns/i);
+    });
+
+    it('anchors return window to Delivery.deliveredAt so editing order notes later cannot move window', async () => {
+      // Delivered 10 days ago, but order notes were updated 5 minutes ago (updatedAt is fresh)
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      const orderWithEditedNotes = {
+        ...mockOrderA,
+        id: 'ord-edited-notes',
+        updatedAt: new Date(), // Notes updated just now
+        deliveries: [{ deliveredAt: tenDaysAgo }],
+      };
+      prisma.order.findUnique.mockResolvedValue(orderWithEditedNotes);
+
+      await expect(
+        service.createReturnRequest(mockUserA.id, {
+          orderId: 'ord-edited-notes',
+          reason: 'Defective unit',
+          items: [{ orderItemId: 'item-1', quantity: 1 }],
+        }),
+      ).rejects.toThrow(/7-day return policy window has expired/i);
+    });
+
+    it('boundary check: day 7 is eligible while day 8 is rejected in IST calendar time', async () => {
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+      const now = Date.now();
+
+      // Day 7: 6 days and 20 hours ago -> within calendar 7 days in IST
+      const day7DeliveredAt = new Date(now - (6 * 24 + 20) * 60 * 60 * 1000);
+      const day7Order = {
+        ...mockOrderA,
+        id: 'ord-day-7',
+        deliveries: [{ deliveredAt: day7DeliveredAt }],
+      };
+      prisma.order.findUnique.mockResolvedValueOnce(day7Order);
+      prisma.$queryRaw.mockResolvedValueOnce([{ nextval: 9001 }]);
+      prisma.returnRequest.create.mockResolvedValueOnce({
+        id: 'ret-day-7',
+        returnNumber: 'LM-R-9001',
+        status: 'REQUESTED',
+      });
+      prisma.returnItem.create.mockResolvedValueOnce({ id: 'ri-7' });
+
+      const day7Res = await service.createReturnRequest(mockUserA.id, {
+        orderId: 'ord-day-7',
+        reason: 'Fault on day 7',
+        items: [{ orderItemId: 'item-1', quantity: 1 }],
+      });
+      expect(day7Res.returnNumber).toBe('LM-R-9001');
+
+      // Day 8: 8 days ago -> past calendar 7 days in IST
+      const day8DeliveredAt = new Date(now - 8 * 24 * 60 * 60 * 1000);
+      const day8Order = {
+        ...mockOrderA,
+        id: 'ord-day-8',
+        deliveries: [{ deliveredAt: day8DeliveredAt }],
+      };
+      prisma.order.findUnique.mockResolvedValueOnce(day8Order);
+
+      await expect(
+        service.createReturnRequest(mockUserA.id, {
+          orderId: 'ord-day-8',
+          reason: 'Fault on day 8',
+          items: [{ orderItemId: 'item-1', quantity: 1 }],
+        }),
+      ).rejects.toThrow(/7-day return policy window has expired/i);
+    });
   });
 });

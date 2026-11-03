@@ -86,9 +86,9 @@
   - `apps/web/lib/cart-context.tsx`
 - **Features Implemented:**
   - Item listing, thumbnail, title, unit price, quantity increment/decrement, remove item, clear cart.
-  - Summary sidebar: Subtotal, Estimated GST (18% inclusive), Free Express Delivery, Total.
+  - Summary sidebar: Subtotal, server-calculated applicable tax, Free Express Delivery, Estimated Total.
   - PIN code serviceability check.
-  - Promo code input (simulates validation for `FIRST500` or codes starting with `MITRA`).
+  - Promo codes use server-side validation; rentals display only approved backend-priced plans and cannot be mixed with purchases.
 - **Execution Level:** **Implemented but Incomplete**:
   - Extended Warranty Add-on toggle (+₹1,999) from PHP is completely missing.
   - Items do not carry `purchaseMode` ('sell' vs 'lease').
@@ -159,7 +159,7 @@
   - `PATCH /orders/:id/cancel`: User order cancellation (allowed only when status is PENDING or CONFIRMED).
   - `POST /orders/:id/return`: Submits return/replacement request.
   - `POST /orders/:id/reorder`: Adds past order items back into active cart.
-  - `GET /orders/:id/invoice`: Computes tax invoice data (18% GST breakdown, company details).
+  - `GET /orders/:id/invoice`: Builds invoice totals from the order's saved tax snapshot and company details.
   - `GET /orders/:id/track`: Returns delivery tracking number and carrier timeline.
 - **Execution Level:** **Fully Implemented**.
 

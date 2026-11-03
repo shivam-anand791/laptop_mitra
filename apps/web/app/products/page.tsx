@@ -247,7 +247,7 @@ function ProductsContent() {
               Buying 5+ Laptops for your Team or College?
             </h2>
             <p className="text-xs sm:text-sm text-blue-100/80 max-w-2xl leading-relaxed">
-              Get customized corporate bundles, GST tax invoices (18% input credit), customized OS imaging, and volume discounts up to 25% OFF.
+              Get customized corporate bundles, tax invoices where applicable, customized OS imaging, and volume discounts up to 25% OFF.
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0 pt-2 md:pt-0">

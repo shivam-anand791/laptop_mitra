@@ -17,6 +17,7 @@ import {
   SkeletonList,
   ErrorState,
 } from '@/components/account';
+import { ItemSituationHelpModal } from '@/components/account/ItemSituationHelpModal';
 import {
   Search,
   X,
@@ -85,6 +86,10 @@ export default function OrdersPage() {
   const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
 
   const [reorderingId, setReorderingId] = useState<string | null>(null);
+
+  // Situation-aware help modal state
+  const [selectedHelpOrder, setSelectedHelpOrder] = useState<Order | null>(null);
+  const [selectedHelpItem, setSelectedHelpItem] = useState<any | null>(null);
 
   // Notification toast / alert banner
   const [banner, setBanner] = useState<{
@@ -489,6 +494,10 @@ export default function OrdersPage() {
                 setReturnReason(RETURN_REASONS[0]);
               }}
               onReorder={handleReorder}
+              onNeedHelp={(ord, it) => {
+                setSelectedHelpOrder(ord);
+                setSelectedHelpItem(it || ord.items?.[0] || null);
+              }}
               isReordering={reorderingId === order.id}
             />
           ))}
@@ -585,6 +594,31 @@ export default function OrdersPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Situation-Aware Need Help Modal */}
+      {selectedHelpOrder && selectedHelpItem && (
+        <ItemSituationHelpModal
+          isOpen={true}
+          onClose={() => {
+            setSelectedHelpOrder(null);
+            setSelectedHelpItem(null);
+          }}
+          orderId={selectedHelpOrder.id}
+          orderNumber={selectedHelpOrder.orderNumber}
+          orderItemId={selectedHelpItem.id}
+          productName={selectedHelpItem.product?.name || 'Refurbished Laptop'}
+          purchaseMode={selectedHelpItem.purchaseMode}
+          unitPrice={Number(selectedHelpItem.price)}
+          initialShippingAddress={selectedHelpOrder.shippingAddress}
+          initialPhone={selectedHelpOrder.phone || undefined}
+          onActionSuccess={(msg) => showBanner('success', msg)}
+          onOpenReturnModal={() => {
+            setReturningOrder(selectedHelpOrder);
+            setSelectedHelpOrder(null);
+            setSelectedHelpItem(null);
+          }}
+        />
       )}
     </div>
   );

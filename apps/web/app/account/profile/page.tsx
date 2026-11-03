@@ -3,7 +3,19 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
-import { User, Phone, Mail, Calendar, Camera, CheckCircle2, AlertCircle, ShieldAlert, Loader2 } from 'lucide-react';
+import {
+  User,
+  Phone,
+  Mail,
+  Calendar,
+  Camera,
+  CheckCircle2,
+  AlertCircle,
+  ShieldAlert,
+  Loader2,
+  Building2,
+  ShieldCheck,
+} from 'lucide-react';
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();
@@ -15,6 +27,7 @@ export default function ProfilePage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.imageUrl || null);
+  const [businessProfile, setBusinessProfile] = useState<any>(null);
 
   useEffect(() => {
     if (user) {
@@ -28,6 +41,14 @@ export default function ProfilePage() {
         }
       }
       if (user.imageUrl) setAvatarPreview(user.imageUrl);
+
+      api.getMyBusinessProfile()
+        .then((res) => {
+          if (res?.companyName || res?.gstin) {
+            setBusinessProfile(res);
+          }
+        })
+        .catch(() => {});
     }
   }, [user]);
 
@@ -224,6 +245,70 @@ export default function ProfilePage() {
           </button>
         </div>
       </form>
+
+      {/* Corporate & Business Profile Card (Read Only) */}
+      {businessProfile && (
+        <div className="mt-8 pt-6 border-t border-slate-200 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-blue-600 shrink-0" />
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Corporate & Business Profile</h3>
+                <p className="text-xs text-slate-500">
+                  Registered enterprise billing profile for GST and priority support.
+                </p>
+              </div>
+            </div>
+            {businessProfile.priorityEnabled && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 w-fit">
+                <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                VIP Priority Enterprise Client
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+            <div>
+              <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px] block mb-0.5">
+                Company Name
+              </span>
+              <p className="font-bold text-slate-900 text-sm">{businessProfile.companyName || '—'}</p>
+            </div>
+            <div>
+              <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px] block mb-0.5">
+                GSTIN (Tax ID)
+              </span>
+              <p className="font-mono font-bold text-slate-900 text-sm uppercase">
+                {businessProfile.gstin || '—'}
+              </p>
+            </div>
+            <div>
+              <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px] block mb-0.5">
+                Primary Contact Liaison
+              </span>
+              <p className="font-semibold text-slate-800">{businessProfile.contactPerson || '—'}</p>
+            </div>
+            <div>
+              <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px] block mb-0.5">
+                Dedicated Account Manager
+              </span>
+              <p className="font-semibold text-slate-800">{businessProfile.accountManager || 'LaptopMitra Corporate Desk'}</p>
+            </div>
+            {businessProfile.billingAddress && (
+              <div className="sm:col-span-2 pt-2 border-t border-slate-200/60">
+                <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px] block mb-0.5">
+                  Official Billing Address
+                </span>
+                <p className="font-medium text-slate-700 whitespace-pre-wrap">{businessProfile.billingAddress}</p>
+              </div>
+            )}
+          </div>
+
+          <p className="text-[11px] text-slate-400 italic">
+            Corporate details and priority tier are managed by your LaptopMitra enterprise administrator. To request updates, please contact your account manager or raise a billing support ticket.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -21,6 +21,7 @@ interface CartContextType {
       configuration?: 'default' | 'ram-16gb' | string;
       hasWarranty?: boolean;
       variantId?: string;
+      tenureMonths?: 1 | 3 | 6 | 12 | 24;
     }
   ) => void;
   updateQuantity: (itemIdOrProductId: string, quantity: number) => void;
@@ -30,21 +31,6 @@ interface CartContextType {
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
-
-function resolveUnitPrice(product: Product, mode: 'sell' | 'lease'): number {
-  let basePrice: number;
-  if (mode === 'lease') {
-    if (product.leasePriceMonthly !== null && product.leasePriceMonthly !== undefined) {
-      basePrice = Number(product.leasePriceMonthly);
-    } else {
-      throw new Error('This product does not have a fixed monthly lease price. Please request a quote.');
-    }
-  } else {
-    basePrice = Number(product.price);
-  }
-
-  return basePrice;
-}
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const { firebaseUser, isLoading } = useAuth();
@@ -87,10 +73,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           const guestStored = localStorage.getItem('lm_cart:guest');
           const guestItems = guestStored ? JSON.parse(guestStored)?.items : null;
           const itemsToRestore = Array.isArray(guestItems) && guestItems.length ? guestItems : cachedItems;
+          if (new Set(itemsToRestore.map((item: CartItem) => item.purchaseMode === 'lease' ? 'lease' : 'sell')).size > 1) {
+            throw new Error('Buy and rent items cannot be combined. Remove one mode from your saved cart before syncing.');
+          }
           if (serverItems.length === 0 && itemsToRestore.length) {
             for (const item of itemsToRestore) {
               if (!item?.productId) continue;
-              await api.addToCart(item.productId, item.quantity || 1, item.purchaseMode || 'sell', item.configuration || 'default', !!item.hasWarranty, item.variantId || undefined);
+              await api.addToCart(
+                item.productId,
+                item.quantity || 1,
+                item.purchaseMode || 'sell',
+                item.configuration || 'default',
+                !!item.hasWarranty,
+                item.variantId || undefined,
+                item.tenureMonths || undefined,
+              );
             }
             const refreshed: any = await api.getCart();
             serverCart = refreshed?.cart ?? refreshed;
@@ -140,9 +137,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       configuration?: 'default' | 'ram-16gb' | string;
       hasWarranty?: boolean;
       variantId?: string;
+      tenureMonths?: 1 | 3 | 6 | 12 | 24;
     }
   ) => {
     const mode = options?.purchaseMode === 'lease' ? 'lease' : 'sell';
+    if (items.some((item) => (item.purchaseMode === 'lease' ? 'lease' : 'sell') !== mode)) {
+      throw new Error('Buy and rent items must be kept in separate carts. Your current cart was not changed.');
+    }
     const defaultVariant = product.variants?.find((item) => item.isActive && item.isDefault)
       || product.variants?.find((item) => item.isActive);
     const variantId = options?.variantId || defaultVariant?.id;
@@ -151,17 +152,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const config = 'default';
     const warranty = (options?.hasWarranty && mode === 'sell') ? true : false;
     const warrantyPrice = warranty ? 1999 : 0;
-    const unitPrice = variant
-      ? Number(mode === 'lease' ? variant.leasePriceMonthly : variant.price)
-      : resolveUnitPrice(product, mode);
-    if (variant && mode === 'lease' && variant.leasePriceMonthly == null) {
-      throw new Error('This variant does not have a fixed monthly lease price. Please request a quote.');
+    const tenureMonths = options?.tenureMonths;
+    const rentalPlans = variant?.rentalPlans ?? product.rentalPlans ?? [];
+    const rentalPlan = mode === 'lease' ? rentalPlans.find((plan) => plan.tenureMonths === tenureMonths) : undefined;
+    if (mode === 'lease' && !rentalPlan) {
+      throw new Error('This product has no approved rental price for the selected tenure.');
     }
+    const unitPrice = mode === 'lease' ? rentalPlan!.monthlyPrice : Number(variant?.price ?? product.price);
 
     const existingIndex = items.findIndex(
       item => item.productId === product.id &&
               (item.variantId || null) === (variantId || null) &&
               (item.purchaseMode || 'sell') === mode &&
+              (item.tenureMonths || null) === (mode === 'lease' ? tenureMonths : null) &&
               (item.configuration || 'default') === config
     );
 
@@ -186,6 +189,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         quantity,
         priceAtAdd: unitPrice,
         purchaseMode: mode,
+        ...(mode === 'lease' ? { tenureMonths } : {}),
         configuration: config,
         hasWarranty: warranty,
         warrantyPrice,
@@ -198,7 +202,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     // Asynchronously notify backend API and synchronize server cart state
     if (firebaseUser) {
-      api.addToCart(product.id, quantity, mode, config, warranty, variantId)
+      api.addToCart(product.id, quantity, mode, config, warranty, variantId, tenureMonths)
         .then(() => api.getCart())
         .then((res: any) => {
           const serverCart = res?.cart ?? res;
@@ -207,7 +211,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             setCartState({ key: storageKey, items: serverItems });
           }
         })
-        .catch(() => {});
+        .catch((error: unknown) => {
+          setSyncError(error instanceof Error ? error.message : 'Cart update failed. Please refresh and try again.');
+        });
     }
   };
 

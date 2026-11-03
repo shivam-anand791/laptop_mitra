@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { Order } from '@/lib/types';
+import { ItemSituationHelpModal } from '@/components/account/ItemSituationHelpModal';
 import { useSupportConfig } from '@/lib/support-config';
 import {
   getOrderTimelineSteps,
@@ -58,10 +59,12 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [selectedHelpItem, setSelectedHelpItem] = useState<any | null>(null);
 
   // Cancellation state
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isRequestingTermination, setIsRequestingTermination] = useState(false);
 
   // Return modal state
   const [returnModalOpen, setReturnModalOpen] = useState(false);
@@ -166,7 +169,7 @@ export default function OrderDetailPage() {
   };
 
   const handleConfirmCancel = async () => {
-    if (!order) return;
+    if (!order || order.items?.some((item) => item.purchaseMode === 'lease')) return;
     setIsCancelling(true);
     try {
       const updated = await api.cancelOrder(order.id);
@@ -183,6 +186,21 @@ export default function OrderDetailPage() {
       );
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  const handleRequestRentalTermination = async () => {
+    const subscription = order?.rentalSubscription;
+    if (!subscription) return;
+    setIsRequestingTermination(true);
+    try {
+      const result = await api.requestRentalTermination(subscription.id);
+      showBanner('success', result.message);
+      await loadOrder();
+    } catch (err: any) {
+      showBanner('error', err?.message || 'Failed to request rental termination.');
+    } finally {
+      setIsRequestingTermination(false);
     }
   };
 
@@ -224,10 +242,9 @@ export default function OrderDetailPage() {
 
   // Eligibility evaluation
   const items = order?.items || [];
-  const firstItem = items[0];
-  const isLease = firstItem?.purchaseMode === 'lease';
+  const isLease = items.some((item) => item.purchaseMode === 'lease');
 
-  const canCancel = order ? canCancelOrder(order.status) : false;
+  const canCancel = order ? !isLease && canCancelOrder(order.status) : false;
   const deliveredAt = order?.deliveries?.[0]?.deliveredAt || (order?.status === 'DELIVERED' ? order.updatedAt : null);
   const returnCheck = order
     ? canReturnOrder(order.status, deliveredAt, supportConfig?.returnWindowDays ?? 0, order.returnStatus, isLease)
@@ -366,7 +383,7 @@ export default function OrderDetailPage() {
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-semibold transition cursor-pointer shadow-2xs"
             >
               <FileText className="w-3.5 h-3.5 text-blue-600" />
-              {loadingInvoice ? 'Loading...' : 'Download Invoice (GST)'}
+              {loadingInvoice ? 'Loading...' : 'Download Invoice'}
             </button>
           ) : isLease ? (
             <span className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
@@ -378,13 +395,17 @@ export default function OrderDetailPage() {
             </span>
           ) : null}
 
-          <Link
-            href={`/help/guided-flow?orderId=${order.id}`}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition shadow-2xs"
+          <button
+            type="button"
+            onClick={() => {
+              if (items.length > 0) setSelectedHelpItem(items[0]);
+              else router.push(`/help/guided-flow?orderId=${order.id}`);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition shadow-2xs cursor-pointer"
           >
             <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
             Need Help?
-          </Link>
+          </button>
 
           <button
             type="button"
@@ -536,6 +557,11 @@ export default function OrderDetailPage() {
                       >
                         {itemIsLease ? 'Rent / mo' : 'Buy'}
                       </span>
+                      {item.status === 'CANCELLED' && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border bg-rose-50 text-rose-700 border-rose-200">
+                          Cancelled
+                        </span>
+                      )}
                       <h3 className="font-bold text-sm text-slate-900 truncate">
                         {item.product?.name || 'Certified Refurbished Laptop'}
                       </h3>
@@ -555,7 +581,7 @@ export default function OrderDetailPage() {
 
                     {itemIsLease && (
                       <p className="text-[11px] text-purple-700 font-medium">
-                        Month 1 advance, {formatIndianRupees(unitPrice)}/month thereafter. Later months are invoiced separately.
+                        First month charged now; subsequent monthly payments follow the AutoPay mandate.
                       </p>
                     )}
                   </div>
@@ -566,8 +592,18 @@ export default function OrderDetailPage() {
                     {formatIndianRupees(lineTotal)}
                   </p>
                   <span className="text-[11px] text-slate-400 block">
-                    {itemIsLease ? 'Month 1 advance • Incl. GST' : 'Incl. 18% GST'}
+                    {Number(order.taxRate) > 0
+                      ? `${order.taxInclusive ? 'Includes' : 'Plus'} ${Number(order.taxRate)}% tax`
+                      : 'No tax charged'}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedHelpItem(item)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 text-blue-700 rounded-xl text-xs font-semibold transition mt-2 cursor-pointer shadow-2xs"
+                  >
+                    <HelpCircle className="w-3.5 h-3.5" />
+                    Need Help?
+                  </button>
                 </div>
               </div>
             );
@@ -609,6 +645,48 @@ export default function OrderDetailPage() {
             Price Breakdown
           </h2>
 
+          {isLease && order.rentalSubscription && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-xs text-slate-700 space-y-2">
+              <div className="flex justify-between gap-3">
+                <span>Monthly rental charge</span>
+                <span className="font-semibold">{formatIndianRupees(order.rentalSubscription.monthlyAmount)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Rental term</span>
+                <span className="font-semibold">{order.rentalSubscription.tenureMonths} months</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Total commitment</span>
+                <span className="font-semibold">{formatIndianRupees(order.rentalSubscription.totalCommitment)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>AutoPay status</span>
+                <span className="font-semibold">{order.rentalSubscription.status.replaceAll('_', ' ')}</span>
+              </div>
+              {order.rentalSubscription.nextChargeAt && (
+                <div className="flex justify-between gap-3">
+                  <span>Next charge</span>
+                  <span className="font-semibold">
+                    {new Date(order.rentalSubscription.nextChargeAt).toLocaleDateString('en-IN')}
+                  </span>
+                </div>
+              )}
+              {order.rentalSubscription.payments?.length ? (
+                <div className="border-t border-blue-100 pt-2 space-y-1">
+                  <span className="font-semibold">Rental payment history</span>
+                  {order.rentalSubscription.payments.map((payment) => (
+                    <div key={payment.id} className="flex justify-between gap-3">
+                      <span>
+                        {payment.cycleNumber ? `Month ${payment.cycleNumber}` : 'Payment'} · {payment.status.replaceAll('_', ' ')}
+                      </span>
+                      <span>{formatIndianRupees(payment.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )}
+
           <div className="flex items-center justify-between text-xs text-slate-600">
             <span>Items Subtotal</span>
             <span>{formatIndianRupees(order.subtotal)}</span>
@@ -634,8 +712,16 @@ export default function OrderDetailPage() {
           </div>
 
           <div className="flex items-center justify-between text-xs text-slate-600">
-            <span>Tax (18% Integrated GST)</span>
-            <span>Included</span>
+            <span>
+              {Number(order.taxRate) > 0
+                ? `Tax (${Number(order.taxRate)}%) · ${order.taxInclusive ? 'included' : 'added'}`
+                : 'Tax'}
+            </span>
+            <span>
+              {Number(order.taxAmount) > 0
+                ? formatIndianRupees(Number(order.taxAmount))
+                : 'Not charged'}
+            </span>
           </div>
 
           <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-base font-bold text-slate-900">
@@ -686,6 +772,22 @@ export default function OrderDetailPage() {
               <XCircle className="w-3.5 h-3.5" />
               Cancel Order
             </button>
+          )}
+
+          {isLease && order.rentalSubscription?.status === 'ACTIVE' && (
+            <button
+              type="button"
+              onClick={handleRequestRentalTermination}
+              disabled={isRequestingTermination}
+              className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-xl text-xs font-semibold border border-amber-200 transition cursor-pointer disabled:opacity-60"
+            >
+              {isRequestingTermination ? 'Submitting request...' : 'Request Rental Termination'}
+            </button>
+          )}
+          {isLease && order.rentalSubscription?.status === 'TERMINATION_REQUESTED' && (
+            <p className="text-xs text-amber-800" role="status">
+              Your termination request is awaiting admin review. AutoPay remains active until approved.
+            </p>
           )}
 
           <Link
@@ -835,7 +937,11 @@ export default function OrderDetailPage() {
                 <p className="text-slate-500 leading-relaxed mt-0.5">
                   {invoiceData.seller?.address || 'Pan-India Operations Hub, New Delhi, India'}
                   <br />
-                  GSTIN: <span className="font-mono font-bold text-slate-900">{invoiceData.seller?.gstin || '07AABCL1234F1Z5'}</span>
+                  {invoiceData.seller?.gstin && (
+                    <>
+                      GSTIN: <span className="font-mono font-bold text-slate-900">{invoiceData.seller.gstin}</span>
+                    </>
+                  )}
                 </p>
               </div>
               <div className="text-right">
@@ -905,12 +1011,12 @@ export default function OrderDetailPage() {
                 <span>{formatIndianRupees(invoiceData.taxBreakdown?.taxableAmount || 0)}</span>
               </div>
               <div className="flex justify-between text-slate-600">
-                <span>Central GST (CGST 9%)</span>
-                <span>{formatIndianRupees(invoiceData.taxBreakdown?.cgst || 0)}</span>
-              </div>
-              <div className="flex justify-between text-slate-600">
-                <span>State GST (SGST 9%)</span>
-                <span>{formatIndianRupees(invoiceData.taxBreakdown?.sgst || 0)}</span>
+                <span>
+                  {Number(invoiceData.taxBreakdown?.taxRate) > 0
+                    ? `Tax (${Number(invoiceData.taxBreakdown.taxRate)}%)${invoiceData.taxBreakdown.taxInclusive ? ' · included' : ''}`
+                    : 'Tax not charged'}
+                </span>
+                <span>{formatIndianRupees(invoiceData.taxBreakdown?.taxAmount || 0)}</span>
               </div>
               <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-sm text-slate-900">
                 <span>Total Amount Paid</span>
@@ -919,10 +1025,28 @@ export default function OrderDetailPage() {
             </div>
 
             <p className="text-[11px] text-slate-400 text-center">
-              Computer-generated tax invoice verified under the Indian GST regime. Backed by LaptopMitra Assured Warranty.
+              Computer-generated invoice using the tax details recorded for this order. Backed by LaptopMitra Assured Warranty.
             </p>
           </div>
         </div>
+      )}
+
+      {/* Situation-Aware Need Help Modal */}
+      {selectedHelpItem && (
+        <ItemSituationHelpModal
+          isOpen={true}
+          onClose={() => setSelectedHelpItem(null)}
+          orderId={order.id}
+          orderNumber={order.orderNumber}
+          orderItemId={selectedHelpItem.id}
+          productName={selectedHelpItem.product?.name || 'Refurbished Laptop'}
+          purchaseMode={selectedHelpItem.purchaseMode}
+          unitPrice={Number(selectedHelpItem.price)}
+          initialShippingAddress={order.shippingAddress}
+          initialPhone={order.phone || undefined}
+          onActionSuccess={(msg) => showBanner('success', msg)}
+          onOpenReturnModal={() => setReturnModalOpen(true)}
+        />
       )}
     </div>
   );

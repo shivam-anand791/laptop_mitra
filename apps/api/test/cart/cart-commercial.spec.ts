@@ -10,7 +10,6 @@ describe('CartCommercialSpec - Variant Pricing, Warranty & Multi-Mode', () => {
     id: 'prod-t480',
     name: 'Lenovo ThinkPad T480',
     price: 30000,
-    leasePriceMonthly: 2500,
     stock: 15,
     allowBackorder: false,
     status: 'ACTIVE',
@@ -20,7 +19,6 @@ describe('CartCommercialSpec - Variant Pricing, Warranty & Multi-Mode', () => {
     id: 'prod-lat7490',
     name: 'Dell Latitude 7490',
     price: 25000,
-    leasePriceMonthly: null,
     stock: 10,
     allowBackorder: false,
     status: 'ACTIVE',
@@ -40,11 +38,19 @@ describe('CartCommercialSpec - Variant Pricing, Warranty & Multi-Mode', () => {
     mockPrisma = {
       cart: {
         findFirst: jest.fn().mockImplementation(() => Promise.resolve(mockCart)),
-        create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ ...mockCart, ...data })),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }: any) => Promise.resolve({ ...mockCart, ...data })),
       },
       cartItem: {
         create: jest.fn().mockImplementation(({ data }: any) => {
-          const newItem = { id: `item-${Date.now()}-${Math.random()}`, ...data, product: mockProduct };
+          const newItem = {
+            id: `item-${Date.now()}-${Math.random()}`,
+            ...data,
+            productId: data.product.connect.id,
+            variantId: data.variant?.connect.id ?? null,
+            product: mockProduct,
+          };
           mockCart.items.push(newItem);
           return Promise.resolve(newItem);
         }),
@@ -72,6 +78,13 @@ describe('CartCommercialSpec - Variant Pricing, Warranty & Multi-Mode', () => {
       productVariant: {
         findUnique: jest.fn(),
       },
+      rentalPrice: {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => {
+          if (where.productId !== mockProduct.id) return Promise.resolve(null);
+          const monthlyPrice = where.tenureMonths === 6 ? 2100 : 2500;
+          return Promise.resolve({ monthlyPrice, approvedAt: new Date() });
+        }),
+      },
     };
 
     mockProductService = {};
@@ -93,13 +106,15 @@ describe('CartCommercialSpec - Variant Pricing, Warranty & Multi-Mode', () => {
 
       await cartService.addItem('user-1', mockProduct.id);
 
-      expect(mockPrisma.cartItem.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({
-          variant: { connect: { id: variant.id } },
-          lineKey: `variant:${variant.id}:sell`,
-          priceAtAdd: 31500,
+      expect(mockPrisma.cartItem.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            variant: { connect: { id: variant.id } },
+            lineKey: `variant:${variant.id}:sell:none`,
+            priceAtAdd: 31500,
+          }),
         }),
-      }));
+      );
     });
 
     it('resolves standard outright purchase price', async () => {
@@ -117,21 +132,72 @@ describe('CartCommercialSpec - Variant Pricing, Warranty & Multi-Mode', () => {
       expect(item.configuration).toBe('default');
     });
 
-    it('resolves explicit leasePriceMonthly when available', async () => {
-      const item = await cartService.addItem('user-1', 'prod-t480', 1, 'lease', 'default', false);
+    it('uses the approved monthly rental price for the selected tenure', async () => {
+      const item = await cartService.addItem(
+        'user-1',
+        'prod-t480',
+        1,
+        'lease',
+        'default',
+        false,
+        undefined,
+        12,
+      );
       expect(item.priceAtAdd).toBe(2500);
       expect(item.purchaseMode).toBe('lease');
+      expect(mockPrisma.rentalPrice.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            tenureMonths: 12,
+            status: 'APPROVED',
+            sourceType: 'MANUAL',
+            auditHistory: { some: { action: 'APPROVED' } },
+          }),
+        }),
+      );
     });
 
-    it('rejects lease item when leasePriceMonthly is null with BadRequestException', async () => {
+    it('rejects lease item when no approved price exists with BadRequestException', async () => {
       await expect(
-        cartService.addItem('user-1', 'prod-lat7490', 1, 'lease', 'default', false),
+        cartService.addItem('user-1', 'prod-lat7490', 1, 'lease', 'default', false, undefined, 12),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('does not invent a lease upgrade price for a legacy configuration label', async () => {
-      const item = await cartService.addItem('user-1', 'prod-t480', 1, 'lease', 'ram-16gb', false);
+      const item = await cartService.addItem(
+        'user-1',
+        'prod-t480',
+        1,
+        'lease',
+        'ram-16gb',
+        false,
+        undefined,
+        12,
+      );
       expect(item.priceAtAdd).toBe(2500);
+    });
+
+    it('uses the current approved rate when displaying a saved rental cart', async () => {
+      mockCart.items = [
+        {
+          id: 'saved-rental',
+          productId: mockProduct.id,
+          variantId: null,
+          product: mockProduct,
+          variant: null,
+          priceAtAdd: 100,
+          quantity: 1,
+          purchaseMode: 'lease',
+          tenureMonths: 6,
+          hasWarranty: false,
+          warrantyPrice: 0,
+        },
+      ];
+
+      const cartSummary = await cartService.getCart('user-1');
+
+      expect(cartSummary.items[0].priceAtAdd).toBe(2100);
+      expect(cartSummary.monthlyTotal).toBe(2100);
     });
   });
 
@@ -144,57 +210,52 @@ describe('CartCommercialSpec - Variant Pricing, Warranty & Multi-Mode', () => {
 
     it('rejects warranty add-on for lease with BadRequestException', async () => {
       await expect(
-        cartService.addItem('user-1', 'prod-t480', 1, 'lease', 'default', true),
+        cartService.addItem('user-1', 'prod-t480', 1, 'lease', 'default', true, undefined, 12),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
-  describe('Multi-Mode Coexistence', () => {
-    it('allows same product as BUY and RENT to coexist in one cart', async () => {
+  describe('Purchase mode separation', () => {
+    it('rejects mixing BUY and RENT without changing the existing cart', async () => {
       await cartService.addItem('user-1', 'prod-t480', 1, 'sell', 'default', true);
-      await cartService.addItem('user-1', 'prod-t480', 2, 'lease', 'ram-16gb', false);
+      await expect(
+        cartService.addItem('user-1', 'prod-t480', 2, 'lease', 'ram-16gb', false, undefined, 12),
+      ).rejects.toThrow('Buy and rent items must be kept in separate carts');
 
-      expect(mockCart.items.length).toBe(2);
+      expect(mockCart.items).toHaveLength(1);
 
       const buyItem = mockCart.items.find((i: any) => i.purchaseMode === 'sell');
-      const leaseItem = mockCart.items.find((i: any) => i.purchaseMode === 'lease');
 
       expect(buyItem).toBeDefined();
       expect(buyItem.priceAtAdd).toBe(30000);
       expect(buyItem.hasWarranty).toBe(true);
-
-      expect(leaseItem).toBeDefined();
-      expect(leaseItem.priceAtAdd).toBe(2500);
-      expect(leaseItem.quantity).toBe(2);
-      expect(leaseItem.hasWarranty).toBe(false);
     });
 
-    it('computes separated oneTimeTotal and monthlyTotal in getCart', async () => {
-      // 1 Buy laptop (30000) + warranty (1999) = 31999
-      await cartService.addItem('user-1', 'prod-t480', 1, 'sell', 'default', true);
-      // 2 Lease laptops (2500/mo) * 2 = 5000/mo
-      await cartService.addItem('user-1', 'prod-t480', 2, 'lease', 'ram-16gb', false);
+    it('recalculates the current approved monthly total in getCart', async () => {
+      await cartService.addItem('user-1', 'prod-t480', 2, 'lease', 'default', false, undefined, 12);
 
       const cartSummary = await cartService.getCart('user-1');
 
-      expect(cartSummary.oneTimeTotal).toBe(31999);
+      expect(cartSummary.oneTimeTotal).toBe(0);
       expect(cartSummary.monthlyTotal).toBe(5000);
-      expect(cartSummary.total).toBe(36999);
-      expect(cartSummary.itemCount).toBe(3);
+      expect(cartSummary.total).toBe(5000);
+      expect(cartSummary.itemCount).toBe(2);
     });
 
     it('uses the current selected variant price when a saved cart is reopened', async () => {
-      mockCart.items = [{
-        id: 'variant-cart-item',
-        productId: mockProduct.id,
-        variantId: 'variant-16gb',
-        variant: { id: 'variant-16gb', price: 34000, leasePriceMonthly: 2800 },
-        priceAtAdd: 30000,
-        quantity: 1,
-        purchaseMode: 'sell',
-        hasWarranty: false,
-        warrantyPrice: 0,
-      }];
+      mockCart.items = [
+        {
+          id: 'variant-cart-item',
+          productId: mockProduct.id,
+          variantId: 'variant-16gb',
+          variant: { id: 'variant-16gb', price: 34000 },
+          priceAtAdd: 30000,
+          quantity: 1,
+          purchaseMode: 'sell',
+          hasWarranty: false,
+          warrantyPrice: 0,
+        },
+      ];
 
       const cartSummary = await cartService.getCart('user-1');
 

@@ -260,10 +260,19 @@ export const api = {
     configuration: string = 'default',
     hasWarranty: boolean = false,
     variantId?: string,
+    tenureMonths?: number,
   ) {
     return await request<any>('/cart/items', {
       method: 'POST',
-      body: JSON.stringify({ productId, quantity, purchaseMode, configuration, hasWarranty, ...(variantId ? { variantId } : {}) }),
+      body: JSON.stringify({
+        productId,
+        quantity,
+        purchaseMode,
+        configuration,
+        hasWarranty,
+        ...(variantId ? { variantId } : {}),
+        ...(tenureMonths ? { tenureMonths } : {}),
+      }),
     });
   },
 
@@ -381,6 +390,13 @@ export const api = {
     });
   },
 
+  async cancelOrderItem(orderId: string, itemId: string, reason?: string): Promise<{ message: string; cancelledItem: any; order: any }> {
+    return await request<{ message: string; cancelledItem: any; order: any }>(`/orders/${orderId}/items/${itemId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
   async requestOrderReturn(id: string, reason: string): Promise<{ message: string; returnStatus: string }> {
     return await request<{ message: string; returnStatus: string }>(`/orders/${id}/return`, {
       method: 'POST',
@@ -424,6 +440,97 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  },
+
+  async createRazorpaySubscription(orderId: string): Promise<any> {
+    return await request<any>('/payments/razorpay/subscription', {
+      method: 'POST',
+      body: JSON.stringify({ orderId }),
+    });
+  },
+
+  async verifyRentalSubscription(payload: {
+    orderId?: string;
+    subscriptionId?: string;
+    razorpaySubscriptionId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }): Promise<any> {
+    return await request<any>('/payments/razorpay/verify-subscription', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async requestRentalTermination(subscriptionId: string, reason?: string): Promise<any> {
+    return await request<any>(`/payments/subscriptions/${subscriptionId}/terminate`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  async getAvailableCoupons(payload?: any): Promise<{ eligible: any[]; ineligible: any[] } & any[]> {
+    const q = payload && typeof payload === 'object' ? '?' + new URLSearchParams(payload).toString() : '';
+    return await request<any>(`/coupons/available${q}`);
+  },
+
+  async previewCoupon(data: { code: string; [key: string]: any } | string, subtotal?: number, categoryIds?: string[]): Promise<any> {
+    const body = typeof data === 'string' ? { code: data, subtotal, categoryIds } : data;
+    return await request<any>('/coupons/preview', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  // Admin Coupon Management
+  async getAdminCoupons(params?: { status?: string; search?: string; page?: number; limit?: number }): Promise<any> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return await request<any>(`/admin/coupons${qs ? `?${qs}` : ''}`);
+  },
+
+  async getAdminCoupon(id: string): Promise<any> {
+    return await request<any>(`/admin/coupons/${id}`);
+  },
+
+  async createAdminCoupon(dto: any): Promise<any> {
+    return await request<any>('/admin/coupons', {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    });
+  },
+
+  async updateAdminCoupon(id: string, dto: any): Promise<any> {
+    return await request<any>(`/admin/coupons/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(dto),
+    });
+  },
+
+  async updateAdminCouponStatus(id: string, status: string): Promise<any> {
+    return await request<any>(`/admin/coupons/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  async bulkGenerateAdminCoupons(dto: any): Promise<any> {
+    return await request<any>('/admin/coupons/bulk-generate', {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    });
+  },
+
+  async getAdminCouponRedemptions(id: string, params?: { page?: number; limit?: number }): Promise<any> {
+    const query = new URLSearchParams();
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString();
+    return await request<any>(`/admin/coupons/${id}/redemptions${qs ? `?${qs}` : ''}`);
   },
 
   // Referral / Affiliate
@@ -768,5 +875,86 @@ export const api = {
 
   async getWarrantyStatus(orderItemId: string): Promise<any> {
     return await request<any>(`/support/warranty/${orderItemId}`);
+  },
+
+  // Situation-Aware Support & Change Requests
+  async getItemSituation(orderItemId: string): Promise<any> {
+    return await request<any>(`/support/items/${orderItemId}/situation`);
+  },
+
+  async getMyBusinessProfile(): Promise<any> {
+    return await request<any>('/support/business-profile');
+  },
+
+  async createChangeRequest(data: {
+    orderId: string;
+    orderItemId?: string;
+    type: string;
+    requestedData: Record<string, any>;
+  }): Promise<any> {
+    return await request<any>('/support/change-requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getCustomerChangeRequests(orderId?: string): Promise<any[]> {
+    return await request<any[]>(`/support/change-requests${orderId ? `?orderId=${orderId}` : ''}`);
+  },
+
+  // Buyback Guarantee
+  async getBuybackConfig(): Promise<{ settings: any; tiers: any[] }> {
+    return await request<{ settings: any; tiers: any[] }>('/support/buyback/config');
+  },
+
+  async createBuybackRequest(data: {
+    orderId: string;
+    orderItemId: string;
+    unitNumber?: number;
+    conditionChecklist: any;
+    payoutDetails?: any;
+    photos?: string[];
+    pickupAddress?: any;
+  }): Promise<any> {
+    return await request<any>('/support/buyback/requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getCustomerBuybacks(orderId?: string): Promise<any[]> {
+    return await request<any[]>(`/support/buyback/requests${orderId ? `?orderId=${orderId}` : ''}`);
+  },
+
+  async getBuybackById(id: string): Promise<any> {
+    return await request<any>(`/support/buyback/requests/${id}`);
+  },
+
+  async acceptRevisedBuybackOffer(id: string): Promise<any> {
+    return await request<any>(`/support/buyback/requests/${id}/accept-revised`, {
+      method: 'POST',
+    });
+  },
+
+  async declineRevisedBuybackOffer(id: string): Promise<any> {
+    return await request<any>(`/support/buyback/requests/${id}/decline-revised`, {
+      method: 'POST',
+    });
+  },
+
+  // Lease Contracts & Buyouts
+  async getLeaseContracts(): Promise<any[]> {
+    return await request<any[]>('/lease/contracts');
+  },
+
+  async getLeaseContractById(id: string): Promise<any> {
+    return await request<any>(`/lease/contracts/${id}`);
+  },
+
+  async requestLeaseBuyout(id: string, notes?: string): Promise<any> {
+    return await request<any>(`/lease/contracts/${id}/buyout-request`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
   },
 };

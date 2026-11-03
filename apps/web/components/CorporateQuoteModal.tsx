@@ -121,7 +121,7 @@ export default function CorporateQuoteModal({
       description={
         submittedInquiryId
           ? 'Your corporate procurement request has been registered.'
-          : 'Custom enterprise pricing, 18% GST input credit invoice, and bulk fleet solutions.'
+          : 'Custom enterprise pricing, tax invoices where applicable, and bulk fleet solutions.'
       }
       size="lg"
     >

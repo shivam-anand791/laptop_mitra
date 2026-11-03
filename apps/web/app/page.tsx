@@ -541,7 +541,7 @@ export default function HomePage() {
                 Equipping 5+ Laptops for Your Growing Team?
               </h3>
               <p className="text-xs sm:text-sm text-blue-100 max-w-xl mt-1">
-                Unlock tiered wholesale pricing up to 25% OFF, customized OS imaging, 18% GST input tax credit, and flexible zero-CapEx monthly leasing.
+                Unlock tiered wholesale pricing up to 25% OFF, customized OS imaging, tax invoices where applicable, and flexible zero-CapEx monthly leasing.
               </p>
             </div>
             <button

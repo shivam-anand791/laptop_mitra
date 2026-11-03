@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,13 +15,21 @@ import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useProduct, useAddToCart, useAddToWishlist, useWishlist, useRemoveWishlistItem, useSupportConfig } from '../../hooks/useApi';
+import {
+  useProduct,
+  useAddToCart,
+  useAddToWishlist,
+  useWishlist,
+  useRemoveWishlistItem,
+  useSupportConfig,
+} from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import CorporateQuoteModal from '../../components/CorporateQuoteModal';
 import { colors, radius, shadows, spacing, typography } from '../../theme/tokens';
+import { RentalTenureMonths } from '@laptopmitra/types';
 
 type ProductDetailRouteProp = RouteProp<MainStackParamList, 'ProductDetail'>;
 
@@ -48,11 +56,27 @@ export default function ProductDetailScreen() {
 
   // Phase R3 Commercial States
   const [purchaseMode, setPurchaseMode] = useState<'sell' | 'lease'>('sell');
-  const [configuration, setConfiguration] = useState<'default' | 'ram-16gb'>('default');
+  const [selectedVariantId, setSelectedVariantId] = useState('');
+  const [selectedRentalTenure, setSelectedRentalTenure] = useState<RentalTenureMonths>(12);
   const [hasWarranty, setHasWarranty] = useState<boolean>(false);
 
-  const isWishlisted = wishlist?.some((item: { productId: string; id: string }) => item.productId === productId);
-  const wishlistItem = wishlist?.find((item: { productId: string; id: string }) => item.productId === productId);
+  const isWishlisted = wishlist?.some(
+    (item: { productId: string; id: string }) => item.productId === productId,
+  );
+  const wishlistItem = wishlist?.find(
+    (item: { productId: string; id: string }) => item.productId === productId,
+  );
+
+  useEffect(() => {
+    const variant =
+      product?.variants?.find((item) => item.id === selectedVariantId) ??
+      product?.variants?.find((item) => item.isDefault) ??
+      product?.variants?.[0];
+    const plans = variant?.rentalPlans ?? product?.rentalPlans ?? [];
+    if (plans.length && !plans.some((plan) => plan.tenureMonths === selectedRentalTenure)) {
+      setSelectedRentalTenure(plans[0]?.tenureMonths ?? 12);
+    }
+  }, [product, selectedVariantId, selectedRentalTenure]);
 
   const formatPrice = (price: number | string) => {
     const num = typeof price === 'string' ? parseFloat(price) : price;
@@ -64,8 +88,7 @@ export default function ProductDetailScreen() {
       Alert.alert('Login Required', 'Please login to add items to your cart.');
       return;
     }
-    const hasLease = product?.leasePriceMonthly !== null && product?.leasePriceMonthly !== undefined;
-    if (purchaseMode === 'lease' && !hasLease) {
+    if (purchaseMode === 'lease' && !hasLeasePrice) {
       Alert.alert(
         'Quote Required',
         'This product does not have a fixed monthly lease price. Please request a quote.',
@@ -78,7 +101,7 @@ export default function ProductDetailScreen() {
               setCorporateModalVisible(true);
             },
           },
-        ]
+        ],
       );
       return;
     }
@@ -87,7 +110,8 @@ export default function ProductDetailScreen() {
         productId,
         quantity: 1,
         purchaseMode,
-        configuration,
+        ...(selectedVariant ? { variantId: selectedVariant.id } : {}),
+        ...(purchaseMode === 'lease' ? { tenureMonths: selectedRentalTenure } : {}),
         hasWarranty: purchaseMode === 'sell' ? hasWarranty : false,
       },
       {
@@ -97,7 +121,7 @@ export default function ProductDetailScreen() {
           } else {
             Alert.alert(
               'Added to Cart',
-              `${product?.name ?? 'Item'} (${purchaseMode === 'lease' ? 'Rent / Lease' : 'Buy'}) added to your cart.`
+              `${product?.name ?? 'Item'} (${purchaseMode === 'lease' ? 'Rent / Lease' : 'Buy'}) added to your cart.`,
             );
           }
         },
@@ -113,19 +137,14 @@ export default function ProductDetailScreen() {
   };
 
   const handleWhatsAppShare = () => {
-    const rawPrice = typeof product?.price === 'string' ? parseFloat(product.price) : (product?.price || 0);
+    const rawPrice = Number(selectedVariant?.price ?? product?.price ?? 0);
     const isLease = purchaseMode === 'lease';
-    const hasLease = product?.leasePriceMonthly !== null && product?.leasePriceMonthly !== undefined;
-    const leaseMonthly = hasLease
-      ? (typeof product?.leasePriceMonthly === 'string' ? parseFloat(product?.leasePriceMonthly) : product?.leasePriceMonthly)
-      : null;
-    const activePrice = isLease
-      ? (leaseMonthly !== null && leaseMonthly !== undefined ? Number(leaseMonthly) + (configuration === 'ram-16gb' ? 500 : 0) : null)
-      : rawPrice + (configuration === 'ram-16gb' ? 4000 : 0);
+    const activePrice = isLease ? (activeRentalPlan?.monthlyPrice ?? null) : rawPrice;
 
-    const priceText = activePrice !== null
-      ? `Price: ₹${activePrice.toLocaleString('en-IN')}${isLease ? '/month' : ''}`
-      : 'Price: On Request (Rent / Lease)';
+    const priceText =
+      activePrice !== null
+        ? `Price: ₹${activePrice.toLocaleString('en-IN')}${isLease ? '/month' : ''}`
+        : 'Price: On Request (Rent / Lease)';
 
     const referralText = user?.referralCode
       ? `\nUse my Mitra code *${user.referralCode}* at checkout to get flat ₹500 instant discount!`
@@ -180,16 +199,37 @@ export default function ProductDetailScreen() {
     );
   }
 
-  const images = product.images && product.images.length > 0
-    ? product.images
-    : [{ id: 'placeholder', productId: product.id, url: '', isPrimary: true }];
+  const selectedVariant =
+    product.variants?.find((variant) => variant.id === selectedVariantId) ??
+    product.variants?.find((variant) => variant.isDefault) ??
+    product.variants?.[0];
+  const rentalPlans = selectedVariant?.rentalPlans ?? product.rentalPlans ?? [];
+  const activeRentalPlan =
+    rentalPlans.find((plan) => plan.tenureMonths === selectedRentalTenure) ?? rentalPlans[0];
+  const hasLeasePrice = rentalPlans.length > 0;
+  const availableStock = selectedVariant?.stock ?? product.stock;
+  const allowBackorder = selectedVariant?.allowBackorder ?? product.allowBackorder ?? false;
+  const images: Array<{
+    id: string;
+    url: string;
+    isPrimary: boolean;
+    altText?: string | null;
+    sortOrder?: number;
+  }> = selectedVariant?.images?.length
+    ? selectedVariant.images
+    : product.images && product.images.length > 0
+      ? product.images
+      : [{ id: 'placeholder', url: '', isPrimary: true }];
 
-  const priceNum = typeof product.price === 'string' ? parseFloat(product.price) : product.price;
-  const comparePriceNum = product.compareAtPrice
-    ? typeof product.compareAtPrice === 'string'
-      ? parseFloat(product.compareAtPrice)
+  const priceNum = Number(selectedVariant?.price ?? product.price);
+  const comparePriceNum =
+    selectedVariant?.compareAtPrice != null
+      ? Number(selectedVariant.compareAtPrice)
       : product.compareAtPrice
-    : null;
+        ? typeof product.compareAtPrice === 'string'
+          ? parseFloat(product.compareAtPrice)
+          : product.compareAtPrice
+        : null;
 
   const hasDiscount = comparePriceNum !== null && comparePriceNum > priceNum;
   const discountPercent = hasDiscount
@@ -199,28 +239,33 @@ export default function ProductDetailScreen() {
   const meta = product.metadata || {};
   const condition = meta.condition || meta.grade || 'Grade A+ (Like New)';
 
-  const hasLeasePrice = product.leasePriceMonthly !== null && product.leasePriceMonthly !== undefined;
-  const leasePriceNum = hasLeasePrice
-    ? (typeof product.leasePriceMonthly === 'string' ? parseFloat(product.leasePriceMonthly) : product.leasePriceMonthly)
-    : null;
-
   const isLease = purchaseMode === 'lease';
-  const basePrice = isLease ? leasePriceNum : priceNum;
-  const configUpgradePrice = configuration === 'ram-16gb' ? (isLease ? 500 : 4000) : 0;
-  const currentUnitPrice = (basePrice !== null && basePrice !== undefined) ? Number(basePrice) + configUpgradePrice : null;
+  const currentUnitPrice = isLease ? (activeRentalPlan?.monthlyPrice ?? null) : priceNum;
 
   const currentBulkPrice = isLease
-    ? (product.bulkLeasePrice ? (typeof product.bulkLeasePrice === 'string' ? parseFloat(product.bulkLeasePrice) : product.bulkLeasePrice) : null)
-    : (product.bulkSellPrice ? (typeof product.bulkSellPrice === 'string' ? parseFloat(product.bulkSellPrice) : product.bulkSellPrice) : null);
+    ? product.bulkLeasePrice
+      ? typeof product.bulkLeasePrice === 'string'
+        ? parseFloat(product.bulkLeasePrice)
+        : product.bulkLeasePrice
+      : null
+    : product.bulkSellPrice
+      ? typeof product.bulkSellPrice === 'string'
+        ? parseFloat(product.bulkSellPrice)
+        : product.bulkSellPrice
+      : null;
 
   // Build spec sheet
   const specItems: { label: string; value: string }[] = [];
-  if (meta.processor || meta.cpu) specItems.push({ label: 'Processor', value: String(meta.processor || meta.cpu) });
+  if (meta.processor || meta.cpu)
+    specItems.push({ label: 'Processor', value: String(meta.processor || meta.cpu) });
   if (meta.ram) specItems.push({ label: 'RAM', value: String(meta.ram) });
   if (meta.storage) specItems.push({ label: 'Storage', value: String(meta.storage) });
-  if (meta.display || meta.screen) specItems.push({ label: 'Display Size', value: String(meta.display || meta.screen) });
-  if (meta.graphics || meta.gpu) specItems.push({ label: 'Graphics', value: String(meta.graphics || meta.gpu) });
-  if (meta.os || meta.operatingSystem) specItems.push({ label: 'Operating System', value: String(meta.os || meta.operatingSystem) });
+  if (meta.display || meta.screen)
+    specItems.push({ label: 'Display Size', value: String(meta.display || meta.screen) });
+  if (meta.graphics || meta.gpu)
+    specItems.push({ label: 'Graphics', value: String(meta.graphics || meta.gpu) });
+  if (meta.os || meta.operatingSystem)
+    specItems.push({ label: 'Operating System', value: String(meta.os || meta.operatingSystem) });
   specItems.push({ label: 'Condition', value: String(condition) });
   specItems.push({
     label: 'Warranty',
@@ -228,7 +273,10 @@ export default function ProductDetailScreen() {
       ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30))}-Month Pan-India Warranty`
       : 'Warranty duration unavailable',
   });
-  specItems.push({ label: 'SKU / Model ID', value: product.sku || product.id.slice(0, 8).toUpperCase() });
+  specItems.push({
+    label: 'SKU / Model ID',
+    value: product.sku || product.id.slice(0, 8).toUpperCase(),
+  });
 
   return (
     <View style={styles.container}>
@@ -269,7 +317,9 @@ export default function ProductDetailScreen() {
           {/* Top Badges Overlay */}
           <View style={styles.galleryBadges}>
             {product.isFeatured && <Badge variant="bestSeller" label="Best Seller" />}
-            {product.isNewArrival && !product.isFeatured && <Badge variant="newArrival" label="New" />}
+            {product.isNewArrival && !product.isFeatured && (
+              <Badge variant="newArrival" label="New" />
+            )}
           </View>
 
           {/* Dots Indicator */}
@@ -290,9 +340,7 @@ export default function ProductDetailScreen() {
           {/* Category & Condition */}
           <View style={styles.metaRow}>
             {product.category && (
-              <Text style={styles.categoryName}>
-                {product.category.name.toUpperCase()}
-              </Text>
+              <Text style={styles.categoryName}>{product.category.name.toUpperCase()}</Text>
             )}
             <Badge variant="grade" label={String(condition)} />
           </View>
@@ -301,11 +349,11 @@ export default function ProductDetailScreen() {
           <Text style={styles.productTitle}>{product.name}</Text>
 
           {/* Ready for Dispatch chip if stock > 0 */}
-          {product.stock > 0 ? (
+          {availableStock > 0 || allowBackorder ? (
             <View style={styles.stockChip}>
               <View style={styles.greenDot} />
               <Text style={styles.stockChipText}>
-                Ready for Dispatch • {product.stock} units available
+                Ready for Dispatch • {availableStock} units available
               </Text>
             </View>
           ) : (
@@ -321,7 +369,9 @@ export default function ProductDetailScreen() {
               onPress={() => setPurchaseMode('sell')}
               activeOpacity={0.8}
             >
-              <Text style={[styles.modeTabText, purchaseMode === 'sell' && styles.modeTabTextActive]}>
+              <Text
+                style={[styles.modeTabText, purchaseMode === 'sell' && styles.modeTabTextActive]}
+              >
                 Buy Outright
               </Text>
             </TouchableOpacity>
@@ -333,7 +383,12 @@ export default function ProductDetailScreen() {
               }}
               activeOpacity={0.8}
             >
-              <Text style={[styles.modeTabText, purchaseMode === 'lease' && styles.modeTabTextActiveLease]}>
+              <Text
+                style={[
+                  styles.modeTabText,
+                  purchaseMode === 'lease' && styles.modeTabTextActiveLease,
+                ]}
+              >
                 Rent / Lease
               </Text>
             </TouchableOpacity>
@@ -363,9 +418,7 @@ export default function ProductDetailScreen() {
             ) : (
               <View style={styles.priceRow}>
                 <Text style={styles.mainPrice}>{formatPrice(currentUnitPrice!)}</Text>
-                {purchaseMode === 'lease' && (
-                  <Text style={styles.perMonthText}>/ month</Text>
-                )}
+                {purchaseMode === 'lease' && <Text style={styles.perMonthText}>/ month</Text>}
                 {purchaseMode === 'sell' && hasDiscount && (
                   <>
                     <Text style={styles.comparePrice}>{formatPrice(comparePriceNum!)}</Text>
@@ -375,27 +428,33 @@ export default function ProductDetailScreen() {
               </View>
             )}
 
-            {purchaseMode === 'lease' ? (
+            {purchaseMode === 'lease' && activeRentalPlan ? (
               <View style={styles.leaseNoticeBox}>
                 <Ionicons name="information-circle-outline" size={16} color="#B45309" />
                 <Text style={styles.leaseNoticeText}>
-                  Month 1 advance, then {hasLeasePrice ? formatPrice(currentUnitPrice!) : 'agreed rate'}/month; later months invoiced separately.
+                  Refundable deposit: {formatPrice(activeRentalPlan.securityDeposit ?? 0)}. One-time
+                  delivery: {formatPrice(activeRentalPlan.deliveryCharge ?? 0)}. These are separate
+                  from monthly rent.
                 </Text>
               </View>
-            ) : (
+            ) : purchaseMode !== 'lease' ? (
               <Text style={styles.taxNote}>
-                Inclusive of 18% GST • Free express delivery across India
+                Taxes, if applicable, are calculated at checkout • Free express delivery across
+                India
               </Text>
-            )}
+            ) : null}
 
             {/* Bulk Pricing Callout */}
             <View style={styles.bulkCallout}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <View
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+              >
                 <Ionicons name="cube-outline" size={16} color={colors.primary} />
                 <Text style={styles.bulkCalloutText}>
                   {currentBulkPrice ? (
                     <>
-                      Bulk Rate: <Text style={styles.boldText}>{formatPrice(currentBulkPrice)}</Text>
+                      Bulk Rate:{' '}
+                      <Text style={styles.boldText}>{formatPrice(currentBulkPrice)}</Text>
                       {purchaseMode === 'lease' ? '/mo' : ''} per unit (5+ units, via quote)
                     </>
                   ) : (
@@ -418,47 +477,81 @@ export default function ProductDetailScreen() {
             </View>
           </View>
 
-          {/* Configuration Upgrade Selector */}
-          <View style={styles.configContainer}>
-            <Text style={styles.sectionHeaderTitle}>Select Configuration</Text>
-            <View style={styles.configCardsRow}>
-              <TouchableOpacity
-                style={[styles.configCard, configuration === 'default' && styles.configCardActive]}
-                onPress={() => setConfiguration('default')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.configCardHeader}>
-                  <Text style={[styles.configCardTitle, configuration === 'default' && styles.configCardTitleActive]}>
-                    Standard Factory
-                  </Text>
-                  {configuration === 'default' && (
-                    <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
-                  )}
-                </View>
-                <Text style={styles.configCardDesc}>Default specs as listed</Text>
-                <Text style={styles.configCardPrice}>Included (₹0)</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.configCard, configuration === 'ram-16gb' && styles.configCardActive]}
-                onPress={() => setConfiguration('ram-16gb')}
-                activeOpacity={0.8}
-              >
-                <View style={styles.configCardHeader}>
-                  <Text style={[styles.configCardTitle, configuration === 'ram-16gb' && styles.configCardTitleActive]}>
-                    16GB Pro Upgrade
-                  </Text>
-                  {configuration === 'ram-16gb' && (
-                    <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
-                  )}
-                </View>
-                <Text style={styles.configCardDesc}>High-speed performance</Text>
-                <Text style={styles.configCardPrice}>
-                  {purchaseMode === 'lease' ? '+₹500/mo' : '+₹4,000'}
-                </Text>
-              </TouchableOpacity>
+          {!!product.variants?.filter((variant) => variant.isActive).length && (
+            <View style={styles.configContainer}>
+              <Text style={styles.sectionHeaderTitle}>Select Configuration</Text>
+              <View style={styles.configCardsRow}>
+                {product.variants
+                  .filter((variant) => variant.isActive)
+                  .map((variant) => (
+                    <TouchableOpacity
+                      key={variant.id}
+                      style={[
+                        styles.configCard,
+                        selectedVariant?.id === variant.id && styles.configCardActive,
+                      ]}
+                      onPress={() => setSelectedVariantId(variant.id)}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.configCardTitle,
+                          selectedVariant?.id === variant.id && styles.configCardTitleActive,
+                        ]}
+                      >
+                        {variant.name}
+                      </Text>
+                      <Text style={styles.configCardPrice}>{formatPrice(variant.price)}</Text>
+                    </TouchableOpacity>
+                  ))}
+              </View>
             </View>
-          </View>
+          )}
+
+          {purchaseMode === 'lease' && hasLeasePrice && (
+            <View style={styles.configContainer}>
+              <Text style={styles.sectionHeaderTitle}>Rental Tenure</Text>
+              <View style={styles.configCardsRow}>
+                {rentalPlans.map((plan) => (
+                  <TouchableOpacity
+                    key={plan.tenureMonths}
+                    style={[
+                      styles.configCard,
+                      selectedRentalTenure === plan.tenureMonths && styles.configCardActive,
+                    ]}
+                    onPress={() => setSelectedRentalTenure(plan.tenureMonths)}
+                    activeOpacity={0.8}
+                  >
+                    <Text
+                      style={[
+                        styles.configCardTitle,
+                        selectedRentalTenure === plan.tenureMonths && styles.configCardTitleActive,
+                      ]}
+                    >
+                      {plan.tenureMonths} months
+                    </Text>
+                    <Text style={styles.configCardPrice}>
+                      {formatPrice(plan.monthlyPrice)}/month
+                    </Text>
+                    <Text style={styles.configCardDesc}>Total {formatPrice(plan.totalRent)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {!!activeRentalPlan && (
+                <View style={styles.rentalBreakdown}>
+                  <Text style={styles.rentalBreakdownText}>
+                    Total rent: {formatPrice(activeRentalPlan.totalRent)}
+                  </Text>
+                  <Text style={styles.rentalBreakdownText}>
+                    Refundable deposit: {formatPrice(activeRentalPlan.securityDeposit ?? 0)}
+                  </Text>
+                  <Text style={styles.rentalBreakdownText}>
+                    One-time delivery: {formatPrice(activeRentalPlan.deliveryCharge ?? 0)}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Warranty Toggle Section */}
           <View style={styles.warrantyBox}>
@@ -479,7 +572,9 @@ export default function ProductDetailScreen() {
                       ? `${Math.max(1, Math.round(supportConfig.standardWarrantyDays / 30)) * 2}-Month Extended Hardware Warranty`
                       : 'Extended Hardware Warranty'}
                   </Text>
-                  <Text style={styles.warrantyToggleSub}>Full motherboard & part protection across India (+₹1,999)</Text>
+                  <Text style={styles.warrantyToggleSub}>
+                    Full motherboard & part protection across India (+₹1,999)
+                  </Text>
                 </View>
                 <Text style={styles.warrantyPriceTag}>₹1,999</Text>
               </TouchableOpacity>
@@ -487,7 +582,7 @@ export default function ProductDetailScreen() {
               <View style={styles.leaseWarrantyRow}>
                 <Ionicons name="shield-checkmark" size={18} color="#D97706" />
                 <Text style={styles.leaseWarrantyText}>
-                  Lease Maintenance: Quarterly servicing and component repairs are included in your monthly lease agreement.
+                  Maintenance coverage is specified in the rental agreement.
                 </Text>
               </View>
             )}
@@ -533,7 +628,9 @@ export default function ProductDetailScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.inspectionTitle}>32-Point Quality Inspected</Text>
-                <Text style={styles.inspectionSubtitle}>Certified by senior hardware technicians</Text>
+                <Text style={styles.inspectionSubtitle}>
+                  Certified by senior hardware technicians
+                </Text>
               </View>
             </View>
 
@@ -623,7 +720,8 @@ export default function ProductDetailScreen() {
                       : 'Warranty duration unavailable'}
                   </Text>
                   <Text style={styles.warrantyDesc}>
-                    Full hardware and component coverage with doorstep pick-up and repair assistance.
+                    Full hardware and component coverage with doorstep pick-up and repair
+                    assistance.
                   </Text>
                 </View>
               </View>
@@ -659,9 +757,12 @@ export default function ProductDetailScreen() {
               >
                 <Ionicons name="shield-checkmark-outline" size={20} color="#0284C7" />
                 <View style={styles.warrantyTextWrap}>
-                  <Text style={[styles.warrantyTitle, { color: '#0284C7' }]}>36-Month Buyback Guarantee</Text>
+                  <Text style={[styles.warrantyTitle, { color: '#0284C7' }]}>
+                    36-Month Buyback Guarantee
+                  </Text>
                   <Text style={styles.warrantyDesc}>
-                    Assured return value up to 70% within 36 months (70/60/50/40%). Tap to read policy →
+                    Assured return value up to 70% within 36 months (70/60/50/40%). Tap to read
+                    policy →
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -705,16 +806,22 @@ export default function ProductDetailScreen() {
               variant="secondary"
               size="md"
               loading={addToCart.isPending}
-              disabled={product.stock <= 0}
+              disabled={availableStock <= 0 && !allowBackorder}
               style={styles.bottomActionButton}
             />
 
             <Button
-              title={product.stock > 0 ? (purchaseMode === 'lease' ? 'Lease Now' : 'Buy Now') : 'Out of Stock'}
+              title={
+                availableStock > 0 || allowBackorder
+                  ? purchaseMode === 'lease'
+                    ? 'Rent Now'
+                    : 'Buy Now'
+                  : 'Out of Stock'
+              }
               onPress={handleBuyNow}
               variant="navy"
               size="md"
-              disabled={product.stock <= 0}
+              disabled={availableStock <= 0 && !allowBackorder}
               style={styles.bottomActionButton}
             />
           </>
@@ -1150,6 +1257,16 @@ const styles = StyleSheet.create({
     color: '#92400E',
     fontWeight: '600',
     flex: 1,
+  },
+  rentalBreakdown: {
+    gap: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.cardBg,
+    padding: spacing.sm,
+  },
+  rentalBreakdownText: {
+    fontSize: 11,
+    color: colors.textSecondary,
   },
   configContainer: {
     gap: spacing.xs + 2,

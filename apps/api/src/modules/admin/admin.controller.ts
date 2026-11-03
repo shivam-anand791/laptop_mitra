@@ -15,6 +15,7 @@ import { AdminUserQueryDto } from './dto/admin-user-query.dto';
 import { AdminProductQueryDto } from './dto/admin-product-query.dto';
 import { AdminAnalyticsQueryDto } from './dto/admin-analytics-query.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { CreateRentalPriceDto, UpdateRentalPriceDto } from './dto/save-rental-price.dto';
 
 @UseGuards(RolesGuard)
 @Roles('ADMIN')
@@ -58,6 +59,14 @@ export class AdminController {
   @ApiResponse({ status: 200, description: 'Customer ticket and return history' })
   async getUserSupportHistory(@Param('id') id: string) {
     return this.adminService.getUserSupportHistory(id);
+  }
+
+  @Get('users/:id/360')
+  @ApiOperation({ summary: 'Customer 360: Aggregated profile, orders, leases, buybacks, returns, tickets, notes' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Customer 360 details' })
+  async getUser360(@Param('id') id: string) {
+    return this.adminService.getUser360(id);
   }
 
   @Throttle({ default: { limit: 30, ttl: 60000 } })
@@ -110,8 +119,8 @@ export class AdminController {
   @ApiOperation({ summary: 'Update product properties' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'Product updated' })
-  async updateProduct(@Param('id') id: string, @Body() data: any) {
-    return this.adminService.updateProduct(id, data);
+  async updateProduct(@Param('id') id: string, @Body() data: any, @GetUser() admin: any) {
+    return this.adminService.updateProduct(id, { ...data, adminId: admin?.id });
   }
 
   @Throttle({ default: { limit: 30, ttl: 60000 } })
@@ -121,6 +130,101 @@ export class AdminController {
   @ApiResponse({ status: 200, description: 'Product deleted or discontinued' })
   async deleteProduct(@Param('id') id: string) {
     return this.adminService.deleteProduct(id);
+  }
+
+  @Get('products/:id/references')
+  @ApiOperation({ summary: 'Get order and lease references count for a product before deletion' })
+  async getProductReferences(@Param('id') id: string) {
+    return this.adminService.getProductReferenceSummary(id);
+  }
+
+  @Get('products/:id/price-history')
+  @ApiOperation({ summary: 'Get product price and rental price audit history' })
+  async getProductPriceHistory(@Param('id') id: string) {
+    return this.adminService.getProductPriceHistory(id);
+  }
+
+  @Post('products/:id/rental-pricing')
+  @ApiOperation({ summary: 'Save and optionally publish rental prices per tenure for a product' })
+  async saveProductRentalPricing(
+    @Param('id') id: string,
+    @Body() dto: any,
+    @GetUser() admin: any,
+  ) {
+    return this.adminService.saveProductRentalPrices(id, dto, admin?.id || 'admin');
+  }
+
+  @Post('products/bulk-pricing/preview')
+  @ApiOperation({ summary: 'Preview bulk pricing adjustment before applying' })
+  async previewBulkPricing(@Body() dto: any, @GetUser() admin: any) {
+    return this.adminService.bulkUpdatePricing(dto, admin?.id || 'admin', true);
+  }
+
+  @Post('products/bulk-pricing/apply')
+  @ApiOperation({ summary: 'Apply bulk pricing adjustment with audit logs' })
+  async applyBulkPricing(@Body() dto: any, @GetUser() admin: any) {
+    return this.adminService.bulkUpdatePricing(dto, admin?.id || 'admin', false);
+  }
+
+  @Get('products/export/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="laptopmitra-catalog.csv"')
+  @ApiOperation({ summary: 'Export catalog as CSV with rental tenures' })
+  async exportProductsCsv(@Res() res: Response) {
+    const csv = await this.adminService.exportProductsCsv();
+    return res.send(csv);
+  }
+
+  @Post('products/import/csv')
+  @ApiOperation({ summary: 'Import or dry-run validate catalog CSV' })
+  async importProductsCsv(@Body() body: { csvText: string; dryRun?: boolean }) {
+    return this.adminService.importProductsCsv(body.csvText, body.dryRun !== false);
+  }
+
+  @Get('rental-prices/drafts')
+  @ApiOperation({ summary: 'List unapproved rental pricing recommendations' })
+  async getRentalPriceDrafts() {
+    return this.adminService.getRentalPriceDrafts();
+  }
+
+  @Get('rental-prices')
+  @ApiOperation({ summary: 'List rental prices and their approval state' })
+  async getRentalPrices() {
+    return this.adminService.getRentalPrices();
+  }
+
+  @Get('rental-prices/catalog')
+  @ApiOperation({ summary: 'List active products and variants for rental price management' })
+  async getRentalPricingCatalog() {
+    return this.adminService.getRentalPricingCatalog();
+  }
+
+  @Get('rental-prices/:id/history')
+  @ApiOperation({ summary: 'Get the audit history for a rental price' })
+  async getRentalPriceHistory(@Param('id') id: string) {
+    return this.adminService.getRentalPriceHistory(id);
+  }
+
+  @Post('rental-prices')
+  @ApiOperation({ summary: 'Create a manual rental price draft' })
+  async createRentalPriceDraft(@GetUser() admin: any, @Body() dto: CreateRentalPriceDto) {
+    return this.adminService.createRentalPriceDraft(dto, admin.id);
+  }
+
+  @Put('rental-prices/:id')
+  @ApiOperation({ summary: 'Edit a manual rental price draft' })
+  async updateRentalPriceDraft(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateRentalPriceDto,
+  ) {
+    return this.adminService.updateRentalPriceDraft(id, dto, admin.id);
+  }
+
+  @Post('rental-prices/:id/approve')
+  @ApiOperation({ summary: 'Approve one rental price draft for customer display and checkout' })
+  async approveRentalPrice(@GetUser() admin: any, @Param('id') id: string) {
+    return this.adminService.approveRentalPrice(id, admin.id);
   }
 
   @Get('orders')
@@ -158,6 +262,25 @@ export class AdminController {
       return this.adminService.updateOrderStatus(id, dto.status, admin?.id, courierData);
     }
     return this.adminService.updateOrderStatus(id, dto.status, admin?.id);
+  }
+
+  @Post('orders/:id/items/:itemId/cancel')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Admin cancel single order item before dispatch' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiParam({ name: 'itemId', type: String })
+  async cancelOrderItem(
+    @GetUser() admin: any,
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.adminService.cancelOrderItem(
+      orderId,
+      itemId,
+      admin?.id || 'admin',
+      reason || 'Cancelled by staff',
+    );
   }
 
 

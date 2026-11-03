@@ -3,7 +3,23 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIn
 import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useOrder, useCancelOrder, useReturnOrder, useReorder, useOrderInvoice, useOrderTracking, useSupportConfig } from '../../hooks/useApi';
+import {
+  useOrder,
+  useCancelOrder,
+  useReturnOrder,
+  useReorder,
+  useOrderInvoice,
+  useOrderTracking,
+  useSupportConfig,
+  useCreateRazorpayOrder,
+  useVerifyRazorpayPayment,
+  useCreateRazorpaySubscription,
+  useVerifyRentalSubscription,
+  useRequestRentalTermination,
+  useProfile,
+} from '../../hooks/useApi';
+import RazorpayCheckoutModal, { RazorpayCheckoutData } from '../../components/RazorpayCheckoutModal';
+import ItemSituationHelpModal from '../../components/ItemSituationHelpModal';
 import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
 import {
   getMobileStatusLabel,
@@ -49,6 +65,12 @@ export default function OrderDetailScreen() {
   const cancelOrder = useCancelOrder();
   const returnOrder = useReturnOrder();
   const reorder = useReorder();
+  const createRazorpayOrder = useCreateRazorpayOrder();
+  const verifyRazorpayPayment = useVerifyRazorpayPayment();
+  const createRazorpaySubscription = useCreateRazorpaySubscription();
+  const verifyRentalSubscription = useVerifyRentalSubscription();
+  const requestRentalTermination = useRequestRentalTermination();
+  const { data: profile } = useProfile();
 
   // Return modal state
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
@@ -56,6 +78,98 @@ export default function OrderDetailScreen() {
 
   // Invoice modal state
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [selectedHelpItem, setSelectedHelpItem] = useState<any | null>(null);
+
+  // Razorpay retry state
+  const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
+  const [checkoutData, setCheckoutData] = useState<RazorpayCheckoutData | null>(null);
+  const [isRetryingPayment, setIsRetryingPayment] = useState(false);
+
+  const handleStartRazorpayPayment = async () => {
+    if (!order) return;
+    setIsRetryingPayment(true);
+    try {
+      const shipping = order.shippingAddress as Record<string, string> | null;
+      const customerName = shipping?.fullName || profile?.name || 'Valued Customer';
+      const customerEmail = profile?.email || '';
+      const customerPhone = shipping?.phone || profile?.phone || '';
+
+      const isLease = order.items?.some((it: any) => it.purchaseMode === 'lease');
+      if (isLease) {
+        const subscription = await createRazorpaySubscription.mutateAsync(order.id);
+        if (!subscription.keyId) throw new Error('Payment gateway key is unavailable');
+        setCheckoutData({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          type: 'rental',
+          razorpaySubscriptionId: subscription.subscriptionId,
+          amountInPaise: subscription.amount,
+          currency: subscription.currency || 'INR',
+          keyId: subscription.keyId,
+          customer: { name: customerName, email: customerEmail, phone: customerPhone },
+          description: `Rental authorization for order #${order.orderNumber || order.id.slice(-8)}`,
+        });
+      } else {
+        const rzpOrder = await createRazorpayOrder.mutateAsync(order.id);
+        if (!rzpOrder.keyId) throw new Error('Payment gateway key is unavailable');
+        setCheckoutData({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          type: 'purchase',
+          razorpayOrderId: rzpOrder.id,
+          amountInPaise: rzpOrder.amount,
+          currency: rzpOrder.currency || 'INR',
+          keyId: rzpOrder.keyId,
+          customer: { name: customerName, email: customerEmail, phone: customerPhone },
+          description: `Order #${order.orderNumber || order.id.slice(-8)} - Certified Refurbished`,
+        });
+      }
+      setCheckoutModalVisible(true);
+    } catch (err: any) {
+      Alert.alert('Payment Initialization Failed', err.message || 'Could not connect to payment gateway.');
+    } finally {
+      setIsRetryingPayment(false);
+    }
+  };
+
+  const handlePaymentSuccess = async (result: {
+    orderId: string;
+    razorpayOrderId?: string;
+    razorpaySubscriptionId?: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) => {
+    setCheckoutModalVisible(false);
+    try {
+      if (result.razorpaySubscriptionId) {
+        await verifyRentalSubscription.mutateAsync({
+          orderId: result.orderId,
+          razorpaySubscriptionId: result.razorpaySubscriptionId,
+          razorpayPaymentId: result.razorpayPaymentId,
+          razorpaySignature: result.razorpaySignature,
+        });
+      } else if (result.razorpayOrderId) {
+        await verifyRazorpayPayment.mutateAsync({
+          orderId: result.orderId,
+          razorpayOrderId: result.razorpayOrderId,
+          razorpayPaymentId: result.razorpayPaymentId,
+          razorpaySignature: result.razorpaySignature,
+        });
+      } else {
+        throw new Error('Payment response did not include a valid order or subscription');
+      }
+      Alert.alert('Payment Verified!', 'Your payment was confirmed successfully.');
+      void refetchOrder();
+    } catch (err: any) {
+      Alert.alert('Verification in Progress', err.message || 'Payment received and being processed.');
+      void refetchOrder();
+    }
+  };
+
+  const handlePaymentFailure = (error: { description?: string }) => {
+    setCheckoutModalVisible(false);
+    Alert.alert('Payment Failed', error.description || 'Payment could not be completed. You can try again.');
+  };
 
   const handleCancel = () => {
     Alert.alert(
@@ -73,6 +187,27 @@ export default function OrderDetailScreen() {
               },
               onError: (err) => Alert.alert('Error', err.message),
             }),
+        },
+      ],
+    );
+  };
+
+  const handleRequestRentalTermination = () => {
+    if (!order?.rentalSubscription) return;
+    Alert.alert(
+      'Request Rental Termination',
+      'This request will be reviewed by our team. Your AutoPay mandate remains active until the request is approved.',
+      [
+        { text: 'Keep Rental', style: 'cancel' },
+        {
+          text: 'Submit Request',
+          onPress: () => requestRentalTermination.mutate(order.rentalSubscription!.id, {
+            onSuccess: () => {
+              Alert.alert('Request Submitted', 'Your rental termination request is awaiting admin review.');
+              void refetchOrder();
+            },
+            onError: (error) => Alert.alert('Request Failed', error.message),
+          }),
         },
       ],
     );
@@ -128,8 +263,13 @@ export default function OrderDetailScreen() {
   }
 
   const statusCfg = getMobileStatusLabel(order.status, order.paymentStatus, order.returnStatus);
-  const canCancel = canCancelOrder(order.status);
+  const isLeaseOrder = order.items?.some((it: any) => it.purchaseMode === 'lease') ?? false;
+  const canCancel = !isLeaseOrder && canCancelOrder(order.status);
   const isCancelled = order.status === 'CANCELLED';
+  const isPendingRazorpay =
+    order.status === 'PENDING' &&
+    ['PENDING', 'FAILED'].includes(order.paymentStatus) &&
+    ['razorpay', 'razorpay_subscription'].includes(order.paymentMethod || '');
 
   const returnEligibility = canReturnOrder({
     status: order.status,
@@ -172,6 +312,38 @@ export default function OrderDetailScreen() {
           <Ionicons name="calendar-outline" size={15} color="#2563eb" />
           <Text style={styles.estimateBannerText}>{estimateText}</Text>
         </View>
+
+        {/* Razorpay Pending Payment Retry Banner */}
+        {isPendingRazorpay && (
+          <View style={styles.pendingPaymentCard}>
+            <View style={styles.pendingPaymentHeader}>
+              <Ionicons name="card" size={18} color="#b45309" />
+              <Text style={styles.pendingPaymentTitle}>Payment Incomplete</Text>
+            </View>
+            <Text style={styles.pendingPaymentText}>
+            {isLeaseOrder
+              ? 'Your rental item is reserved. Authorize the AutoPay mandate and pay the first month to confirm it.'
+              : 'Your order items are reserved. Complete your online payment via Razorpay to confirm the order.'}
+            </Text>
+            <TouchableOpacity
+              style={styles.payNowButton}
+              onPress={handleStartRazorpayPayment}
+              disabled={isRetryingPayment}
+              activeOpacity={0.8}
+            >
+              {isRetryingPayment ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="shield-checkmark" size={16} color="#fff" />
+                  <Text style={styles.payNowButtonText}>
+                    {isLeaseOrder ? 'Authorize & Pay' : 'Complete Payment'} ({formatIndianRupees(order.finalAmount)})
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* Quick Action Buttons */}
@@ -221,7 +393,13 @@ export default function OrderDetailScreen() {
 
         <TouchableOpacity
           style={styles.secondaryButton}
-          onPress={() => navigation.navigate('GuidedSupportFlow', { orderId: order.id })}
+          onPress={() => {
+            if (order.items && order.items.length > 0) {
+              setSelectedHelpItem(order.items[0]);
+            } else {
+              navigation.navigate('GuidedSupportFlow', { orderId: order.id });
+            }
+          }}
           activeOpacity={0.7}
         >
           <Ionicons name="help-buoy-outline" size={16} color="#2563eb" />
@@ -353,10 +531,31 @@ export default function OrderDetailScreen() {
                 </Text>
                 {isLease && (
                   <Text style={{ fontSize: 10, color: '#92400E', fontWeight: '500', marginTop: 2 }}>
-                    Month 1 advance, {formatIndianRupees(item.price)}/mo thereafter. Later months are invoiced separately.
+                    First month charged now; subsequent monthly payments follow the AutoPay mandate.
                   </Text>
                 )}
                 <Text style={styles.itemTotal}>{formatIndianRupees(lineUnitTotal * (item.quantity ?? 1))}</Text>
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    alignSelf: 'flex-start',
+                    marginTop: 8,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 6,
+                    borderWidth: 1,
+                    borderColor: '#BFDBFE',
+                    backgroundColor: '#EFF6FF',
+                  }}
+                  onPress={() => setSelectedHelpItem(item)}
+                >
+                  <Ionicons name="help-circle-outline" size={14} color="#2563EB" />
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#2563EB' }}>
+                    Need Help?
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           );
@@ -385,11 +584,54 @@ export default function OrderDetailScreen() {
           )}
           <View style={styles.summaryDivider} />
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryTotalLabel}>Grand Total (Incl. GST)</Text>
+            <Text style={styles.summaryTotalLabel}>Grand Total</Text>
             <Text style={styles.summaryTotalValue}>{formatIndianRupees(order.finalAmount)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>
+              {order.taxRate
+                ? `Tax (${order.taxRate}%)${order.taxInclusive ? ' · included' : ''}`
+                : 'Tax not charged'}
+            </Text>
+            <Text style={styles.summaryValue}>{formatIndianRupees(order.taxAmount || 0)}</Text>
           </View>
         </View>
       </View>
+
+      {isLeaseOrder && order.rentalSubscription && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Rental AutoPay</Text>
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Rental term</Text>
+              <Text style={styles.summaryValue}>{order.rentalSubscription.tenureMonths} months</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Monthly charge</Text>
+              <Text style={styles.summaryValue}>{formatIndianRupees(order.rentalSubscription.monthlyAmount)}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Total commitment</Text>
+              <Text style={styles.summaryValue}>{formatIndianRupees(order.rentalSubscription.totalCommitment)}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Mandate / rental status</Text>
+              <Text style={styles.summaryValue}>{order.rentalSubscription.status}</Text>
+            </View>
+            {order.rentalSubscription.payments?.map((payment) => (
+              <View key={payment.id} style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Cycle {payment.cycleNumber ?? '—'}</Text>
+                <Text style={styles.summaryValue}>
+                  {formatIndianRupees(payment.amount)} · {payment.status}
+                </Text>
+              </View>
+            ))}
+            {order.rentalSubscription.status === 'TERMINATION_REQUESTED' && (
+              <Text style={styles.pendingPaymentText}>Your termination request is awaiting admin review.</Text>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* Shipping Address */}
       {shippingAddress && (
@@ -457,6 +699,20 @@ export default function OrderDetailScreen() {
           ) : (
             <Text style={styles.cancelButtonText}>Cancel Order</Text>
           )}
+          {isLeaseOrder && order.rentalSubscription?.status === 'ACTIVE' && (
+            <TouchableOpacity
+              style={[styles.cancelButton, requestRentalTermination.isPending && styles.cancelButtonDisabled]}
+              onPress={handleRequestRentalTermination}
+              disabled={requestRentalTermination.isPending}
+              activeOpacity={0.8}
+            >
+              {requestRentalTermination.isPending ? (
+                <ActivityIndicator size="small" color="#ef4444" />
+              ) : (
+                <Text style={styles.cancelButtonText}>Request Rental Termination</Text>
+              )}
+            </TouchableOpacity>
+          )}
         </TouchableOpacity>
       )}
 
@@ -508,7 +764,7 @@ export default function OrderDetailScreen() {
       <Modal visible={isInvoiceModalOpen} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>GST Tax Invoice</Text>
+            <Text style={styles.modalTitle}>Invoice</Text>
             <Text style={styles.modalSubtitle}>
               Invoice #{invoiceData?.invoiceNumber || `INV-${order.orderNumber}`}
             </Text>
@@ -516,15 +772,15 @@ export default function OrderDetailScreen() {
             <View style={styles.invoiceBreakdown}>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Base Amount</Text>
-                <Text style={styles.summaryValue}>{formatIndianRupees((invoiceData as any)?.taxBreakdown?.taxableAmount || (order.subtotal * 0.82))}</Text>
+                <Text style={styles.summaryValue}>{formatIndianRupees(order.finalAmount - (order.taxAmount || 0))}</Text>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>CGST (9%)</Text>
-                <Text style={styles.summaryValue}>{formatIndianRupees((invoiceData as any)?.taxBreakdown?.cgst || (order.subtotal * 0.09))}</Text>
-              </View>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>SGST (9%)</Text>
-                <Text style={styles.summaryValue}>{formatIndianRupees((invoiceData as any)?.taxBreakdown?.sgst || (order.subtotal * 0.09))}</Text>
+                <Text style={styles.summaryLabel}>
+                  {order.taxRate
+                    ? `Tax (${order.taxRate}%)${order.taxInclusive ? ' · included' : ''}`
+                    : 'Tax not charged'}
+                </Text>
+                <Text style={styles.summaryValue}>{formatIndianRupees(order.taxAmount || 0)}</Text>
               </View>
               <View style={styles.summaryDivider} />
               <View style={styles.summaryRow}>
@@ -542,6 +798,37 @@ export default function OrderDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Item Situation Help Modal */}
+      {selectedHelpItem && (
+        <ItemSituationHelpModal
+          visible={!!selectedHelpItem}
+          onClose={() => setSelectedHelpItem(null)}
+          orderId={order.id}
+          orderNumber={order.orderNumber}
+          orderItemId={selectedHelpItem.id}
+          item={selectedHelpItem}
+          order={order}
+          onOpenReturn={() => setIsReturnModalOpen(true)}
+          onNavigateToTicket={(prefill) => {
+            navigation.navigate('GuidedSupportFlow', {
+              orderId: order.id,
+              orderItemId: prefill.orderItemId,
+              category: prefill.category,
+              subject: prefill.subject,
+            } as any);
+          }}
+        />
+      )}
+
+      {/* Razorpay Checkout Modal */}
+      <RazorpayCheckoutModal
+        visible={checkoutModalVisible}
+        checkoutData={checkoutData}
+        onSuccess={handlePaymentSuccess}
+        onFailure={handlePaymentFailure}
+        onClose={() => setCheckoutModalVisible(false)}
+      />
     </ScrollView>
   );
 }
@@ -981,6 +1268,45 @@ const styles = StyleSheet.create({
   helpBannerButtonText: {
     color: '#fff',
     fontSize: 12,
+    fontWeight: '700',
+  },
+  pendingPaymentCard: {
+    backgroundColor: '#fffbeb',
+    borderWidth: 1.5,
+    borderColor: '#fde68a',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 10,
+    gap: 8,
+  },
+  pendingPaymentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pendingPaymentTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400e',
+  },
+  pendingPaymentText: {
+    fontSize: 12,
+    color: '#78350f',
+    lineHeight: 17,
+  },
+  payNowButton: {
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    height: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  payNowButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
     fontWeight: '700',
   },
 });

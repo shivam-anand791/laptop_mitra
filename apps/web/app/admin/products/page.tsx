@@ -1,22 +1,42 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import Link from 'next/link';
+import { useAuth } from '../../../lib/auth-context';
 import { api } from '../../../lib/api';
+import { adminApi } from '../../../lib/admin-api';
 import { Product, ProductVariant, Category } from '../../../lib/types';
 import { formatPrice } from '../../../lib/format';
+import { formatIndianRupees } from '@/lib/account-helpers';
+import { StatusBadge } from '../../../components/admin/StatusBadge';
+import AdminModal from '../../../components/admin/AdminModal';
+import { useToast } from '../../../components/ui/Toast';
+import {
+  Search,
+  Filter,
+  Plus,
+  Edit2,
+  Trash2,
+  Check,
+  X,
+  ShieldAlert,
+  ArrowUpDown,
+  Download,
+  Upload,
+  History,
+  Sliders,
+  Layers,
+  RefreshCw,
+  Eye,
+  AlertCircle,
+  FileText,
+  SlidersHorizontal,
+} from 'lucide-react';
 
-function ProductStatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    ACTIVE: 'badge-success',
-    INACTIVE: 'badge-warning',
-    DISCONTINUED: 'badge-danger',
-  };
-  return <span className={`badge ${styles[status] || 'badge-gray'}`}>{status}</span>;
-}
-
+const STANDARD_BRANDS = ['Apple', 'Dell', 'Lenovo', 'HP', 'ASUS', 'Acer', 'Microsoft'];
 const RAM_OPTIONS = ['8GB', '16GB', '24GB', '32GB', '64GB', '96GB', '128GB'];
 const STORAGE_OPTIONS = ['256GB SSD', '512GB SSD', '1TB SSD', '2TB SSD', '4TB SSD'];
-const STANDARD_BRANDS = ['Apple', 'Dell', 'Lenovo', 'HP', 'ASUS', 'Acer', 'Microsoft'];
+const TENURES = [1, 3, 6, 12, 24] as const;
 
 export interface StructuredVariantDraft {
   id?: string;
@@ -35,8 +55,6 @@ export interface StructuredVariantDraft {
   isActive: boolean;
   isDefault: boolean;
   imageUrls: string;
-  rawJsonMode: boolean;
-  rawAttributesJson: string;
 }
 
 function toStructuredVariantDraft(variant: ProductVariant): StructuredVariantDraft {
@@ -48,7 +66,22 @@ function toStructuredVariantDraft(variant: ProductVariant): StructuredVariantDra
 
   const extra: Record<string, string> = {};
   for (const [k, v] of Object.entries(attrs)) {
-    if (!['ram', 'storage', 'processor', 'graphics', 'RAM', 'memory', 'SSD', 'drive', 'cpu', 'CPU', 'gpu', 'GPU'].includes(k)) {
+    if (
+      ![
+        'ram',
+        'storage',
+        'processor',
+        'graphics',
+        'RAM',
+        'memory',
+        'SSD',
+        'drive',
+        'cpu',
+        'CPU',
+        'gpu',
+        'GPU',
+      ].includes(k)
+    ) {
       extra[k] = String(v);
     }
   }
@@ -63,48 +96,70 @@ function toStructuredVariantDraft(variant: ProductVariant): StructuredVariantDra
     graphics,
     extraAttributes: extra,
     price: variant.price !== undefined && variant.price !== null ? String(variant.price) : '',
-    compareAtPrice: variant.compareAtPrice !== undefined && variant.compareAtPrice !== null ? String(variant.compareAtPrice) : '',
-    leasePriceMonthly: variant.leasePriceMonthly !== undefined && variant.leasePriceMonthly !== null ? String(variant.leasePriceMonthly) : '',
+    compareAtPrice:
+      variant.compareAtPrice !== undefined && variant.compareAtPrice !== null
+        ? String(variant.compareAtPrice)
+        : '',
+    leasePriceMonthly:
+      variant.leasePriceMonthly !== undefined && variant.leasePriceMonthly !== null
+        ? String(variant.leasePriceMonthly)
+        : '',
     stock: String(variant.stock ?? '0'),
     allowBackorder: !!variant.allowBackorder,
     isActive: variant.isActive !== false,
     isDefault: !!variant.isDefault,
     imageUrls: (variant.images || []).map((image) => image.url).join('\n'),
-    rawJsonMode: false,
-    rawAttributesJson: JSON.stringify(variant.attributes, null, 2),
   };
 }
 
-export default function ProductsPage() {
+export default function AdminProductsPage() {
+  const { user } = useAuth();
+  const { addToast } = useToast();
+  const isSupport = user?.role === 'SUPPORT';
+  const isAdmin = user?.role === 'ADMIN' || !isSupport;
+
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+
+  // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
-  const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
-  const [feedbackMessage, setFeedbackMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [rentFilter, setRentFilter] = useState('all'); // all, rent_enabled, rent_not_set, out_of_stock
+  const [page, setPage] = useState(1);
+  const pageSize = 15;
 
-  // Dedicated Product Variants Section State
-  const [variantsProduct, setVariantsProduct] = useState<Product | null>(null);
-  const [variantDrafts, setVariantDrafts] = useState<StructuredVariantDraft[]>([]);
-  const [editingVariantIndex, setEditingVariantIndex] = useState<number | null>(null);
-  const [savingVariants, setSavingVariants] = useState(false);
-  const [variantValidationErrors, setVariantValidationErrors] = useState<string[]>([]);
+  // Multi-select
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
 
-  // Add Product Modal State
+  // Inline editing states: { [productId]: { field: 'price' | 'stock', value: string } }
+  const [inlineEditing, setInlineEditing] = useState<{
+    id: string;
+    field: 'price' | 'stock';
+    value: string;
+  } | null>(null);
+  const [inlineSaving, setInlineSaving] = useState(false);
+
+  // Modals
+  const [editModalProduct, setEditModalProduct] = useState<Product | null>(null);
+  const [editTab, setEditTab] = useState<'basics' | 'pricing' | 'rent' | 'stock' | 'specs' | 'images'>('basics');
+  const [editFormData, setEditFormData] = useState<any>({});
+  const [initialEditFormData, setInitialEditFormData] = useState<any>({});
+  const [isDirty, setIsDirty] = useState(false);
+  const [confirmDiscardOpen, setConfirmDiscardOpen] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Add Product Modal
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [newProductData, setNewProductData] = useState({
+  const [newProductData, setNewProductData] = useState<any>({
     name: '',
     brand: '',
     categoryId: '',
     sku: '',
     price: '',
     compareAtPrice: '',
-    leasePriceMonthly: '',
-    bulkSellPrice: '',
-    bulkLeasePrice: '',
     stock: '10',
     shortDescription: '',
     description: '',
@@ -112,1710 +167,2481 @@ export default function ProductsPage() {
     status: 'ACTIVE',
     isFeatured: false,
     isNewArrival: false,
+    warrantyMonths: 6,
+    specs: {
+      processor: '',
+      ram: '',
+      storage: '',
+      display: '',
+      condition: 'Grade A+ (Pristine)',
+    },
   });
 
-  // Edit Product Details Modal State
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [editProductData, setEditProductData] = useState({
-    name: '',
-    brand: '',
-    categoryId: '',
-    shortDescription: '',
-    description: '',
-    imageUrls: '',
-    status: 'ACTIVE',
-    isFeatured: false,
-    isNewArrival: false,
-  });
-  const [savingProductDetails, setSavingProductDetails] = useState(false);
+  // Variants Modal
+  const [variantsProduct, setVariantsProduct] = useState<Product | null>(null);
+  const [variantDrafts, setVariantDrafts] = useState<StructuredVariantDraft[]>([]);
+  const [editingVariantIndex, setEditingVariantIndex] = useState<number | null>(null);
+  const [savingVariants, setSavingVariants] = useState(false);
 
-  const loadData = async () => {
+  // Bulk Price Modal
+  const [bulkPricingModalOpen, setBulkPricingModalOpen] = useState(false);
+  const [bulkAdjustmentType, setBulkAdjustmentType] = useState<'PERCENTAGE' | 'FIXED'>('PERCENTAGE');
+  const [bulkAdjustmentValue, setBulkAdjustmentValue] = useState<string>('5');
+  const [bulkApplyToMRP, setBulkApplyToMRP] = useState(true);
+  const [bulkPreviewItems, setBulkPreviewItems] = useState<any[]>([]);
+  const [bulkPreviewLoading, setBulkPreviewLoading] = useState(false);
+  const [bulkApplying, setBulkApplying] = useState(false);
+
+  // Price History Modal
+  const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
+  const [historyData, setHistoryData] = useState<any>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Reference Check / Safe Archive Modal
+  const [archiveTargetProduct, setArchiveTargetProduct] = useState<Product | null>(null);
+  const [referenceSummary, setReferenceSummary] = useState<any>(null);
+  const [referenceLoading, setReferenceLoading] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+
+  // CSV Import Modal
+  const [csvImportModalOpen, setCsvImportModalOpen] = useState(false);
+  const [csvText, setCsvText] = useState('');
+  const [csvDryRunResult, setCsvDryRunResult] = useState<any>(null);
+  const [csvValidating, setCsvValidating] = useState(false);
+  const [csvCommitting, setCsvCommitting] = useState(false);
+
+  // Debounce search
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  const loadCatalog = useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
-      const [productsData, categoriesData] = await Promise.all([
+      const [prods, cats] = await Promise.all([
         api.getAdminProducts().catch(() => []),
         api.getCategories().catch(() => []),
       ]);
-      const productList = Array.isArray(productsData) ? productsData : (productsData as any)?.items || [];
-      setProducts(productList);
-      setCategories(Array.isArray(categoriesData) ? categoriesData : []);
+      const list = Array.isArray(prods) ? prods : (prods as any)?.items || [];
+      setProducts(list);
+      setCategories(Array.isArray(cats) ? cats : []);
     } catch (err: any) {
-      console.error('Failed to load products catalog:', err);
-      setError(err?.message || 'Failed to fetch catalog from backend');
+      addToast('error', err?.message || 'Failed to fetch catalog');
     } finally {
       setLoading(false);
     }
-  };
+  }, [addToast]);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadCatalog();
+  }, [loadCatalog]);
 
-  const handleCreateProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newProductData.name.trim() || !newProductData.sku.trim() || !newProductData.price) {
-      alert('Product Name, SKU, and Base Price are required.');
-      return;
-    }
+  // Filtered & Paginated Products
+  const filteredProducts = useMemo(() => {
+    return products.filter((p) => {
+      const brand = ((p.metadata as any)?.brand || '').toLowerCase();
+      const sku = (p.sku || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      const cat = (p.category?.name || '').toLowerCase();
+      const q = debouncedSearch.toLowerCase().trim();
+
+      const searchMatch = !q || name.includes(q) || sku.includes(q) || brand.includes(q) || cat.includes(q);
+      const catMatch = categoryFilter === 'all' || p.categoryId === categoryFilter;
+      const statusMatch = statusFilter === 'all' || p.status === statusFilter;
+
+      let rentMatch = true;
+      const hasRent = p.rentalPrices && p.rentalPrices.length > 0;
+      if (rentFilter === 'rent_enabled') {
+        rentMatch = !!hasRent || (p.leasePriceMonthly !== null && Number(p.leasePriceMonthly) > 0);
+      } else if (rentFilter === 'rent_not_set') {
+        rentMatch = !hasRent && (!p.leasePriceMonthly || Number(p.leasePriceMonthly) <= 0);
+      } else if (rentFilter === 'out_of_stock') {
+        rentMatch = (p.stock ?? 0) <= 0;
+      }
+
+      return searchMatch && catMatch && statusMatch && rentMatch;
+    });
+  }, [products, debouncedSearch, categoryFilter, statusFilter, rentFilter]);
+
+  const paginatedProducts = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, page, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+
+  // Inline edit handlers
+  const handleInlineSave = async (product: Product) => {
+    if (!inlineEditing || isSupport) return;
+    setInlineSaving(true);
+    const { field, value } = inlineEditing;
+
+    // Optimistic snapshot
+    const oldProducts = [...products];
 
     try {
-      const images = newProductData.imageUrls
-        .split(/\r?\n/)
-        .map((url) => url.trim())
-        .filter(Boolean)
-        .map((url, idx) => ({ url, isPrimary: idx === 0, sortOrder: idx }));
+      if (field === 'price') {
+        const num = parseFloat(value);
+        if (isNaN(num) || num <= 0) {
+          throw new Error('Price must be a positive number');
+        }
+        if (product.compareAtPrice && Number(product.compareAtPrice) < num) {
+          throw new Error('Selling price cannot exceed compare-at price (MRP)');
+        }
 
-      const payload: any = {
-        name: newProductData.name.trim(),
-        sku: newProductData.sku.trim(),
-        price: parseFloat(newProductData.price),
-        compareAtPrice: newProductData.compareAtPrice ? parseFloat(newProductData.compareAtPrice) : undefined,
-        leasePriceMonthly: newProductData.leasePriceMonthly ? parseFloat(newProductData.leasePriceMonthly) : undefined,
-        bulkSellPrice: newProductData.bulkSellPrice ? parseFloat(newProductData.bulkSellPrice) : undefined,
-        bulkLeasePrice: newProductData.bulkLeasePrice ? parseFloat(newProductData.bulkLeasePrice) : undefined,
-        stock: parseInt(newProductData.stock || '0', 10),
-        shortDescription: newProductData.shortDescription.trim() || undefined,
-        description: newProductData.description.trim() || undefined,
-        categoryId: newProductData.categoryId || undefined,
-        status: newProductData.status,
-        isFeatured: newProductData.isFeatured,
-        isNewArrival: newProductData.isNewArrival,
-        metadata: newProductData.brand ? { brand: newProductData.brand } : undefined,
-        images: images.length > 0 ? images : undefined,
-      };
+        // Optimistic update
+        setProducts((prev) =>
+          prev.map((p) => (p.id === product.id ? { ...p, price: num } : p)),
+        );
 
-      const created = await api.createAdminProduct(payload);
-      setProducts([created, ...products]);
-      setIsAddModalOpen(false);
-      setNewProductData({
-        name: '',
-        brand: '',
-        categoryId: '',
-        sku: '',
-        price: '',
-        compareAtPrice: '',
-        leasePriceMonthly: '',
-        bulkSellPrice: '',
-        bulkLeasePrice: '',
-        stock: '10',
-        shortDescription: '',
-        description: '',
-        imageUrls: '',
-        status: 'ACTIVE',
-        isFeatured: false,
-        isNewArrival: false,
-      });
-      setFeedbackMessage({ text: `Product "${created.name}" created successfully. You can now manage its variants.`, type: 'success' });
+        await adminApi.updateProduct(product.id, {
+          price: num,
+          priceChangeReason: 'Inline table update',
+        });
+        addToast('success', `Price updated for "${product.name}"`);
+      } else if (field === 'stock') {
+        const num = parseInt(value, 10);
+        if (isNaN(num) || num < 0) {
+          throw new Error('Stock must be a non-negative integer');
+        }
+
+        // Optimistic update
+        setProducts((prev) =>
+          prev.map((p) => (p.id === product.id ? { ...p, stock: num } : p)),
+        );
+
+        await adminApi.updateProduct(product.id, { stock: num });
+        addToast('success', `Stock updated for "${product.name}"`);
+      }
+      setInlineEditing(null);
     } catch (err: any) {
-      alert(err?.message || 'Failed to create product');
+      // Rollback
+      setProducts(oldProducts);
+      addToast('error', err?.message || 'Failed to update field');
+    } finally {
+      setInlineSaving(false);
     }
   };
 
-  const openEditProductModal = (product: Product) => {
-    setEditingProduct(product);
-    const brand = (product.metadata as any)?.brand || '';
-    const imageUrls = (product.images || []).map((img) => img.url).join('\n');
-    setEditProductData({
+  // Toggle Featured
+  const handleToggleFeatured = async (product: Product) => {
+    if (isSupport) return;
+    const nextVal = !product.isFeatured;
+    setProducts((prev) =>
+      prev.map((p) => (p.id === product.id ? { ...p, isFeatured: nextVal } : p)),
+    );
+    try {
+      await adminApi.updateProduct(product.id, { isFeatured: nextVal });
+      addToast('success', `${product.name} featured status: ${nextVal ? 'Featured' : 'Standard'}`);
+    } catch {
+      setProducts((prev) =>
+        prev.map((p) => (p.id === product.id ? { ...p, isFeatured: !nextVal } : p)),
+      );
+      addToast('error', 'Failed to toggle featured status');
+    }
+  };
+
+  // Open Edit Modal
+  const openEditModal = (product: Product) => {
+    const meta = (product.metadata as any) || {};
+    const brand = meta.brand || '';
+    const warrantyMonths = meta.warrantyMonths || 6;
+    const specs = meta.specs || {
+      processor: meta.processor || '',
+      ram: meta.ram || '',
+      storage: meta.storage || '',
+      display: meta.display || '',
+      condition: meta.condition || 'Grade A+ (Pristine)',
+    };
+
+    // Extract rental prices per tenure
+    const rentalRates: Record<number, string> = { 1: '', 3: '', 6: '', 12: '', 24: '' };
+    let rentEnabled = false;
+    if (product.rentalPrices && product.rentalPrices.length > 0) {
+      rentEnabled = true;
+      for (const rp of product.rentalPrices) {
+        if (rp.tenureMonths && (rp.status === 'APPROVED' || rp.status === 'DRAFT')) {
+          rentalRates[rp.tenureMonths] = String(Number(rp.monthlyPrice));
+        }
+      }
+    } else if (product.leasePriceMonthly && Number(product.leasePriceMonthly) > 0) {
+      rentEnabled = true;
+      rentalRates[12] = String(Number(product.leasePriceMonthly));
+    }
+
+    const initial = {
       name: product.name,
+      slug: product.slug || '',
       brand,
       categoryId: product.categoryId || '',
       shortDescription: product.shortDescription || '',
       description: product.description || '',
-      imageUrls,
       status: product.status,
       isFeatured: !!product.isFeatured,
       isNewArrival: !!product.isNewArrival,
+      price: String(Number(product.price)),
+      compareAtPrice: product.compareAtPrice ? String(Number(product.compareAtPrice)) : '',
+      leasePriceMonthly: product.leasePriceMonthly ? String(Number(product.leasePriceMonthly)) : '',
+      bulkSellPrice: product.bulkSellPrice ? String(Number(product.bulkSellPrice)) : '',
+      bulkLeasePrice: product.bulkLeasePrice ? String(Number(product.bulkLeasePrice)) : '',
+      stock: String(product.stock ?? '0'),
+      warrantyMonths,
+      specs,
+      imageUrls: (product.images || []).map((img) => img.url).join('\n'),
+      rentEnabled,
+      rentalRates,
+      publishImmediately: true,
+      priceChangeReason: '',
+    };
+
+    setEditFormData(initial);
+    setInitialEditFormData(JSON.parse(JSON.stringify(initial)));
+    setIsDirty(false);
+    setEditTab('basics');
+    setEditModalProduct(product);
+  };
+
+  // Track dirty changes
+  const updateFormField = (key: string, value: any) => {
+    setEditFormData((prev: any) => {
+      const next = { ...prev, [key]: value };
+      setIsDirty(JSON.stringify(next) !== JSON.stringify(initialEditFormData));
+      return next;
     });
   };
 
-  const handleUpdateProductDetails = async (e: React.FormEvent) => {
+  const updateRentalRate = (tenure: number, rate: string) => {
+    setEditFormData((prev: any) => {
+      const nextRates = { ...prev.rentalRates, [tenure]: rate };
+      const next = { ...prev, rentalRates: nextRates };
+      setIsDirty(JSON.stringify(next) !== JSON.stringify(initialEditFormData));
+      return next;
+    });
+  };
+
+  const updateSpecField = (specKey: string, value: string) => {
+    setEditFormData((prev: any) => {
+      const nextSpecs = { ...prev.specs, [specKey]: value };
+      const next = { ...prev, specs: nextSpecs };
+      setIsDirty(JSON.stringify(next) !== JSON.stringify(initialEditFormData));
+      return next;
+    });
+  };
+
+  // Save Edit Form
+  const handleSaveProductEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingProduct) return;
+    if (!editModalProduct || isSupport) return;
 
-    setSavingProductDetails(true);
-    try {
-      const images = editProductData.imageUrls
-        .split(/\r?\n/)
-        .map((url) => url.trim())
-        .filter(Boolean)
-        .map((url, idx) => ({ url, isPrimary: idx === 0, sortOrder: idx }));
-
-      const existingMetadata = (editingProduct.metadata as any) || {};
-      const updatedMetadata = { ...existingMetadata };
-      if (editProductData.brand.trim()) {
-        updatedMetadata.brand = editProductData.brand.trim();
-      }
-
-      const updated = await api.updateAdminProduct(editingProduct.id, {
-        name: editProductData.name.trim(),
-        categoryId: editProductData.categoryId || null,
-        shortDescription: editProductData.shortDescription.trim() || null,
-        description: editProductData.description.trim() || null,
-        status: editProductData.status,
-        isFeatured: editProductData.isFeatured,
-        isNewArrival: editProductData.isNewArrival,
-        metadata: updatedMetadata,
-        images,
-      });
-
-      setProducts((current) => current.map((p) => (p.id === updated.id ? updated : p)));
-      setEditingProduct(null);
-      setFeedbackMessage({ text: `Product "${updated.name}" updated successfully.`, type: 'success' });
-    } catch (err: any) {
-      alert(err?.message || 'Failed to update product details');
-    } finally {
-      setSavingProductDetails(false);
-    }
-  };
-
-  const openVariantsSection = (product: Product) => {
-    setVariantsProduct(product);
-    const drafts = (product.variants || []).map(toStructuredVariantDraft);
-    setVariantDrafts(drafts);
-    setEditingVariantIndex(null);
-    setVariantValidationErrors([]);
-  };
-
-  const addNewVariantDraft = () => {
-    if (!variantsProduct) return;
-    const baseAttrs = (variantsProduct.metadata as any) || {};
-    const defaultProcessor = baseAttrs.processor || '';
-    const defaultGraphics = baseAttrs.graphics || '';
-    const variantNumber = variantDrafts.length + 1;
-
-    const newDraft: StructuredVariantDraft = {
-      name: `${variantsProduct.name} - Option ${variantNumber}`,
-      sku: `${variantsProduct.sku}-V${variantNumber}`,
-      ram: '16GB',
-      storage: '512GB SSD',
-      processor: defaultProcessor,
-      graphics: defaultGraphics,
-      extraAttributes: {},
-      price: String(variantsProduct.price),
-      compareAtPrice: variantsProduct.compareAtPrice ? String(variantsProduct.compareAtPrice) : '',
-      leasePriceMonthly: variantsProduct.leasePriceMonthly ? String(variantsProduct.leasePriceMonthly) : '',
-      stock: '10',
-      allowBackorder: false,
-      isActive: true,
-      isDefault: variantDrafts.length === 0,
-      imageUrls: (variantsProduct.images || []).map((img) => img.url).slice(0, 1).join('\n'),
-      rawJsonMode: false,
-      rawAttributesJson: JSON.stringify({ ram: '16GB', storage: '512GB SSD' }, null, 2),
-    };
-
-    setVariantDrafts([...variantDrafts, newDraft]);
-    setEditingVariantIndex(variantDrafts.length);
-  };
-
-  const duplicateVariantDraft = (index: number) => {
-    const source = variantDrafts[index];
-    const duplicate: StructuredVariantDraft = {
-      ...source,
-      id: undefined, // Clear ID so it creates a new variant
-      name: `${source.name} (Copy)`,
-      sku: `${source.sku}-COPY`,
-      isDefault: false,
-      isActive: true,
-    };
-    setVariantDrafts([...variantDrafts, duplicate]);
-    setEditingVariantIndex(variantDrafts.length);
-  };
-
-  const setDefaultVariant = (index: number) => {
-    setVariantDrafts((drafts) =>
-      drafts.map((draft, idx) => ({
-        ...draft,
-        isDefault: idx === index,
-        isActive: idx === index ? true : draft.isActive,
-      }))
-    );
-  };
-
-  const toggleVariantActive = (index: number) => {
-    setVariantDrafts((drafts) =>
-      drafts.map((draft, idx) => {
-        if (idx !== index) return draft;
-        const newActive = !draft.isActive;
-        return {
-          ...draft,
-          isActive: newActive,
-          // If deactivated and it was default, default must be passed to another active variant
-          isDefault: !newActive ? false : draft.isDefault,
-        };
-      })
-    );
-  };
-
-  const validateVariantsBeforeSave = (): { valid: boolean; errors: string[]; payload?: any[] } => {
-    const errors: string[] = [];
-    if (!variantDrafts.length) {
-      return { valid: true, errors: [], payload: [] };
-    }
-
-    const skus = new Set<string>();
-    const activeCombinations = new Set<string>();
-    let expectedActiveKeys: string[] | null = null;
-    let activeDefaultCount = 0;
-
-    const payload = [];
-
-    for (let i = 0; i < variantDrafts.length; i++) {
-      const v = variantDrafts[i];
-      const rowLabel = `Variant #${i + 1} (${v.name || 'Untitled'})`;
-
-      if (!v.name.trim()) errors.push(`${rowLabel}: Variant name is required.`);
-      if (!v.sku.trim()) errors.push(`${rowLabel}: SKU is required.`);
-
-      const skuKey = v.sku.trim().toLowerCase();
-      if (skus.has(skuKey)) errors.push(`${rowLabel}: Duplicate SKU "${v.sku.trim()}". SKUs must be unique.`);
-      skus.add(skuKey);
-
-      const price = Number(v.price);
-      if (isNaN(price) || price < 0) errors.push(`${rowLabel}: Price must be a non-negative number.`);
-
-      const stock = Number(v.stock);
-      if (isNaN(stock) || stock < 0 || !Number.isInteger(stock)) errors.push(`${rowLabel}: Stock must be a non-negative integer.`);
-
-      // Build attributes
-      let attributes: Record<string, string | number | boolean> = {};
-      if (v.rawJsonMode) {
-        try {
-          attributes = JSON.parse(v.rawAttributesJson);
-          if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) {
-            errors.push(`${rowLabel}: JSON attributes must be an object.`);
-          }
-        } catch {
-          errors.push(`${rowLabel}: Malformed attributes JSON.`);
-        }
-      } else {
-        if (v.ram.trim()) attributes.ram = v.ram.trim();
-        if (v.storage.trim()) attributes.storage = v.storage.trim();
-        if (v.processor.trim()) attributes.processor = v.processor.trim();
-        if (v.graphics.trim()) attributes.graphics = v.graphics.trim();
-        for (const [k, val] of Object.entries(v.extraAttributes || {})) {
-          if (k.trim() && val.trim()) attributes[k.trim()] = val.trim();
-        }
-      }
-
-      if (!Object.keys(attributes).length) {
-        errors.push(`${rowLabel}: Must define at least one hardware attribute (e.g. RAM or Storage).`);
-      }
-
-      if (v.isActive) {
-        if (v.isDefault) activeDefaultCount++;
-
-        const attrKeys = Object.keys(attributes).sort();
-        if (expectedActiveKeys === null) {
-          expectedActiveKeys = attrKeys;
-        } else if (attrKeys.join(',') !== expectedActiveKeys.join(',')) {
-          errors.push(
-            `${rowLabel}: Active variants must define the exact same attribute keys. Expected [${expectedActiveKeys.join(', ')}], but got [${attrKeys.join(', ')}].`
-          );
-        }
-
-        const comboKey = JSON.stringify(Object.fromEntries(attrKeys.map((k) => [k, attributes[k]])));
-        if (activeCombinations.has(comboKey)) {
-          errors.push(`${rowLabel}: Duplicate active hardware combination. A variant with this exact specification already exists.`);
-        }
-        activeCombinations.add(comboKey);
-      }
-
-      const images = v.imageUrls
-        .split(/\r?\n/)
-        .map((u) => u.trim())
-        .filter(Boolean)
-        .map((url, idx) => ({ url, isPrimary: idx === 0, sortOrder: idx }));
-
-      payload.push({
-        ...(v.id ? { id: v.id } : {}),
-        name: v.name.trim(),
-        sku: v.sku.trim(),
-        attributes,
-        price,
-        compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : null,
-        leasePriceMonthly: v.leasePriceMonthly ? Number(v.leasePriceMonthly) : null,
-        stock,
-        allowBackorder: v.allowBackorder,
-        isActive: v.isActive,
-        isDefault: v.isDefault,
-        images,
-      });
-    }
-
-    const hasActiveVariants = variantDrafts.some((v) => v.isActive);
-    if (hasActiveVariants && activeDefaultCount !== 1) {
-      errors.push(`Exactly one active variant must be designated as the Default Variant (currently ${activeDefaultCount} selected).`);
-    }
-
-    return { valid: errors.length === 0, errors, payload };
-  }
-
-  const saveProductVariants = async () => {
-    if (!variantsProduct) return;
-    const { valid, errors, payload } = validateVariantsBeforeSave();
-    if (!valid) {
-      setVariantValidationErrors(errors);
+    const price = parseFloat(editFormData.price);
+    if (isNaN(price) || price <= 0) {
+      addToast('error', 'Selling price must be greater than 0');
       return;
     }
 
-    setVariantValidationErrors([]);
+    let compareAtPrice: number | null = null;
+    if (editFormData.compareAtPrice.trim()) {
+      compareAtPrice = parseFloat(editFormData.compareAtPrice);
+      if (isNaN(compareAtPrice) || compareAtPrice < price) {
+        addToast('error', 'MRP (compare-at price) must be greater than or equal to selling price');
+        return;
+      }
+    }
+
+    const stock = parseInt(editFormData.stock, 10);
+    if (isNaN(stock) || stock < 0) {
+      addToast('error', 'Stock must be a positive integer');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const images = editFormData.imageUrls
+        .split(/\r?\n/)
+        .map((url: string) => url.trim())
+        .filter(Boolean)
+        .map((url: string, idx: number) => ({ url, isPrimary: idx === 0, sortOrder: idx }));
+
+      // 1. Update core product
+      const updated = await adminApi.updateProduct(editModalProduct.id, {
+        name: editFormData.name.trim(),
+        brand: editFormData.brand.trim(),
+        categoryId: editFormData.categoryId || null,
+        shortDescription: editFormData.shortDescription.trim() || null,
+        description: editFormData.description.trim() || null,
+        status: editFormData.status,
+        isFeatured: editFormData.isFeatured,
+        isNewArrival: editFormData.isNewArrival,
+        price,
+        compareAtPrice,
+        stock,
+        bulkSellPrice: editFormData.bulkSellPrice ? parseFloat(editFormData.bulkSellPrice) : null,
+        bulkLeasePrice: editFormData.bulkLeasePrice ? parseFloat(editFormData.bulkLeasePrice) : null,
+        warrantyMonths: editFormData.warrantyMonths,
+        specs: editFormData.specs,
+        images,
+        priceChangeReason: editFormData.priceChangeReason.trim() || 'Admin catalog update',
+      });
+
+      // 2. Save rental pricing
+      const rentalPricesPayload = TENURES.map((t) => ({
+        tenureMonths: t,
+        monthlyPrice: parseFloat(editFormData.rentalRates[t] || '0') || 0,
+      })).filter((p) => p.monthlyPrice > 0);
+
+      await adminApi.saveProductRentalPricing(editModalProduct.id, {
+        enabled: editFormData.rentEnabled,
+        publishImmediately: editFormData.publishImmediately,
+        prices: rentalPricesPayload,
+        reason: editFormData.priceChangeReason.trim() || 'Admin catalog rental pricing update',
+      });
+
+      addToast('success', `Product "${updated.name}" updated successfully.`);
+      setIsDirty(false);
+      setEditModalProduct(null);
+      loadCatalog();
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to save product updates');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  // Safe Archive / Delete Product
+  const handleOpenDelete = async (product: Product) => {
+    if (isSupport) return;
+    setArchiveTargetProduct(product);
+    setReferenceLoading(true);
+    try {
+      const refs = await adminApi.getProductReferences(product.id);
+      setReferenceSummary(refs);
+    } catch {
+      setReferenceSummary({ totalOrders: 0, activeOrders: 0, totalLeases: 0, activeLeases: 0 });
+    } finally {
+      setReferenceLoading(false);
+    }
+  };
+
+  const handleConfirmArchive = async () => {
+    if (!archiveTargetProduct || isSupport) return;
+    setArchiving(true);
+    try {
+      const res = await adminApi.deleteProduct(archiveTargetProduct.id);
+      addToast('success', res.message || 'Product soft-archived / deleted');
+      setArchiveTargetProduct(null);
+      loadCatalog();
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to archive product');
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  // Price History
+  const handleOpenPriceHistory = async (product: Product) => {
+    setHistoryProduct(product);
+    setHistoryLoading(true);
+    try {
+      const hist = await adminApi.getProductPriceHistory(product.id);
+      setHistoryData(hist);
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to fetch price history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // Bulk Price Actions
+  const handleOpenBulkPricing = async () => {
+    if (selectedProductIds.length === 0) return;
+    setBulkPricingModalOpen(true);
+    setBulkPreviewLoading(true);
+    try {
+      const res = await adminApi.previewBulkPricing({
+        productIds: selectedProductIds,
+        type: bulkAdjustmentType,
+        value: parseFloat(bulkAdjustmentValue) || 0,
+        applyToCompareAtPrice: bulkApplyToMRP,
+      });
+      setBulkPreviewItems(res.items || []);
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to calculate preview');
+    } finally {
+      setBulkPreviewLoading(false);
+    }
+  };
+
+  const handleUpdateBulkPreview = async (type: 'PERCENTAGE' | 'FIXED', val: string, applyMRP: boolean) => {
+    setBulkAdjustmentType(type);
+    setBulkAdjustmentValue(val);
+    setBulkApplyToMRP(applyMRP);
+    setBulkPreviewLoading(true);
+    try {
+      const res = await adminApi.previewBulkPricing({
+        productIds: selectedProductIds,
+        type,
+        value: parseFloat(val) || 0,
+        applyToCompareAtPrice: applyMRP,
+      });
+      setBulkPreviewItems(res.items || []);
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to calculate preview');
+    } finally {
+      setBulkPreviewLoading(false);
+    }
+  };
+
+  const handleApplyBulkPricing = async () => {
+    setBulkApplying(true);
+    try {
+      await adminApi.applyBulkPricing({
+        productIds: selectedProductIds,
+        type: bulkAdjustmentType,
+        value: parseFloat(bulkAdjustmentValue) || 0,
+        applyToCompareAtPrice: bulkApplyToMRP,
+        reason: `Bulk price adjustment (${bulkAdjustmentType === 'PERCENTAGE' ? `${bulkAdjustmentValue}%` : `₹${bulkAdjustmentValue}`})`,
+      });
+      addToast('success', `Bulk pricing updated for ${selectedProductIds.length} products.`);
+      setBulkPricingModalOpen(false);
+      setSelectedProductIds([]);
+      loadCatalog();
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to apply bulk pricing');
+    } finally {
+      setBulkApplying(false);
+    }
+  };
+
+  // CSV Export & Import
+  const handleExportCsv = () => {
+    window.open('http://localhost:3001/admin/products/export/csv', '_blank');
+    addToast('success', 'Catalog CSV export initiated.');
+  };
+
+  const handleCsvValidate = async () => {
+    if (!csvText.trim()) return;
+    setCsvValidating(true);
+    try {
+      const res = await adminApi.importProductsCsv(csvText, true);
+      setCsvDryRunResult(res);
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to parse CSV');
+    } finally {
+      setCsvValidating(false);
+    }
+  };
+
+  const handleCsvCommit = async () => {
+    setCsvCommitting(true);
+    try {
+      const res = await adminApi.importProductsCsv(csvText, false);
+      addToast('success', `CSV imported: ${res.createdCount || 0} created, ${res.updatedCount || 0} updated.`);
+      setCsvImportModalOpen(false);
+      setCsvText('');
+      setCsvDryRunResult(null);
+      loadCatalog();
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to commit CSV changes');
+    } finally {
+      setCsvCommitting(false);
+    }
+  };
+
+  // Dedicated Variants Management
+  const openVariantsModal = (product: Product) => {
+    setVariantsProduct(product);
+    setVariantDrafts((product.variants || []).map(toStructuredVariantDraft));
+    setEditingVariantIndex(null);
+  };
+
+  const handleSaveVariants = async () => {
+    if (!variantsProduct || isSupport) return;
     setSavingVariants(true);
     try {
-      const updated = await api.updateAdminProduct(variantsProduct.id, { variants: payload });
-      setProducts((current) => current.map((p) => (p.id === updated.id ? updated : p)));
-      setVariantsProduct(null);
-      setEditingVariantIndex(null);
-      setFeedbackMessage({
-        text: `Successfully saved ${payload?.length || 0} configurations for "${updated.name}". Storefront has been updated.`,
-        type: 'success',
+      const payloadVariants = variantDrafts.map((d) => {
+        const attributes: Record<string, string> = { ...d.extraAttributes };
+        if (d.ram) attributes.ram = d.ram;
+        if (d.storage) attributes.storage = d.storage;
+        if (d.processor) attributes.processor = d.processor;
+        if (d.graphics) attributes.graphics = d.graphics;
+
+        const images = d.imageUrls
+          .split(/\r?\n/)
+          .map((u) => u.trim())
+          .filter(Boolean)
+          .map((url, idx) => ({ url, isPrimary: idx === 0, sortOrder: idx }));
+
+        return {
+          id: d.id,
+          name: d.name,
+          sku: d.sku,
+          price: parseFloat(d.price) || Number(variantsProduct.price),
+          compareAtPrice: d.compareAtPrice ? parseFloat(d.compareAtPrice) : null,
+          leasePriceMonthly: d.leasePriceMonthly ? parseFloat(d.leasePriceMonthly) : null,
+          stock: parseInt(d.stock, 10) || 0,
+          allowBackorder: d.allowBackorder,
+          isActive: d.isActive,
+          isDefault: d.isDefault,
+          attributes,
+          images,
+        };
       });
+
+      await api.updateAdminProduct(variantsProduct.id, {
+        variants: payloadVariants,
+      });
+
+      addToast('success', `Variants updated for "${variantsProduct.name}"`);
+      setVariantsProduct(null);
+      loadCatalog();
     } catch (err: any) {
-      setVariantValidationErrors([err?.message || 'Failed to save variants. Check constraints.']);
+      addToast('error', err?.message || 'Failed to save variants');
     } finally {
       setSavingVariants(false);
     }
   };
 
-  const toggleFeatured = async (productId: string) => {
-    const product = products.find((p) => p.id === productId);
-    if (!product) return;
-    setActionInProgressId(productId);
-    try {
-      const updated = await api.updateAdminProduct(productId, { isFeatured: !product.isFeatured });
-      setProducts(products.map((p) => (p.id === productId ? { ...p, isFeatured: updated.isFeatured } : p)));
-    } catch (err: any) {
-      alert(err?.message || 'Failed to update featured flag');
-    } finally {
-      setActionInProgressId(null);
-    }
-  };
-
-  const toggleNewArrival = async (productId: string) => {
-    const product = products.find((p) => p.id === productId);
-    if (!product) return;
-    setActionInProgressId(productId);
-    try {
-      const updated = await api.updateAdminProduct(productId, { isNewArrival: !product.isNewArrival });
-      setProducts(products.map((p) => (p.id === productId ? { ...p, isNewArrival: updated.isNewArrival } : p)));
-    } catch (err: any) {
-      alert(err?.message || 'Failed to update new arrival flag');
-    } finally {
-      setActionInProgressId(null);
-    }
-  };
-
-  const handleUpdateStock = async (productId: string, currentStock: number) => {
-    const input = window.prompt('Enter new stock quantity for base product:', currentStock.toString());
-    if (input === null) return;
-    const newStock = parseInt(input.trim(), 10);
-    if (isNaN(newStock) || newStock < 0) {
-      alert('Please enter a valid non-negative integer.');
-      return;
-    }
-
-    setActionInProgressId(productId);
-    try {
-      const updated = await api.updateAdminProduct(productId, { stock: newStock });
-      setProducts(products.map((p) => (p.id === productId ? { ...p, stock: updated.stock } : p)));
-      setFeedbackMessage({ text: 'Stock updated successfully.', type: 'success' });
-    } catch (err: any) {
-      alert(err?.message || 'Failed to update stock');
-    } finally {
-      setActionInProgressId(null);
-    }
-  };
-
-  const handleDeleteProduct = async (product: Product) => {
-    if (!window.confirm(`Are you sure you want to delete or discontinue "${product.name}"? If historical orders exist, it will be safely discontinued without losing order integrity.`)) {
-      return;
-    }
-
-    setActionInProgressId(product.id);
-    try {
-      await api.deleteAdminProduct(product.id);
-      setProducts(products.filter((p) => p.id !== product.id));
-      setFeedbackMessage({ text: `Product "${product.name}" was removed or discontinued.`, type: 'success' });
-    } catch (err: any) {
-      alert(err?.message || 'Failed to delete product');
-    } finally {
-      setActionInProgressId(null);
-    }
-  };
-
-  const filteredProducts = products.filter((product) => {
-    const statusMatch = statusFilter === 'all' || product.status === statusFilter;
-    const categoryMatch = categoryFilter === 'all' || product.categoryId === categoryFilter;
-    const searchMatch =
-      searchTerm === '' ||
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ((product.metadata as any)?.brand || '').toLowerCase().includes(searchTerm.toLowerCase());
-    return statusMatch && categoryMatch && searchMatch;
-  });
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-3">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-        <p className="text-sm text-gray-500">Loading catalog items from authoritative database...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="text-center py-12 card p-8 max-w-lg mx-auto">
-        <div className="text-red-500 mb-3 font-semibold text-lg">Unable to load product catalog</div>
-        <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">{error}</p>
-        <button onClick={loadData} className="btn btn-primary">Retry</button>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Product Catalog &amp; Variants</h1>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Authoritative inventory, configurable hardware variants, and pricing
-          </p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={loadData}
-            className="btn btn-secondary text-xs flex items-center space-x-1"
-            title="Refresh catalog from backend"
-          >
-            <span>↻</span>
-            <span>Refresh</span>
-          </button>
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="btn btn-primary text-xs flex items-center space-x-1"
-          >
-            <span>+</span>
-            <span>Add Product</span>
-          </button>
-        </div>
-      </div>
-
-      {feedbackMessage && (
-        <div
-          className={`p-3 rounded-xl text-sm flex items-center justify-between shadow-sm ${
-            feedbackMessage.type === 'success' ? 'bg-green-50 text-green-900 border border-green-200' : 'bg-red-50 text-red-900 border border-red-200'
-          }`}
-        >
-          <span className="font-medium">{feedbackMessage.text}</span>
-          <button onClick={() => setFeedbackMessage(null)} className="font-bold ml-2 text-lg leading-none">&times;</button>
+      {/* View-only banner for SUPPORT role */}
+      {isSupport && (
+        <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 rounded-xl text-xs font-medium flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+          <span>You have view-only access. Product updates, price changes, and archive actions are disabled.</span>
         </div>
       )}
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Products</p>
-          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{products.length}</p>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Configurable Products</p>
-          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">
-            {products.filter((p) => p.variants && p.variants.length > 0).length}
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <nav aria-label="Breadcrumb" className="text-xs text-gray-500 mb-1 flex items-center space-x-1.5">
+            <Link href="/admin" className="hover:text-blue-600">Admin</Link>
+            <span>/</span>
+            <span>Commerce</span>
+            <span>/</span>
+            <span className="font-semibold text-gray-900 dark:text-white">Products & Pricing</span>
+          </nav>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Products & Rental Pricing</h1>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Manage catalog hardware, selling prices, multi-tenure rental rates, and inventory.
           </p>
         </div>
-        <div className="card p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">In Stock</p>
-          <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">
-            {products.filter((p) => p.stock > 0).length}
-          </p>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Out of Stock</p>
-          <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">
-            {products.filter((p) => p.stock === 0).length}
-          </p>
+
+        {/* Global Action Toolbar */}
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={handleExportCsv}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 flex items-center gap-1.5 shadow-sm"
+            title="Export catalog as CSV"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export CSV</span>
+          </button>
+
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => setCsvImportModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 flex items-center gap-1.5 shadow-sm"
+                title="Import catalog from CSV"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import CSV</span>
+              </button>
+
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Product</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <input
-          type="text"
-          placeholder="Search by name, SKU, or brand..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="input flex-1 text-sm"
-          aria-label="Search products"
-        />
+      {/* Search, Filter, and Selection Bar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm">
+        <div className="flex items-center space-x-2 flex-1 max-w-md">
+          <div className="relative w-full">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              aria-label="Search by name, SKU, or brand"
+              placeholder="Search by name, SKU, brand, or category..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-8 py-1.5 text-xs bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-gray-900 dark:text-gray-100"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
 
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          className="input sm:w-48 text-sm"
-          aria-label="Filter by category"
-        >
-          <option value="all">All Categories</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Category Filter */}
+          <select
+            aria-label="Filter by category"
+            value={categoryFilter}
+            onChange={(e) => {
+              setCategoryFilter(e.target.value);
+              setPage(1);
+            }}
+            className="text-xs bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-gray-700 dark:text-gray-300"
+          >
+            <option value="all">All Categories</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
 
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="input sm:w-40 text-sm"
-          aria-label="Filter by status"
-        >
-          <option value="all">All Statuses</option>
-          <option value="ACTIVE">Active</option>
-          <option value="INACTIVE">Inactive</option>
-          <option value="DISCONTINUED">Discontinued</option>
-        </select>
+          {/* Status Filter */}
+          <select
+            aria-label="Filter by status"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
+            className="text-xs bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-gray-700 dark:text-gray-300"
+          >
+            <option value="all">All Statuses</option>
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+            <option value="DISCONTINUED">Discontinued</option>
+          </select>
+
+          {/* Rent Status Filter */}
+          <select
+            aria-label="Filter by rental status"
+            value={rentFilter}
+            onChange={(e) => {
+              setRentFilter(e.target.value);
+              setPage(1);
+            }}
+            className="text-xs bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1.5 text-gray-700 dark:text-gray-300"
+          >
+            <option value="all">All Pricing Types</option>
+            <option value="rent_enabled">Rent Configured</option>
+            <option value="rent_not_set">Rent Not Set</option>
+            <option value="out_of_stock">Out of Stock</option>
+          </select>
+
+          <button
+            onClick={() => loadCatalog()}
+            className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-600 dark:text-gray-300"
+            title="Refresh catalog"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
+
+      {/* Bulk Action Bar (when rows selected) */}
+      {selectedProductIds.length > 0 && isAdmin && (
+        <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 p-3 rounded-xl flex items-center justify-between text-xs text-blue-900 dark:text-blue-200 animate-in fade-in">
+          <div className="flex items-center space-x-2">
+            <span className="font-semibold">{selectedProductIds.length} products selected</span>
+            <button
+              onClick={() => setSelectedProductIds([])}
+              className="text-blue-600 hover:underline text-[11px]"
+            >
+              Deselect all
+            </button>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleOpenBulkPricing}
+              className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold flex items-center gap-1"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Bulk Adjust Prices</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Products Table */}
-      <div className="table-container card overflow-x-auto">
-        <table className="table w-full text-left">
-          <thead>
-            <tr className="border-b border-gray-200 dark:border-gray-700">
-              <th className="py-3 px-4">Product</th>
-              <th className="py-3 px-4">Category / Brand</th>
-              <th className="py-3 px-4">Price</th>
-              <th className="py-3 px-4">Stock</th>
-              <th className="py-3 px-4">Variants</th>
-              <th className="py-3 px-4">Status</th>
-              <th className="py-3 px-4">Featured</th>
-              <th className="py-3 px-4 text-right">Actions</th>
+      <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-x-auto shadow-sm">
+        <table className="w-full text-left text-xs text-gray-700 dark:text-gray-300">
+          <thead className="bg-gray-50 dark:bg-slate-800/60 text-gray-500 font-semibold border-b border-gray-200 dark:border-gray-700">
+            <tr>
+              <th className="py-3 px-3 w-8">
+                <input
+                  type="checkbox"
+                  aria-label="Select all products"
+                  checked={
+                    paginatedProducts.length > 0 &&
+                    paginatedProducts.every((p) => selectedProductIds.includes(p.id))
+                  }
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      const ids = Array.from(new Set([...selectedProductIds, ...paginatedProducts.map((p) => p.id)]));
+                      setSelectedProductIds(ids);
+                    } else {
+                      setSelectedProductIds(
+                        selectedProductIds.filter((id) => !paginatedProducts.some((p) => p.id === id)),
+                      );
+                    }
+                  }}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+              </th>
+              <th className="py-3 px-3">Product</th>
+              <th className="py-3 px-3">Category & Brand</th>
+              <th className="py-3 px-3">Selling Price (₹)</th>
+              <th className="py-3 px-3">Rent / Lease</th>
+              <th className="py-3 px-3">Stock</th>
+              <th className="py-3 px-3">Variants</th>
+              <th className="py-3 px-3">Status</th>
+              <th className="py-3 px-3">Featured</th>
+              <th className="py-3 px-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody>
-            {filteredProducts.map((product) => {
-              const activeVariantsCount = product.variants?.filter((v) => v.isActive).length || 0;
-              const totalVariantsCount = product.variants?.length || 0;
-              const brand = (product.metadata as any)?.brand || '';
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            {loading ? (
+              <tr>
+                <td colSpan={10} className="py-12 text-center text-gray-400">
+                  <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  Loading certified laptops and catalog items...
+                </td>
+              </tr>
+            ) : paginatedProducts.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="py-12 text-center text-gray-400">
+                  No products found matching the criteria.
+                </td>
+              </tr>
+            ) : (
+              paginatedProducts.map((product) => {
+                const brand = (product.metadata as any)?.brand || '';
+                const activeVariants = product.variants?.filter((v) => v.isActive) || [];
+                const totalVariants = product.variants?.length || 0;
+                const isSelected = selectedProductIds.includes(product.id);
 
-              return (
-                <tr key={product.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50">
-                  <td className="py-3 px-4">
-                    <div className="flex items-center space-x-3">
-                      {product.images && product.images.length > 0 ? (
-                        <img
-                          src={product.images[0].url}
-                          alt={product.images[0].altText || product.name}
-                          className="w-12 h-12 rounded-lg object-cover bg-gray-100 flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
-                          <span className="text-[10px] text-gray-400">No img</span>
+                // Compute Rent display
+                let rentRateDisplay = 'Rent not set';
+                let hasApprovedRent = false;
+                if (product.rentalPrices && product.rentalPrices.length > 0) {
+                  const p12 = product.rentalPrices.find((r) => r.tenureMonths === 12);
+                  const first = product.rentalPrices[0];
+                  const chosen = p12 || first;
+                  if (chosen && chosen.monthlyPrice) {
+                    rentRateDisplay = `Rent from ₹${Number(chosen.monthlyPrice).toLocaleString('en-IN')}/mo`;
+                    hasApprovedRent = true;
+                  }
+                } else if (product.leasePriceMonthly && Number(product.leasePriceMonthly) > 0) {
+                  rentRateDisplay = `Rent from ₹${Number(product.leasePriceMonthly).toLocaleString('en-IN')}/mo`;
+                  hasApprovedRent = true;
+                }
+
+                const priceNum = Number(product.price);
+                const compareNum = product.compareAtPrice ? Number(product.compareAtPrice) : null;
+                const discount =
+                  compareNum && compareNum > priceNum
+                    ? Math.round(((compareNum - priceNum) / compareNum) * 100)
+                    : 0;
+
+                const isEditingPrice =
+                  inlineEditing?.id === product.id && inlineEditing?.field === 'price';
+                const isEditingStock =
+                  inlineEditing?.id === product.id && inlineEditing?.field === 'stock';
+
+                return (
+                  <tr
+                    key={product.id}
+                    className={`hover:bg-gray-50/70 dark:hover:bg-slate-800/40 transition-colors ${
+                      isSelected ? 'bg-blue-50/40 dark:bg-blue-950/20' : ''
+                    }`}
+                  >
+                    {/* Checkbox */}
+                    <td className="py-3 px-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select product ${product.name}`}
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedProductIds([...selectedProductIds, product.id]);
+                          } else {
+                            setSelectedProductIds(selectedProductIds.filter((id) => id !== product.id));
+                          }
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </td>
+
+                    {/* Product Name & SKU */}
+                    <td className="py-3 px-3">
+                      <div className="flex items-center space-x-2.5">
+                        {product.images && product.images.length > 0 ? (
+                          <img
+                            src={product.images[0].url}
+                            alt={product.images[0].altText || product.name}
+                            className="w-10 h-10 rounded-lg object-cover bg-gray-100 dark:bg-gray-800 shrink-0 border border-gray-200 dark:border-gray-700"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center shrink-0 text-[10px] text-gray-400">
+                            No img
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="font-semibold text-gray-900 dark:text-gray-100 block truncate max-w-[220px]" title={product.name}>
+                            {product.name}
+                          </span>
+                          <span className="font-mono text-[11px] text-gray-400 block">{product.sku}</span>
                         </div>
-                      )}
-                      <div>
-                        <span className="font-semibold text-gray-900 dark:text-white block text-sm leading-tight">{product.name}</span>
-                        <span className="block text-xs font-mono text-gray-500 dark:text-gray-400 mt-0.5">{product.sku}</span>
                       </div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="space-y-1">
+                    </td>
+
+                    {/* Category & Brand */}
+                    <td className="py-3 px-3">
                       <span className="inline-block text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                         {product.category?.name || 'Uncategorized'}
                       </span>
-                      {brand && (
-                        <span className="block text-xs text-gray-500 dark:text-gray-400 font-medium">{brand}</span>
+                      {brand && <span className="block text-[11px] text-gray-500 mt-0.5">{brand}</span>}
+                    </td>
+
+                    {/* Selling Price with Inline Edit */}
+                    <td className="py-3 px-3">
+                      {isEditingPrice ? (
+                        <div className="flex items-center space-x-1">
+                          <input
+                            type="number"
+                            autoFocus
+                            value={inlineEditing.value}
+                            onChange={(e) =>
+                              setInlineEditing({ ...inlineEditing, value: e.target.value })
+                            }
+                            className="w-20 px-1.5 py-0.5 text-xs border border-blue-500 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
+                          />
+                          <button
+                            onClick={() => handleInlineSave(product)}
+                            disabled={inlineSaving}
+                            className="p-1 text-green-600 hover:text-green-700"
+                            title="Save price"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setInlineEditing(null)}
+                            disabled={inlineSaving}
+                            className="p-1 text-red-500 hover:text-red-600"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => {
+                            if (isAdmin) {
+                              setInlineEditing({
+                                id: product.id,
+                                field: 'price',
+                                value: String(priceNum),
+                              });
+                            }
+                          }}
+                          className={`group cursor-pointer flex items-baseline space-x-1.5 ${
+                            isAdmin ? 'hover:text-blue-600' : ''
+                          }`}
+                          title={isAdmin ? 'Click to edit price inline' : undefined}
+                        >
+                          <span className="font-semibold text-gray-900 dark:text-gray-100">
+                            {formatIndianRupees(priceNum)}
+                          </span>
+                          {compareNum && (
+                            <span className="text-[11px] text-gray-400 line-through">
+                              {formatIndianRupees(compareNum)}
+                            </span>
+                          )}
+                          {discount > 0 && (
+                            <span className="text-[10px] text-green-600 font-bold">
+                              {discount}% OFF
+                            </span>
+                          )}
+                          {isAdmin && (
+                            <Edit2 className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 ml-1" />
+                          )}
+                        </div>
                       )}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-gray-900 dark:text-white font-semibold text-sm">
-                    {formatPrice(product.price)}
-                    {product.compareAtPrice ? (
-                      <span className="block text-[11px] text-gray-400 line-through font-normal">{formatPrice(product.compareAtPrice)}</span>
-                    ) : null}
-                  </td>
-                  <td className="py-3 px-4">
-                    <button
-                      onClick={() => handleUpdateStock(product.id, product.stock)}
-                      className="hover:underline flex items-center space-x-1"
-                      title="Click to quickly update base stock"
-                    >
-                      <span className={product.stock === 0 ? 'text-red-600 font-bold' : 'text-gray-900 dark:text-white font-medium'}>
-                        {product.stock}
-                      </span>
-                      <span className="text-[10px] text-gray-400">✏️</span>
-                    </button>
-                  </td>
-                  <td className="py-3 px-4">
-                    {totalVariantsCount > 0 ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
-                        <span>⚙️ {activeVariantsCount} Active</span>
-                        {totalVariantsCount > activeVariantsCount && (
-                          <span className="text-[10px] text-blue-600 dark:text-blue-400 font-normal">({totalVariantsCount} total)</span>
+                    </td>
+
+                    {/* Rent / Lease Column */}
+                    <td className="py-3 px-3">
+                      {hasApprovedRent ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          {rentRateDisplay}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                          Rent not set
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Stock with Inline Edit */}
+                    <td className="py-3 px-3">
+                      {isEditingStock ? (
+                        <div className="flex items-center space-x-1">
+                          <input
+                            type="number"
+                            autoFocus
+                            value={inlineEditing.value}
+                            onChange={(e) =>
+                              setInlineEditing({ ...inlineEditing, value: e.target.value })
+                            }
+                            className="w-16 px-1.5 py-0.5 text-xs border border-blue-500 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100"
+                          />
+                          <button
+                            onClick={() => handleInlineSave(product)}
+                            disabled={inlineSaving}
+                            className="p-1 text-green-600 hover:text-green-700"
+                            title="Save stock"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setInlineEditing(null)}
+                            disabled={inlineSaving}
+                            className="p-1 text-red-500 hover:text-red-600"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => {
+                            if (isAdmin) {
+                              setInlineEditing({
+                                id: product.id,
+                                field: 'stock',
+                                value: String(product.stock ?? 0),
+                              });
+                            }
+                          }}
+                          className={`group cursor-pointer flex items-center space-x-1 ${
+                            isAdmin ? 'hover:text-blue-600' : ''
+                          }`}
+                          title={isAdmin ? 'Click to edit stock inline' : undefined}
+                        >
+                          <span
+                            className={
+                              (product.stock ?? 0) <= 0
+                                ? 'text-red-600 font-bold'
+                                : 'font-medium text-gray-900 dark:text-gray-100'
+                            }
+                          >
+                            {product.stock ?? 0}
+                          </span>
+                          {isAdmin && (
+                            <Edit2 className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 ml-1" />
+                          )}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Truthful Variants Label */}
+                    <td className="py-3 px-3">
+                      {totalVariants > 0 ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                          {activeVariants.length} Active ({totalVariants} versions)
+                        </span>
+                      ) : (
+                        <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                          Single version
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Status */}
+                    <td className="py-3 px-3">
+                      <StatusBadge status={product.status} />
+                    </td>
+
+                    {/* Featured */}
+                    <td className="py-3 px-3">
+                      <button
+                        onClick={() => handleToggleFeatured(product)}
+                        disabled={isSupport}
+                        className={`px-2 py-0.5 rounded-full text-[11px] font-medium transition-colors ${
+                          product.isFeatured
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                            : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                        }`}
+                      >
+                        {product.isFeatured ? 'Yes' : 'No'}
+                      </button>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="py-3 px-3 text-right">
+                      <div className="flex items-center justify-end space-x-1.5">
+                        <button
+                          onClick={() => openVariantsModal(product)}
+                          className="px-2 py-1 text-[11px] font-semibold rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-700 dark:text-gray-300"
+                          title="Manage hardware configurations"
+                        >
+                          Variants
+                        </button>
+
+                        <button
+                          onClick={() => openEditModal(product)}
+                          className="px-2 py-1 text-[11px] font-semibold rounded bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
+                          title="Edit product, selling price, and rental rates"
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          onClick={() => handleOpenPriceHistory(product)}
+                          className="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-400 hover:text-gray-600"
+                          title="View price change history"
+                        >
+                          <History className="w-3.5 h-3.5" />
+                        </button>
+
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleOpenDelete(product)}
+                            className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
+                            title="Soft-archive or delete product"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         )}
-                      </span>
-                    ) : (
-                      <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                        Single SKU (Legacy)
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    <ProductStatusBadge status={product.status} />
-                  </td>
-                  <td className="py-3 px-4">
-                    <button
-                      onClick={() => toggleFeatured(product.id)}
-                      disabled={actionInProgressId === product.id}
-                      className={`badge cursor-pointer ${product.isFeatured ? 'badge-success' : 'badge-gray'}`}
-                      aria-label={`Toggle featured for ${product.name}`}
-                    >
-                      {product.isFeatured ? 'Yes' : 'No'}
-                    </button>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <div className="flex items-center justify-end space-x-2">
-                      <button
-                        onClick={() => openVariantsSection(product)}
-                        disabled={actionInProgressId === product.id}
-                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400 py-1 px-2.5 rounded-lg border border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-950/20"
-                        title="Manage hardware configurations & variants"
-                      >
-                        ⚙️ Variants
-                      </button>
-                      <button
-                        onClick={() => openEditProductModal(product)}
-                        disabled={actionInProgressId === product.id}
-                        className="text-xs font-semibold text-gray-700 hover:text-gray-900 dark:text-gray-300 py-1 px-2.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
-                        title="Edit product name, description, brand, and category"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteProduct(product)}
-                        disabled={actionInProgressId === product.id}
-                        className="text-xs font-semibold text-red-600 hover:text-red-800 dark:text-red-400 py-1 px-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20"
-                        title="Delete or discontinue product"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
-
-        {filteredProducts.length === 0 && (
-          <div className="p-12 text-center text-gray-500 dark:text-gray-400 text-sm">
-            No products found matching your search and filter criteria.
-          </div>
-        )}
       </div>
 
-      {/* DEDICATED PRODUCT VARIANTS MANAGEMENT SECTION (PHASE 2) */}
-      {variantsProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="product-variants-modal-title"
-            className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-800"
-          >
-            {/* Modal Header */}
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 pb-4 dark:border-gray-700">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
-                    Product Variants Management
-                  </span>
-                  <span className="text-xs font-mono text-gray-400">{variantsProduct.sku}</span>
+      {/* Pagination Bar */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-xs text-gray-500 pt-2">
+          <span>
+            Showing {(page - 1) * pageSize + 1} to{' '}
+            {Math.min(page * pageSize, filteredProducts.length)} of {filteredProducts.length} items
+          </span>
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-2.5 py-1 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="px-2 font-medium text-gray-700 dark:text-gray-300">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-2.5 py-1 rounded border border-gray-200 dark:border-gray-700 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* COMPREHENSIVE PRODUCT EDIT MODAL                                         */}
+      {/* ========================================================================= */}
+      {editModalProduct && (
+        <AdminModal
+          open={true}
+          onClose={() => {
+            if (isDirty) {
+              setConfirmDiscardOpen(true);
+            } else {
+              setEditModalProduct(null);
+            }
+          }}
+          title={`Edit Product: ${editModalProduct.name}`}
+        >
+          <form onSubmit={handleSaveProductEdit} className="space-y-4 text-xs">
+            {/* Tab navigation inside edit dialog */}
+            <div className="flex border-b border-gray-200 dark:border-gray-700 space-x-4">
+              <button
+                type="button"
+                onClick={() => setEditTab('basics')}
+                className={`py-2 border-b-2 font-semibold ${
+                  editTab === 'basics'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Basics
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTab('pricing')}
+                className={`py-2 border-b-2 font-semibold ${
+                  editTab === 'pricing'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Pricing & MRP
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTab('rent')}
+                className={`py-2 border-b-2 font-semibold ${
+                  editTab === 'rent'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Rental Pricing ({editFormData.rentEnabled ? 'Enabled' : 'Off'})
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTab('stock')}
+                className={`py-2 border-b-2 font-semibold ${
+                  editTab === 'stock'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Stock & Warranty
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTab('specs')}
+                className={`py-2 border-b-2 font-semibold ${
+                  editTab === 'specs'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Specs
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTab('images')}
+                className={`py-2 border-b-2 font-semibold ${
+                  editTab === 'images'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Images
+              </button>
+            </div>
+
+            {/* TAB: BASICS */}
+            {editTab === 'basics' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Product Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.name}
+                    onChange={(e) => updateFormField('name', e.target.value)}
+                    className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                  />
                 </div>
-                <h2 id="product-variants-modal-title" className="text-xl font-bold text-gray-900 dark:text-white mt-1">
-                  {variantsProduct.name}
-                </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Manage individual hardware configurations, independent pricing, SKU inventory, and availability.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={addNewVariantDraft}
-                  className="btn btn-secondary text-xs flex items-center gap-1 font-semibold"
-                >
-                  <span>+</span>
-                  <span>Add New Variant</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVariantsProduct(null)}
-                  className="btn btn-secondary text-xs"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
 
-            {/* Guiding Context Alert */}
-            <div className="my-4 rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-xs text-blue-900 dark:bg-blue-950/20 dark:border-blue-900/40 dark:text-blue-200 flex items-start gap-2">
-              <span className="text-base leading-none">ℹ️</span>
-              <div>
-                <p className="font-semibold">Authoritative Storefront Rules:</p>
-                <p className="mt-0.5 text-slate-600 dark:text-slate-300">
-                  Storefront selectors (RAM, Storage, Processor, Graphics) are dynamically derived from active rows. Exactly <strong>one active default variant</strong> is required. Disabling an existing variant archives it safely without deleting historical order references.
-                </p>
-              </div>
-            </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Brand *
+                    </label>
+                    <input
+                      type="text"
+                      list="edit-brands"
+                      value={editFormData.brand}
+                      onChange={(e) => updateFormField('brand', e.target.value)}
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                    />
+                    <datalist id="edit-brands">
+                      {STANDARD_BRANDS.map((b) => (
+                        <option key={b} value={b} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={editFormData.categoryId}
+                      onChange={(e) => updateFormField('categoryId', e.target.value)}
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                    >
+                      <option value="">Uncategorized</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
-            {/* Validation Errors Box */}
-            {variantValidationErrors.length > 0 && (
-              <div className="my-3 rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-900 dark:bg-red-950/30 dark:border-red-900/50 dark:text-red-200">
-                <p className="font-bold mb-1">Please correct the following before saving:</p>
-                <ul className="list-disc pl-5 space-y-1">
-                  {variantValidationErrors.map((err, i) => (
-                    <li key={i}>{err}</li>
-                  ))}
-                </ul>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Catalog Status
+                    </label>
+                    <select
+                      value={editFormData.status}
+                      onChange={(e) => updateFormField('status', e.target.value)}
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                    >
+                      <option value="ACTIVE">ACTIVE</option>
+                      <option value="INACTIVE">INACTIVE</option>
+                      <option value="DISCONTINUED">DISCONTINUED</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center pt-5 space-x-2">
+                    <input
+                      type="checkbox"
+                      id="edit-featured"
+                      checked={editFormData.isFeatured}
+                      onChange={(e) => updateFormField('isFeatured', e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600"
+                    />
+                    <label htmlFor="edit-featured" className="font-semibold text-gray-700 dark:text-gray-300">
+                      Featured
+                    </label>
+                  </div>
+                  <div className="flex items-center pt-5 space-x-2">
+                    <input
+                      type="checkbox"
+                      id="edit-new-arrival"
+                      checked={editFormData.isNewArrival}
+                      onChange={(e) => updateFormField('isNewArrival', e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600"
+                    />
+                    <label htmlFor="edit-new-arrival" className="font-semibold text-gray-700 dark:text-gray-300">
+                      New Arrival
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Short Summary
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.shortDescription}
+                    onChange={(e) => updateFormField('shortDescription', e.target.value)}
+                    placeholder="Brief 1-line headline for card previews"
+                    className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Full Description
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={editFormData.description}
+                    onChange={(e) => updateFormField('description', e.target.value)}
+                    className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                  />
+                </div>
               </div>
             )}
 
-            {/* Variants Table / List */}
-            <div className="mt-4 space-y-4">
-              <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-                <table className="table w-full text-left text-xs">
-                  <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 font-semibold text-gray-700 dark:text-gray-300">
-                    <tr>
-                      <th className="py-2.5 px-3 text-center">Default</th>
-                      <th className="py-2.5 px-3 text-center">Active</th>
-                      <th className="py-2.5 px-3">Variant Name &amp; SKU</th>
-                      <th className="py-2.5 px-3">Configuration Specs</th>
-                      <th className="py-2.5 px-3">Selling Price</th>
-                      <th className="py-2.5 px-3">Stock</th>
-                      <th className="py-2.5 px-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                    {variantDrafts.map((variant, index) => {
-                      const isEditing = editingVariantIndex === index;
-                      return (
-                        <tr
-                          key={variant.id || `variant-${index}`}
-                          className={`${
-                            !variant.isActive
-                              ? 'bg-gray-50/70 dark:bg-gray-900/30 opacity-70'
-                              : isEditing
-                              ? 'bg-blue-50/30 dark:bg-blue-950/10'
-                              : ''
-                          }`}
-                        >
-                          <td className="py-3 px-3 text-center">
-                            <input
-                              type="radio"
-                              name="defaultVariantGroup"
-                              checked={variant.isDefault}
-                              onChange={() => setDefaultVariant(index)}
-                              title="Set as Default Variant"
-                              className="cursor-pointer"
-                            />
-                            {variant.isDefault && (
-                              <span className="block text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase mt-0.5">
-                                Default
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            <button
-                              type="button"
-                              onClick={() => toggleVariantActive(index)}
-                              className={`badge cursor-pointer text-[10px] ${
-                                variant.isActive ? 'badge-success' : 'badge-gray'
-                              }`}
-                              title={variant.isActive ? 'Click to disable variant' : 'Click to enable variant'}
-                            >
-                              {variant.isActive ? 'Active' : 'Disabled'}
-                            </button>
-                          </td>
-                          <td className="py-3 px-3">
-                            <span className="font-semibold text-gray-900 dark:text-white block text-sm">
-                              {variant.name || 'Untitled Variant'}
-                            </span>
-                            <span className="font-mono text-[11px] text-gray-500">{variant.sku || 'No SKU'}</span>
-                          </td>
-                          <td className="py-3 px-3">
-                            <div className="flex flex-wrap gap-1.5 max-w-xs">
-                              {variant.ram && (
-                                <span className="inline-block px-2 py-0.5 rounded bg-blue-50 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 font-semibold text-[10px]">
-                                  {variant.ram}
-                                </span>
-                              )}
-                              {variant.storage && (
-                                <span className="inline-block px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 font-semibold text-[10px]">
-                                  {variant.storage}
-                                </span>
-                              )}
-                              {variant.processor && (
-                                <span className="inline-block px-2 py-0.5 rounded bg-purple-50 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 text-[10px]">
-                                  {variant.processor}
-                                </span>
-                              )}
-                              {variant.graphics && (
-                                <span className="inline-block px-2 py-0.5 rounded bg-amber-50 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 text-[10px]">
-                                  {variant.graphics}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3 px-3">
-                            <span className="font-bold text-gray-900 dark:text-white">
-                              ₹{Number(variant.price || 0).toLocaleString('en-IN')}
-                            </span>
-                            {variant.compareAtPrice && (
-                              <span className="block text-[10px] text-gray-400 line-through">
-                                ₹{Number(variant.compareAtPrice).toLocaleString('en-IN')}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-3">
-                            <span
-                              className={`font-semibold ${
-                                Number(variant.stock) === 0 ? 'text-red-600' : 'text-gray-900 dark:text-white'
-                              }`}
-                            >
-                              {variant.stock} units
-                            </span>
-                            {variant.allowBackorder && (
-                              <span className="block text-[10px] text-blue-600">Backorder allowed</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-3 text-right">
-                            <div className="flex items-center justify-end space-x-2">
-                              <button
-                                type="button"
-                                onClick={() => setEditingVariantIndex(isEditing ? null : index)}
-                                className="text-xs font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400 py-1 px-2 rounded hover:bg-blue-50 dark:hover:bg-blue-950/30"
-                              >
-                                {isEditing ? 'Close' : 'Configure'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => duplicateVariantDraft(index)}
-                                className="text-xs text-gray-600 hover:text-gray-800 dark:text-gray-400 py-1 px-1.5"
-                                title="Duplicate variant configuration"
-                              >
-                                📋
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (confirm(`Remove this variant row? If you only wish to temporarily hide it, consider using the "Disabled" switch instead to preserve historical orders.`)) {
-                                    setVariantDrafts((drafts) => drafts.filter((_, i) => i !== index));
-                                    if (editingVariantIndex === index) setEditingVariantIndex(null);
-                                  }
-                                }}
-                                className="text-xs text-red-600 hover:text-red-800 py-1 px-1.5"
-                                title="Remove variant draft"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            {/* TAB: PRICING & MRP */}
+            {editTab === 'pricing' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Selling Price (₹) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      step="1"
+                      value={editFormData.price}
+                      onChange={(e) => updateFormField('price', e.target.value)}
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800 font-semibold"
+                    />
+                    <span className="text-[11px] text-gray-400 mt-0.5 block">
+                      Active customer purchase price.
+                    </span>
+                  </div>
 
-                {variantDrafts.length === 0 && (
-                  <div className="p-8 text-center text-gray-500 text-xs">
-                    No variants added yet. Click <strong>"+ Add New Variant"</strong> above to create your first configurable option.
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Compare-At Price / MRP (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={editFormData.compareAtPrice}
+                      onChange={(e) => updateFormField('compareAtPrice', e.target.value)}
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                    />
+                    <span className="text-[11px] text-gray-400 mt-0.5 block">
+                      Original manufacturer price for strike-through savings.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Live Discount Calculation */}
+                {parseFloat(editFormData.price) > 0 &&
+                  parseFloat(editFormData.compareAtPrice) >= parseFloat(editFormData.price) && (
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-800 dark:text-emerald-300 text-xs flex items-center justify-between">
+                      <span>Customer Savings Preview:</span>
+                      <span className="font-bold">
+                        Save ₹
+                        {(
+                          parseFloat(editFormData.compareAtPrice) - parseFloat(editFormData.price)
+                        ).toLocaleString('en-IN')}{' '}
+                        (
+                        {Math.round(
+                          ((parseFloat(editFormData.compareAtPrice) -
+                            parseFloat(editFormData.price)) /
+                            parseFloat(editFormData.compareAtPrice)) *
+                            100,
+                        )}
+                        % OFF)
+                      </span>
+                    </div>
+                  )}
+
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      B2B Bulk Sell Price (₹)
+                    </label>
+                    <input
+                      type="number"
+                      value={editFormData.bulkSellPrice}
+                      onChange={(e) => updateFormField('bulkSellPrice', e.target.value)}
+                      placeholder="Optional corporate quote rate"
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      B2B Bulk Lease Price (₹/mo)
+                    </label>
+                    <input
+                      type="number"
+                      value={editFormData.bulkLeasePrice}
+                      onChange={(e) => updateFormField('bulkLeasePrice', e.target.value)}
+                      placeholder="Optional bulk rental rate"
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    Reason for Price Change (Audit Trail)
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.priceChangeReason}
+                    onChange={(e) => updateFormField('priceChangeReason', e.target.value)}
+                    placeholder="e.g. Festival promotional price or component cost revaluation"
+                    className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* TAB: RENTAL PRICING */}
+            {editTab === 'rent' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                  <div>
+                    <span className="font-semibold block text-gray-900 dark:text-gray-100">
+                      Enable Renting for this Product
+                    </span>
+                    <span className="text-[11px] text-gray-500">
+                      When enabled, customer can lease this laptop across multiple tenures.
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      aria-label="Enable renting switch"
+                      checked={editFormData.rentEnabled}
+                      onChange={(e) => updateFormField('rentEnabled', e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {editFormData.rentEnabled && (
+                  <div className="space-y-3">
+                    <span className="font-semibold text-gray-700 dark:text-gray-300 block">
+                      Per-Tenure Monthly Rent Rates (₹/Month)
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+                      {TENURES.map((tenure) => {
+                        const monthlyRate = parseFloat(editFormData.rentalRates[tenure] || '0') || 0;
+                        const totalCommitment = monthlyRate * tenure;
+
+                        return (
+                          <div
+                            key={tenure}
+                            className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 space-y-1.5"
+                          >
+                            <span className="font-semibold text-xs text-blue-600 dark:text-blue-400 block">
+                              {tenure} {tenure === 1 ? 'Month' : 'Months'}
+                            </span>
+                            <div className="flex items-center space-x-1">
+                              <span className="text-gray-400 font-semibold">₹</span>
+                              <input
+                                type="number"
+                                min="0"
+                                placeholder="e.g. 1499"
+                                value={editFormData.rentalRates[tenure] || ''}
+                                onChange={(e) => updateRentalRate(tenure, e.target.value)}
+                                className="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-transparent font-medium"
+                              />
+                            </div>
+                            <span className="text-[10px] text-gray-400 block">
+                              Total: ₹{totalCommitment.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg text-blue-900 dark:text-blue-300 text-xs space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="publish-immediately"
+                          checked={editFormData.publishImmediately}
+                          onChange={(e) => updateFormField('publishImmediately', e.target.checked)}
+                          className="rounded border-blue-300 text-blue-600"
+                        />
+                        <label htmlFor="publish-immediately" className="font-semibold cursor-pointer">
+                          Publish immediately (Approve for storefront display & customer checkout)
+                        </label>
+                      </div>
+                      <p className="text-[11px] text-blue-700 dark:text-blue-400 pl-5">
+                        Single admin approval is authorized. Publishing supersedes previous rates and activates them on the product page instantly.
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
+            )}
 
-              {/* INLINE VARIANT CONFIGURATION FORM */}
-              {editingVariantIndex !== null && variantDrafts[editingVariantIndex] && (
-                <div className="rounded-xl border border-blue-200 bg-blue-50/30 p-5 shadow-sm dark:border-blue-900/40 dark:bg-blue-950/20 space-y-4">
-                  <div className="flex items-center justify-between border-b border-blue-200/50 pb-3 dark:border-blue-900/40">
-                    <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
-                      <span>⚙️ Configure Variant #{editingVariantIndex + 1}</span>
-                      <span className="font-normal text-xs text-gray-500 font-mono">
-                        ({variantDrafts[editingVariantIndex].sku || 'New SKU'})
-                      </span>
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => setEditingVariantIndex(null)}
-                      className="text-xs font-semibold text-gray-500 hover:text-gray-800"
-                    >
-                      Done Editing Row
-                    </button>
+            {/* TAB: STOCK & WARRANTY */}
+            {editTab === 'stock' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Base Stock Count *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={editFormData.stock}
+                      onChange={(e) => updateFormField('stock', e.target.value)}
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                    />
+                    <span className="text-[11px] text-gray-400 mt-0.5 block">
+                      Physical inventory count. If variants exist, stock is managed per variant.
+                    </span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                    <div className="lg:col-span-2">
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Variant Name *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        className="input w-full text-xs"
-                        placeholder="e.g. 16GB RAM / 512GB SSD / Intel Core i7"
-                        value={variantDrafts[editingVariantIndex].name}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setVariantDrafts((drafts) =>
-                            drafts.map((d, i) => (i === editingVariantIndex ? { ...d, name: val } : d))
-                          );
-                        }}
-                      />
-                    </div>
-
-                    <div className="lg:col-span-2">
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Unique Variant SKU *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        className="input w-full text-xs font-mono"
-                        placeholder="e.g. LM-DEL-7420-16-512"
-                        value={variantDrafts[editingVariantIndex].sku}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setVariantDrafts((drafts) =>
-                            drafts.map((d, i) => (i === editingVariantIndex ? { ...d, sku: val } : d))
-                          );
-                        }}
-                      />
-                    </div>
-
-                    {/* Structured Hardware Specifications */}
-                    <div>
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        RAM *
-                      </label>
-                      <div className="flex gap-1">
-                        <select
-                          className="input flex-1 text-xs"
-                          value={RAM_OPTIONS.includes(variantDrafts[editingVariantIndex].ram) ? variantDrafts[editingVariantIndex].ram : 'custom'}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setVariantDrafts((drafts) =>
-                              drafts.map((d, i) =>
-                                i === editingVariantIndex
-                                  ? { ...d, ram: val === 'custom' ? '' : val }
-                                  : d
-                              )
-                            );
-                          }}
-                        >
-                          <option value="">Select RAM</option>
-                          {RAM_OPTIONS.map((r) => (
-                            <option key={r} value={r}>{r}</option>
-                          ))}
-                          <option value="custom">Custom...</option>
-                        </select>
-                        {!RAM_OPTIONS.includes(variantDrafts[editingVariantIndex].ram) && (
-                          <input
-                            type="text"
-                            placeholder="e.g. 18GB"
-                            className="input w-24 text-xs"
-                            value={variantDrafts[editingVariantIndex].ram}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setVariantDrafts((drafts) =>
-                                drafts.map((d, i) => (i === editingVariantIndex ? { ...d, ram: val } : d))
-                              );
-                            }}
-                          />
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Storage *
-                      </label>
-                      <div className="flex gap-1">
-                        <select
-                          className="input flex-1 text-xs"
-                          value={STORAGE_OPTIONS.includes(variantDrafts[editingVariantIndex].storage) ? variantDrafts[editingVariantIndex].storage : 'custom'}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setVariantDrafts((drafts) =>
-                              drafts.map((d, i) =>
-                                i === editingVariantIndex
-                                  ? { ...d, storage: val === 'custom' ? '' : val }
-                                  : d
-                              )
-                            );
-                          }}
-                        >
-                          <option value="">Select Storage</option>
-                          {STORAGE_OPTIONS.map((s) => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                          <option value="custom">Custom...</option>
-                        </select>
-                        {!STORAGE_OPTIONS.includes(variantDrafts[editingVariantIndex].storage) && (
-                          <input
-                            type="text"
-                            placeholder="e.g. 512GB NVMe"
-                            className="input w-28 text-xs"
-                            value={variantDrafts[editingVariantIndex].storage}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setVariantDrafts((drafts) =>
-                                drafts.map((d, i) => (i === editingVariantIndex ? { ...d, storage: val } : d))
-                              );
-                            }}
-                          />
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Processor (CPU)
-                      </label>
-                      <input
-                        type="text"
-                        className="input w-full text-xs"
-                        placeholder="e.g. Intel Core i7-1260P"
-                        value={variantDrafts[editingVariantIndex].processor}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setVariantDrafts((drafts) =>
-                            drafts.map((d, i) => (i === editingVariantIndex ? { ...d, processor: val } : d))
-                          );
-                        }}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Graphics (GPU)
-                      </label>
-                      <input
-                        type="text"
-                        className="input w-full text-xs"
-                        placeholder="e.g. Intel Iris Xe / RTX 4060"
-                        value={variantDrafts[editingVariantIndex].graphics}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setVariantDrafts((drafts) =>
-                            drafts.map((d, i) => (i === editingVariantIndex ? { ...d, graphics: val } : d))
-                          );
-                        }}
-                      />
-                    </div>
-
-                    {/* Pricing & Stock */}
-                    <div>
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Selling Price (₹) *
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        required
-                        className="input w-full text-xs font-semibold"
-                        placeholder="38999"
-                        value={variantDrafts[editingVariantIndex].price}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setVariantDrafts((drafts) =>
-                            drafts.map((d, i) => (i === editingVariantIndex ? { ...d, price: val } : d))
-                          );
-                        }}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Original Compare Price (₹)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        className="input w-full text-xs"
-                        placeholder="e.g. 75000"
-                        value={variantDrafts[editingVariantIndex].compareAtPrice}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setVariantDrafts((drafts) =>
-                            drafts.map((d, i) => (i === editingVariantIndex ? { ...d, compareAtPrice: val } : d))
-                          );
-                        }}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Monthly Lease Price (₹/mo)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        className="input w-full text-xs"
-                        placeholder="e.g. 2999"
-                        value={variantDrafts[editingVariantIndex].leasePriceMonthly}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setVariantDrafts((drafts) =>
-                            drafts.map((d, i) => (i === editingVariantIndex ? { ...d, leasePriceMonthly: val } : d))
-                          );
-                        }}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Inventory Stock *
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        required
-                        className="input w-full text-xs"
-                        placeholder="10"
-                        value={variantDrafts[editingVariantIndex].stock}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setVariantDrafts((drafts) =>
-                            drafts.map((d, i) => (i === editingVariantIndex ? { ...d, stock: val } : d))
-                          );
-                        }}
-                      />
-                    </div>
-
-                    {/* Variant Image URLs */}
-                    <div className="lg:col-span-4">
-                      <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                        Variant-Specific Image URLs (one per line)
-                      </label>
-                      <textarea
-                        rows={2}
-                        className="input w-full text-xs font-mono"
-                        placeholder="https://images.unsplash.com/photo-..."
-                        value={variantDrafts[editingVariantIndex].imageUrls}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setVariantDrafts((drafts) =>
-                            drafts.map((d, i) => (i === editingVariantIndex ? { ...d, imageUrls: val } : d))
-                          );
-                        }}
-                      />
-                    </div>
-
-                    {/* Checkboxes & Advanced Toggle */}
-                    <div className="lg:col-span-4 flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-blue-200/50">
-                      <div className="flex items-center space-x-6">
-                        <label className="flex items-center space-x-2 text-xs font-medium cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={variantDrafts[editingVariantIndex].isDefault}
-                            onChange={() => setDefaultVariant(editingVariantIndex)}
-                            className="rounded text-primary"
-                          />
-                          <span>Set as Default Variant</span>
-                        </label>
-
-                        <label className="flex items-center space-x-2 text-xs font-medium cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={variantDrafts[editingVariantIndex].isActive}
-                            onChange={() => toggleVariantActive(editingVariantIndex)}
-                            className="rounded text-primary"
-                          />
-                          <span>Active on Storefront</span>
-                        </label>
-
-                        <label className="flex items-center space-x-2 text-xs font-medium cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={variantDrafts[editingVariantIndex].allowBackorder}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setVariantDrafts((drafts) =>
-                                drafts.map((d, i) => (i === editingVariantIndex ? { ...d, allowBackorder: checked } : d))
-                              );
-                            }}
-                            className="rounded text-primary"
-                          />
-                          <span>Allow Backorder</span>
-                        </label>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const current = variantDrafts[editingVariantIndex];
-                          const toggled = !current.rawJsonMode;
-                          let jsonStr = current.rawAttributesJson;
-                          if (toggled) {
-                            const attrs: Record<string, any> = {};
-                            if (current.ram) attrs.ram = current.ram;
-                            if (current.storage) attrs.storage = current.storage;
-                            if (current.processor) attrs.processor = current.processor;
-                            if (current.graphics) attrs.graphics = current.graphics;
-                            jsonStr = JSON.stringify(attrs, null, 2);
-                          }
-                          setVariantDrafts((drafts) =>
-                            drafts.map((d, i) => (i === editingVariantIndex ? { ...d, rawJsonMode: toggled, rawAttributesJson: jsonStr } : d))
-                          );
-                        }}
-                        className="text-[11px] text-gray-500 hover:text-gray-700 underline"
-                      >
-                        {variantDrafts[editingVariantIndex].rawJsonMode ? 'Switch to Standard Specs Form' : 'Advanced: Edit Raw JSON'}
-                      </button>
-                    </div>
-
-                    {variantDrafts[editingVariantIndex].rawJsonMode && (
-                      <div className="lg:col-span-4 mt-2">
-                        <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                          Raw Attributes JSON
-                        </label>
-                        <textarea
-                          rows={4}
-                          className="input w-full text-xs font-mono"
-                          value={variantDrafts[editingVariantIndex].rawAttributesJson}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setVariantDrafts((drafts) =>
-                              drafts.map((d, i) => (i === editingVariantIndex ? { ...d, rawAttributesJson: val } : d))
-                            );
-                          }}
-                        />
-                      </div>
-                    )}
+                  <div>
+                    <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Standard Doorstep Warranty (Months)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={editFormData.warrantyMonths}
+                      onChange={(e) => updateFormField('warrantyMonths', parseInt(e.target.value, 10) || 6)}
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                    />
+                    <span className="text-[11px] text-gray-400 mt-0.5 block">
+                      Included free warranty period (default 6 months).
+                    </span>
                   </div>
                 </div>
-              )}
 
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4 dark:border-gray-700">
+                <div className="p-3 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 text-xs space-y-1">
+                  <span className="font-semibold block text-gray-900 dark:text-gray-100">
+                    Warranty Extension Add-On Policy
+                  </span>
+                  <p className="text-gray-500 text-[11px]">
+                    Optional 1-Year Doorstep Warranty Extension is offered at checkout for a flat ₹1,999.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: SPECS */}
+            {editTab === 'specs' && (
+              <div className="space-y-3">
+                <span className="font-semibold text-gray-700 dark:text-gray-300 block">
+                  Technical Specifications (Certified Inspection Metadata)
+                </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Processor</label>
+                    <input
+                      type="text"
+                      value={editFormData.specs.processor || ''}
+                      onChange={(e) => updateSpecField('processor', e.target.value)}
+                      placeholder="e.g. Apple M1 8-Core / Intel Core i7-1185G7"
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 mb-1">RAM</label>
+                    <input
+                      type="text"
+                      value={editFormData.specs.ram || ''}
+                      onChange={(e) => updateSpecField('ram', e.target.value)}
+                      placeholder="e.g. 16GB Unified / 16GB DDR4"
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Storage</label>
+                    <input
+                      type="text"
+                      value={editFormData.specs.storage || ''}
+                      onChange={(e) => updateSpecField('storage', e.target.value)}
+                      placeholder="e.g. 512GB NVMe SSD"
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Display</label>
+                    <input
+                      type="text"
+                      value={editFormData.specs.display || ''}
+                      onChange={(e) => updateSpecField('display', e.target.value)}
+                      placeholder="e.g. 13.3-inch Retina True Tone (2560x1600)"
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Physical Condition</label>
+                    <select
+                      value={editFormData.specs.condition || 'Grade A+ (Pristine)'}
+                      onChange={(e) => updateSpecField('condition', e.target.value)}
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-slate-800"
+                    >
+                      <option value="Grade A+ (Pristine)">Grade A+ (Pristine - Zero Blemishes)</option>
+                      <option value="Grade A (Like-New)">Grade A (Like-New - Minor Scratches)</option>
+                      <option value="Grade B (Refurbished)">Grade B (Refurbished - Visible Wear)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Battery Health</label>
+                    <input
+                      type="text"
+                      value={editFormData.specs.batteryHealth || ''}
+                      onChange={(e) => updateSpecField('batteryHealth', e.target.value)}
+                      placeholder="e.g. 92% Original Capacity (Tested)"
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-slate-800"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: IMAGES */}
+            {editTab === 'images' && (
+              <div className="space-y-3">
+                <label className="block font-semibold text-gray-700 dark:text-gray-300">
+                  Image URLs (One per line)
+                </label>
+                <textarea
+                  rows={4}
+                  value={editFormData.imageUrls}
+                  onChange={(e) => updateFormField('imageUrls', e.target.value)}
+                  placeholder="https://images.unsplash.com/... (First line is primary)"
+                  className="w-full p-2 font-mono text-xs border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                />
+                <div className="flex gap-2 overflow-x-auto py-2">
+                  {editFormData.imageUrls
+                    .split(/\r?\n/)
+                    .map((url: string) => url.trim())
+                    .filter(Boolean)
+                    .map((url: string, idx: number) => (
+                      <div key={idx} className="relative w-16 h-16 rounded border shrink-0 overflow-hidden">
+                        <img src={url} alt={`Preview ${idx}`} className="w-full h-full object-cover" />
+                        {idx === 0 && (
+                          <span className="absolute bottom-0 inset-x-0 bg-blue-600 text-white text-[9px] text-center font-bold">
+                            Primary
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Footer Buttons */}
+            <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
+              <span className="text-[11px] text-gray-400">
+                SKU: {editModalProduct.sku} &bull; Updated:{' '}
+                {new Date(editModalProduct.updatedAt || Date.now()).toLocaleDateString()}
+              </span>
+
+              <div className="flex items-center space-x-2">
                 <button
                   type="button"
-                  onClick={addNewVariantDraft}
-                  className="btn btn-secondary text-xs"
+                  onClick={() => {
+                    if (isDirty) {
+                      setConfirmDiscardOpen(true);
+                    } else {
+                      setEditModalProduct(null);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold"
                 >
-                  + Add another configuration
+                  Cancel
                 </button>
-                <div className="flex items-center space-x-2">
+                {isAdmin && (
+                  <button
+                    type="submit"
+                    disabled={savingEdit}
+                    className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
+                  >
+                    {savingEdit ? 'Saving...' : 'Save Changes'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </form>
+        </AdminModal>
+      )}
+
+      {/* Discard confirmation modal */}
+      {confirmDiscardOpen && (
+        <AdminModal
+          open={true}
+          onClose={() => setConfirmDiscardOpen(false)}
+          title="Discard Unsaved Changes?"
+        >
+          <div className="space-y-4 text-xs">
+            <p className="text-gray-600 dark:text-gray-300">
+              You have modified fields on this product. Are you sure you want to discard your changes?
+            </p>
+            <div className="flex justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDiscardOpen(false)}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 font-semibold"
+              >
+                Continue Editing
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDiscardOpen(false);
+                  setIsDirty(false);
+                  setEditModalProduct(null);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold"
+              >
+                Discard Changes
+              </button>
+            </div>
+          </div>
+        </AdminModal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* BULK PRICING MODAL                                                       */}
+      {/* ========================================================================= */}
+      {bulkPricingModalOpen && (
+        <AdminModal
+          open={true}
+          onClose={() => setBulkPricingModalOpen(false)}
+          title={`Bulk Price Adjustment (${selectedProductIds.length} Products)`}
+        >
+          <div className="space-y-4 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  Adjustment Type
+                </label>
+                <select
+                  value={bulkAdjustmentType}
+                  onChange={(e) =>
+                    handleUpdateBulkPreview(
+                      e.target.value as any,
+                      bulkAdjustmentValue,
+                      bulkApplyToMRP,
+                    )
+                  }
+                  className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+                >
+                  <option value="PERCENTAGE">Percentage (%)</option>
+                  <option value="FIXED">Fixed Amount (₹)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  Adjustment Value (positive or negative)
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  value={bulkAdjustmentValue}
+                  onChange={(e) =>
+                    handleUpdateBulkPreview(
+                      bulkAdjustmentType,
+                      e.target.value,
+                      bulkApplyToMRP,
+                    )
+                  }
+                  className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800 font-semibold"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="bulk-mrp"
+                checked={bulkApplyToMRP}
+                onChange={(e) =>
+                  handleUpdateBulkPreview(
+                    bulkAdjustmentType,
+                    bulkAdjustmentValue,
+                    e.target.checked,
+                  )
+                }
+                className="rounded border-gray-300 text-blue-600"
+              />
+              <label htmlFor="bulk-mrp" className="font-semibold text-gray-700 dark:text-gray-300">
+                Also adjust Compare-At Price / MRP proportionally
+              </label>
+            </div>
+
+            {/* Live Preview List */}
+            <div>
+              <span className="font-semibold text-gray-700 dark:text-gray-300 block mb-1">
+                Preview Price Adjustments
+              </span>
+              <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="bg-gray-50 dark:bg-slate-800 text-gray-500 font-semibold border-b border-gray-200 dark:border-gray-700">
+                    <tr>
+                      <th className="py-1.5 px-3">Product</th>
+                      <th className="py-1.5 px-3">Old Price</th>
+                      <th className="py-1.5 px-3">New Price</th>
+                      <th className="py-1.5 px-3">New MRP</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {bulkPreviewLoading ? (
+                      <tr>
+                        <td colSpan={4} className="py-4 text-center text-gray-400">
+                          Calculating preview...
+                        </td>
+                      </tr>
+                    ) : (
+                      bulkPreviewItems.map((item) => (
+                        <tr key={item.id}>
+                          <td className="py-1.5 px-3 font-medium text-gray-900 dark:text-gray-100 truncate max-w-[160px]">
+                            {item.name}
+                          </td>
+                          <td className="py-1.5 px-3 text-gray-400 line-through">
+                            {formatIndianRupees(item.oldPrice)}
+                          </td>
+                          <td className="py-1.5 px-3 font-bold text-blue-600">
+                            {formatIndianRupees(item.newPrice)}
+                          </td>
+                          <td className="py-1.5 px-3 text-gray-500">
+                            {item.newCompareAt ? formatIndianRupees(item.newCompareAt) : '-'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setBulkPricingModalOpen(false)}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkApplying || bulkPreviewItems.length === 0}
+                onClick={handleApplyBulkPricing}
+                className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
+              >
+                {bulkApplying ? 'Applying...' : `Apply to ${selectedProductIds.length} Products`}
+              </button>
+            </div>
+          </div>
+        </AdminModal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* PRICE HISTORY MODAL                                                       */}
+      {/* ========================================================================= */}
+      {historyProduct && (
+        <AdminModal
+          open={true}
+          onClose={() => setHistoryProduct(null)}
+          title={`Price & Rental History: ${historyProduct.name}`}
+        >
+          <div className="space-y-4 text-xs">
+            {historyLoading ? (
+              <div className="py-8 text-center text-gray-400">Loading audit history...</div>
+            ) : (
+              <div className="space-y-4">
+                {/* Selling Price Audits */}
+                <div>
+                  <span className="font-semibold text-gray-700 dark:text-gray-300 block mb-2">
+                    Selling Price Audits
+                  </span>
+                  <div className="max-h-40 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="bg-gray-50 dark:bg-slate-800 text-gray-500 font-semibold border-b">
+                        <tr>
+                          <th className="py-1.5 px-3">Date</th>
+                          <th className="py-1.5 px-3">Old Price</th>
+                          <th className="py-1.5 px-3">New Price</th>
+                          <th className="py-1.5 px-3">Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {historyData?.priceAudits && historyData.priceAudits.length > 0 ? (
+                          historyData.priceAudits.map((a: any) => (
+                            <tr key={a.id}>
+                              <td className="py-1.5 px-3 text-gray-400">
+                                {new Date(a.createdAt).toLocaleString()}
+                              </td>
+                              <td className="py-1.5 px-3 text-gray-500">
+                                ₹{a.metadata?.oldPrice || '-'}
+                              </td>
+                              <td className="py-1.5 px-3 font-bold text-blue-600">
+                                ₹{a.metadata?.newPrice || '-'}
+                              </td>
+                              <td className="py-1.5 px-3 text-gray-500">{a.metadata?.reason || '-'}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="py-3 text-center text-gray-400">
+                              No previous selling price modifications recorded.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Rental Pricing Audits */}
+                <div>
+                  <span className="font-semibold text-gray-700 dark:text-gray-300 block mb-2">
+                    Rental Price Approvals
+                  </span>
+                  <div className="max-h-40 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="bg-gray-50 dark:bg-slate-800 text-gray-500 font-semibold border-b">
+                        <tr>
+                          <th className="py-1.5 px-3">Tenure</th>
+                          <th className="py-1.5 px-3">Monthly Rent</th>
+                          <th className="py-1.5 px-3">Status</th>
+                          <th className="py-1.5 px-3">Approved Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {historyData?.rentalPrices && historyData.rentalPrices.length > 0 ? (
+                          historyData.rentalPrices.map((rp: any) => (
+                            <tr key={rp.id}>
+                              <td className="py-1.5 px-3 font-semibold text-gray-800 dark:text-gray-200">
+                                {rp.tenureMonths} Months
+                              </td>
+                              <td className="py-1.5 px-3 font-bold text-emerald-600">
+                                ₹{Number(rp.monthlyPrice).toLocaleString('en-IN')}/mo
+                              </td>
+                              <td className="py-1.5 px-3">
+                                <StatusBadge status={rp.status} />
+                              </td>
+                              <td className="py-1.5 px-3 text-gray-500">
+                                {rp.approvedAt ? new Date(rp.approvedAt).toLocaleDateString() : 'Draft'}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="py-3 text-center text-gray-400">
+                              No rental rates configured yet.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </AdminModal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SAFE ARCHIVE / REFERENCE CHECK MODAL                                      */}
+      {/* ========================================================================= */}
+      {archiveTargetProduct && (
+        <AdminModal
+          open={true}
+          onClose={() => setArchiveTargetProduct(null)}
+          title={`Archive / Delete: ${archiveTargetProduct.name}`}
+        >
+          <div className="space-y-4 text-xs">
+            {referenceLoading ? (
+              <div className="py-6 text-center text-gray-400">Checking active order and lease references...</div>
+            ) : (
+              <div className="space-y-3">
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-amber-900 dark:text-amber-300">
+                  <span className="font-semibold block mb-1">Integrity Check</span>
+                  {referenceSummary?.totalOrders > 0 || referenceSummary?.totalLeases > 0 ? (
+                    <p>
+                      This product is referenced in {referenceSummary.totalOrders} order(s) and{' '}
+                      {referenceSummary.totalLeases} lease contract(s). It will be safely <strong>soft-archived</strong>{' '}
+                      (DISCONTINUED) to preserve historical customer invoices, contracts, and tracking records.
+                    </p>
+                  ) : (
+                    <p>
+                      This product has no active or historical orders/leases. It can be safely removed from the catalog.
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-[11px]">
+                  <div className="p-2 border rounded bg-gray-50 dark:bg-slate-800">
+                    <span className="text-gray-400 block">Total Orders</span>
+                    <span className="font-bold text-gray-800 dark:text-gray-200">
+                      {referenceSummary?.totalOrders ?? 0} ({referenceSummary?.activeOrders ?? 0} active)
+                    </span>
+                  </div>
+                  <div className="p-2 border rounded bg-gray-50 dark:bg-slate-800">
+                    <span className="text-gray-400 block">Lease Contracts</span>
+                    <span className="font-bold text-gray-800 dark:text-gray-200">
+                      {referenceSummary?.totalLeases ?? 0} ({referenceSummary?.activeLeases ?? 0} active)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-2 border-t">
                   <button
                     type="button"
-                    onClick={() => setVariantsProduct(null)}
-                    className="btn btn-secondary text-xs"
+                    onClick={() => setArchiveTargetProduct(null)}
+                    className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 font-semibold"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
-                    onClick={saveProductVariants}
-                    disabled={savingVariants}
-                    className="btn btn-primary text-xs font-semibold px-4 disabled:opacity-50"
+                    disabled={archiving}
+                    onClick={handleConfirmArchive}
+                    className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold disabled:opacity-50"
                   >
-                    {savingVariants ? 'Saving Configurations...' : 'Save & Publish Variants'}
+                    {archiving ? 'Archiving...' : 'Confirm Discontinue & Archive'}
                   </button>
                 </div>
               </div>
-            </div>
-          </section>
-        </div>
+            )}
+          </div>
+        </AdminModal>
       )}
 
-      {/* ADD CERTIFIED LAPTOP MODAL */}
+      {/* ========================================================================= */}
+      {/* CSV IMPORT MODAL                                                         */}
+      {/* ========================================================================= */}
+      {csvImportModalOpen && (
+        <AdminModal
+          open={true}
+          onClose={() => {
+            setCsvImportModalOpen(false);
+            setCsvDryRunResult(null);
+            setCsvText('');
+          }}
+          title="Import Products from CSV"
+        >
+          <div className="space-y-4 text-xs">
+            <div>
+              <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                CSV Content (Paste CSV with headers: SKU, Name, Brand, Category, Price, MRP, Stock)
+              </label>
+              <textarea
+                rows={6}
+                value={csvText}
+                onChange={(e) => setCsvText(e.target.value)}
+                placeholder="SKU,Name,Brand,Category,Status,Stock,Price,MRP&#10;LM-MBP14,Apple MacBook Pro 14,Apple,Laptops,ACTIVE,10,129999,149999"
+                className="w-full p-2 font-mono text-[11px] border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800"
+              />
+            </div>
+
+            {/* Dry Run Preview Summary */}
+            {csvDryRunResult && (
+              <div className="space-y-2">
+                <div className="p-3 bg-slate-50 dark:bg-slate-800 border rounded-lg grid grid-cols-4 gap-2 text-center">
+                  <div>
+                    <span className="text-[10px] text-gray-400 block">Total Rows</span>
+                    <span className="font-bold">{csvDryRunResult.totalRows}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 block">To Create</span>
+                    <span className="font-bold text-green-600">{csvDryRunResult.toCreate}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 block">To Update</span>
+                    <span className="font-bold text-blue-600">{csvDryRunResult.toUpdate}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 block">Errors</span>
+                    <span
+                      className={`font-bold ${
+                        csvDryRunResult.errors?.length > 0 ? 'text-red-600' : 'text-gray-400'
+                      }`}
+                    >
+                      {csvDryRunResult.errors?.length || 0}
+                    </span>
+                  </div>
+                </div>
+
+                {csvDryRunResult.errors?.length > 0 && (
+                  <div className="max-h-24 overflow-y-auto p-2 bg-red-50 text-red-800 rounded border border-red-200 text-[11px]">
+                    {csvDryRunResult.errors.map((err: any, i: number) => (
+                      <div key={i}>
+                        Row {err.row} ({err.sku}): {err.error}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-between items-center pt-2 border-t">
+              <button
+                type="button"
+                disabled={csvValidating || !csvText.trim()}
+                onClick={handleCsvValidate}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 font-semibold"
+              >
+                {csvValidating ? 'Validating...' : 'Dry-Run Preview'}
+              </button>
+
+              <div className="space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setCsvImportModalOpen(false)}
+                  className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={csvCommitting || !csvDryRunResult || csvDryRunResult.errors?.length > 0}
+                  onClick={handleCsvCommit}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
+                >
+                  {csvCommitting ? 'Importing...' : 'Commit Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </AdminModal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* VARIANTS CONFIGURATION MODAL                                             */}
+      {/* ========================================================================= */}
+      {variantsProduct && (
+        <AdminModal
+          open={true}
+          onClose={() => setVariantsProduct(null)}
+          title={`Hardware Variants: ${variantsProduct.name}`}
+        >
+          <div className="space-y-4 text-xs">
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-900 dark:text-blue-300">
+              <span className="font-semibold block mb-0.5">Configuration-Driven Pricing</span>
+              When hardware variants (RAM, SSD, GPU) are active, customers choose their preferred configuration, and pricing adapts directly to the selected variant.
+            </div>
+
+            {/* Variants Table */}
+            <div className="max-h-60 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+              <table className="w-full text-left text-[11px]">
+                <thead className="bg-gray-50 dark:bg-slate-800 text-gray-500 font-semibold border-b">
+                  <tr>
+                    <th className="py-2 px-3">Variant / Config</th>
+                    <th className="py-2 px-3">SKU</th>
+                    <th className="py-2 px-3">Selling Price</th>
+                    <th className="py-2 px-3">Stock</th>
+                    <th className="py-2 px-3">Status</th>
+                    <th className="py-2 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {variantDrafts.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-6 text-center text-gray-400">
+                        No hardware variants configured. This product runs as a single version.
+                      </td>
+                    </tr>
+                  ) : (
+                    variantDrafts.map((v, idx) => (
+                      <tr key={idx} className={v.isActive ? '' : 'opacity-50 bg-gray-50'}>
+                        <td className="py-2 px-3 font-medium text-gray-900 dark:text-gray-100">
+                          {v.name}
+                          <span className="block text-[10px] text-gray-400">
+                            {[v.ram, v.storage, v.processor].filter(Boolean).join(' • ')}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 font-mono text-gray-500">{v.sku}</td>
+                        <td className="py-2 px-3 font-semibold text-blue-600">
+                          {formatIndianRupees(parseFloat(v.price) || 0)}
+                        </td>
+                        <td className="py-2 px-3">{v.stock}</td>
+                        <td className="py-2 px-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const copy = [...variantDrafts];
+                              copy[idx].isActive = !copy[idx].isActive;
+                              setVariantDrafts(copy);
+                            }}
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                              v.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700'
+                            }`}
+                          >
+                            {v.isActive ? 'Active' : 'Disabled'}
+                          </button>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const copy = variantDrafts.filter((_, i) => i !== idx);
+                              setVariantDrafts(copy);
+                            }}
+                            className="text-red-500 hover:text-red-700 font-semibold"
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Quick Add Variant Row */}
+            <div className="p-3 border rounded-lg bg-gray-50 dark:bg-slate-800 space-y-2">
+              <span className="font-semibold block text-gray-700 dark:text-gray-300">
+                Add Configuration Variant
+              </span>
+              <div className="grid grid-cols-4 gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. 16GB / 512GB SSD"
+                  id="new-variant-name"
+                  className="p-1.5 border rounded bg-white text-xs"
+                />
+                <input
+                  type="text"
+                  placeholder="SKU"
+                  id="new-variant-sku"
+                  className="p-1.5 border rounded bg-white text-xs"
+                />
+                <input
+                  type="number"
+                  placeholder="Selling Price (₹)"
+                  id="new-variant-price"
+                  className="p-1.5 border rounded bg-white text-xs"
+                />
+                <input
+                  type="number"
+                  placeholder="Stock"
+                  id="new-variant-stock"
+                  defaultValue="5"
+                  className="p-1.5 border rounded bg-white text-xs"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const nameEl = document.getElementById('new-variant-name') as HTMLInputElement;
+                  const skuEl = document.getElementById('new-variant-sku') as HTMLInputElement;
+                  const priceEl = document.getElementById('new-variant-price') as HTMLInputElement;
+                  const stockEl = document.getElementById('new-variant-stock') as HTMLInputElement;
+                  if (!nameEl?.value.trim() || !priceEl?.value) {
+                    addToast('error', 'Variant title and price are required.');
+                    return;
+                  }
+                  setVariantDrafts([
+                    ...variantDrafts,
+                    {
+                      name: nameEl.value.trim(),
+                      sku: skuEl.value.trim() || `${variantsProduct.sku}-V${variantDrafts.length + 1}`,
+                      price: priceEl.value,
+                      compareAtPrice: '',
+                      leasePriceMonthly: '',
+                      stock: stockEl.value || '5',
+                      ram: '',
+                      storage: '',
+                      processor: '',
+                      graphics: '',
+                      extraAttributes: {},
+                      allowBackorder: false,
+                      isActive: true,
+                      isDefault: variantDrafts.length === 0,
+                      imageUrls: '',
+                    },
+                  ]);
+                  nameEl.value = '';
+                  skuEl.value = '';
+                  priceEl.value = '';
+                }}
+                className="px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 font-semibold text-xs"
+              >
+                + Add Configuration Row
+              </button>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setVariantsProduct(null)}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 font-semibold"
+              >
+                Cancel
+              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  disabled={savingVariants}
+                  onClick={handleSaveVariants}
+                  className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
+                >
+                  {savingVariants ? 'Saving...' : 'Save All Variants'}
+                </button>
+              )}
+            </div>
+          </div>
+        </AdminModal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ADD NEW PRODUCT MODAL                                                    */}
+      {/* ========================================================================= */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4 dark:border-gray-700">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Add Certified Laptop</h2>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-gray-400 hover:text-gray-600">&times;</button>
+        <AdminModal
+          open={true}
+          onClose={() => setIsAddModalOpen(false)}
+          title="Add New Certified Laptop"
+        >
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newProductData.name.trim() || !newProductData.sku.trim() || !newProductData.price) {
+                addToast('error', 'Title, SKU, and Selling Price are required.');
+                return;
+              }
+              const price = parseFloat(newProductData.price);
+              if (isNaN(price) || price <= 0) {
+                addToast('error', 'Selling price must be greater than 0.');
+                return;
+              }
+              try {
+                const images = newProductData.imageUrls
+                  .split(/\r?\n/)
+                  .map((u: string) => u.trim())
+                  .filter(Boolean)
+                  .map((url: string, idx: number) => ({ url, isPrimary: idx === 0, sortOrder: idx }));
+
+                await api.createAdminProduct({
+                  name: newProductData.name.trim(),
+                  sku: newProductData.sku.trim(),
+                  price,
+                  compareAtPrice: newProductData.compareAtPrice ? parseFloat(newProductData.compareAtPrice) : null,
+                  stock: parseInt(newProductData.stock, 10) || 10,
+                  categoryId: newProductData.categoryId || null,
+                  shortDescription: newProductData.shortDescription.trim() || null,
+                  description: newProductData.description.trim() || null,
+                  status: newProductData.status,
+                  isFeatured: newProductData.isFeatured,
+                  isNewArrival: newProductData.isNewArrival,
+                  metadata: {
+                    brand: newProductData.brand.trim(),
+                    warrantyMonths: newProductData.warrantyMonths,
+                    specs: newProductData.specs,
+                  },
+                  images,
+                });
+                addToast('success', `Product "${newProductData.name}" created successfully.`);
+                setIsAddModalOpen(false);
+                loadCatalog();
+              } catch (err: any) {
+                addToast('error', err?.message || 'Failed to create product');
+              }
+            }}
+            className="space-y-4 text-xs"
+          >
+            <div>
+              <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Product Title *</label>
+              <input
+                type="text"
+                required
+                value={newProductData.name}
+                onChange={(e) => setNewProductData({ ...newProductData, name: e.target.value })}
+                placeholder="e.g. Apple MacBook Air 13.3 (M1 Chip, 8GB RAM, 256GB SSD)"
+                className="w-full p-2 border border-gray-200 rounded-lg bg-white dark:bg-slate-800"
+              />
             </div>
 
-            <form onSubmit={handleCreateProduct} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Product Title *
-                </label>
+                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">SKU *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Dell Latitude 7420 (Core i5 11th Gen, 16GB)"
-                  value={newProductData.name}
-                  onChange={(e) => setNewProductData({ ...newProductData, name: e.target.value })}
-                  className="input w-full text-xs"
+                  value={newProductData.sku}
+                  onChange={(e) => setNewProductData({ ...newProductData, sku: e.target.value })}
+                  placeholder="e.g. LM-MBA-M1-256"
+                  className="w-full p-2 font-mono border border-gray-200 rounded-lg bg-white dark:bg-slate-800"
                 />
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Brand *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    list="brand-suggestions"
-                    placeholder="e.g. Dell, Apple, Lenovo"
-                    value={newProductData.brand}
-                    onChange={(e) => setNewProductData({ ...newProductData, brand: e.target.value })}
-                    className="input w-full text-xs"
-                  />
-                  <datalist id="brand-suggestions">
-                    {STANDARD_BRANDS.map((b) => (
-                      <option key={b} value={b} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Category *
-                  </label>
-                  <select
-                    required
-                    className="input w-full text-xs"
-                    value={newProductData.categoryId}
-                    onChange={(e) => setNewProductData({ ...newProductData, categoryId: e.target.value })}
-                  >
-                    <option value="">Select Category</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Base SKU *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. LM-DEL-7420"
-                    value={newProductData.sku}
-                    onChange={(e) => setNewProductData({ ...newProductData, sku: e.target.value })}
-                    className="input w-full text-xs font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Starting Price (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    placeholder="38999"
-                    value={newProductData.price}
-                    onChange={(e) => setNewProductData({ ...newProductData, price: e.target.value })}
-                    className="input w-full text-xs font-semibold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Compare Price (₹)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="e.g. 75000"
-                    value={newProductData.compareAtPrice}
-                    onChange={(e) => setNewProductData({ ...newProductData, compareAtPrice: e.target.value })}
-                    className="input w-full text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Monthly Lease (₹/mo)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="e.g. 2999"
-                    value={newProductData.leasePriceMonthly}
-                    onChange={(e) => setNewProductData({ ...newProductData, leasePriceMonthly: e.target.value })}
-                    className="input w-full text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Initial Stock Count
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="10"
-                    value={newProductData.stock}
-                    onChange={(e) => setNewProductData({ ...newProductData, stock: e.target.value })}
-                    className="input w-full text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Status
-                  </label>
-                  <select
-                    className="input w-full text-xs"
-                    value={newProductData.status}
-                    onChange={(e) => setNewProductData({ ...newProductData, status: e.target.value })}
-                  >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                  </select>
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Short Specs Summary
-                </label>
+                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Brand</label>
                 <input
                   type="text"
-                  placeholder="e.g. Intel Core i5-1145G7, 16GB RAM, 512GB SSD, 14 inch FHD IPS"
-                  value={newProductData.shortDescription}
-                  onChange={(e) => setNewProductData({ ...newProductData, shortDescription: e.target.value })}
-                  className="input w-full text-xs"
+                  list="add-brands"
+                  value={newProductData.brand}
+                  onChange={(e) => setNewProductData({ ...newProductData, brand: e.target.value })}
+                  placeholder="e.g. Apple, Dell, Lenovo"
+                  className="w-full p-2 border border-gray-200 rounded-lg bg-white dark:bg-slate-800"
                 />
+                <datalist id="add-brands">
+                  {STANDARD_BRANDS.map((b) => (
+                    <option key={b} value={b} />
+                  ))}
+                </datalist>
               </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Full Detailed Description
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Full description with 32-point inspection guarantees, warranty terms, and cosmetic grade."
-                  value={newProductData.description}
-                  onChange={(e) => setNewProductData({ ...newProductData, description: e.target.value })}
-                  className="input w-full text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Product Image URLs (one per line)
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="https://images.unsplash.com/..."
-                  value={newProductData.imageUrls}
-                  onChange={(e) => setNewProductData({ ...newProductData, imageUrls: e.target.value })}
-                  className="input w-full text-xs font-mono"
-                />
-              </div>
-
-              <div className="flex items-center space-x-6 pt-2">
-                <label className="flex items-center space-x-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newProductData.isFeatured}
-                    onChange={(e) => setNewProductData({ ...newProductData, isFeatured: e.target.checked })}
-                    className="rounded text-primary"
-                  />
-                  <span>Featured Product</span>
-                </label>
-                <label className="flex items-center space-x-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newProductData.isNewArrival}
-                    onChange={(e) => setNewProductData({ ...newProductData, isNewArrival: e.target.checked })}
-                    className="rounded text-primary"
-                  />
-                  <span>New Arrival</span>
-                </label>
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 dark:border-gray-700">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="btn btn-secondary text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary text-xs font-semibold"
-                >
-                  Save Product
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT PRODUCT DETAILS MODAL */}
-      {editingProduct && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4 dark:border-gray-700">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Edit Product Details</h2>
-                <p className="text-xs text-gray-500 font-mono mt-0.5">{editingProduct.sku}</p>
-              </div>
-              <button onClick={() => setEditingProduct(null)} className="text-gray-400 hover:text-gray-600">&times;</button>
             </div>
 
-            <form onSubmit={handleUpdateProductDetails} className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Product Title *
-                </label>
+                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Selling Price (₹) *</label>
                 <input
-                  type="text"
+                  type="number"
                   required
-                  value={editProductData.name}
-                  onChange={(e) => setEditProductData({ ...editProductData, name: e.target.value })}
-                  className="input w-full text-xs"
+                  min="1"
+                  value={newProductData.price}
+                  onChange={(e) => setNewProductData({ ...newProductData, price: e.target.value })}
+                  className="w-full p-2 border border-gray-200 rounded-lg bg-white dark:bg-slate-800 font-semibold"
                 />
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Brand
-                  </label>
-                  <input
-                    type="text"
-                    list="brand-suggestions-edit"
-                    value={editProductData.brand}
-                    onChange={(e) => setEditProductData({ ...editProductData, brand: e.target.value })}
-                    className="input w-full text-xs"
-                  />
-                  <datalist id="brand-suggestions-edit">
-                    {STANDARD_BRANDS.map((b) => (
-                      <option key={b} value={b} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Category
-                  </label>
-                  <select
-                    className="input w-full text-xs"
-                    value={editProductData.categoryId}
-                    onChange={(e) => setEditProductData({ ...editProductData, categoryId: e.target.value })}
-                  >
-                    <option value="">Select Category</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Short Specs Summary
-                </label>
+                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">MRP / Strike-Through (₹)</label>
                 <input
-                  type="text"
-                  value={editProductData.shortDescription}
-                  onChange={(e) => setEditProductData({ ...editProductData, shortDescription: e.target.value })}
-                  className="input w-full text-xs"
+                  type="number"
+                  min="0"
+                  value={newProductData.compareAtPrice}
+                  onChange={(e) => setNewProductData({ ...newProductData, compareAtPrice: e.target.value })}
+                  className="w-full p-2 border border-gray-200 rounded-lg bg-white dark:bg-slate-800"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Full Detailed Description
-                </label>
-                <textarea
-                  rows={3}
-                  value={editProductData.description}
-                  onChange={(e) => setEditProductData({ ...editProductData, description: e.target.value })}
-                  className="input w-full text-xs"
+                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Initial Stock</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={newProductData.stock}
+                  onChange={(e) => setNewProductData({ ...newProductData, stock: e.target.value })}
+                  className="w-full p-2 border border-gray-200 rounded-lg bg-white dark:bg-slate-800"
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Product Image URLs (one per line)
-                </label>
-                <textarea
-                  rows={2}
-                  value={editProductData.imageUrls}
-                  onChange={(e) => setEditProductData({ ...editProductData, imageUrls: e.target.value })}
-                  className="input w-full text-xs font-mono"
-                />
-              </div>
+            <div>
+              <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Category</label>
+              <select
+                value={newProductData.categoryId}
+                onChange={(e) => setNewProductData({ ...newProductData, categoryId: e.target.value })}
+                className="w-full p-2 border border-gray-200 rounded-lg bg-white dark:bg-slate-800"
+              >
+                <option value="">Uncategorized</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Status
-                  </label>
-                  <select
-                    className="input w-full text-xs"
-                    value={editProductData.status}
-                    onChange={(e) => setEditProductData({ ...editProductData, status: e.target.value })}
-                  >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                    <option value="DISCONTINUED">Discontinued</option>
-                  </select>
-                </div>
+            <div>
+              <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Image URLs (One per line)</label>
+              <textarea
+                rows={3}
+                value={newProductData.imageUrls}
+                onChange={(e) => setNewProductData({ ...newProductData, imageUrls: e.target.value })}
+                placeholder="https://..."
+                className="w-full p-2 font-mono text-xs border border-gray-200 rounded-lg bg-white dark:bg-slate-800"
+              />
+            </div>
 
-                <div className="flex items-center space-x-2 pt-5">
-                  <label className="flex items-center space-x-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editProductData.isFeatured}
-                      onChange={(e) => setEditProductData({ ...editProductData, isFeatured: e.target.checked })}
-                      className="rounded text-primary"
-                    />
-                    <span>Featured</span>
-                  </label>
-                </div>
-
-                <div className="flex items-center space-x-2 pt-5">
-                  <label className="flex items-center space-x-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editProductData.isNewArrival}
-                      onChange={(e) => setEditProductData({ ...editProductData, isNewArrival: e.target.checked })}
-                      className="rounded text-primary"
-                    />
-                    <span>New Arrival</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 dark:border-gray-700">
-                <button
-                  type="button"
-                  onClick={() => setEditingProduct(null)}
-                  className="btn btn-secondary text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingProductDetails}
-                  className="btn btn-primary text-xs font-semibold disabled:opacity-50"
-                >
-                  {savingProductDetails ? 'Saving...' : 'Update Product Details'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex justify-end space-x-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(false)}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+              >
+                Create Product
+              </button>
+            </div>
+          </form>
+        </AdminModal>
       )}
     </div>
   );

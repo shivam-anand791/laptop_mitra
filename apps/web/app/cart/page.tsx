@@ -7,6 +7,9 @@ import CustomerLayout from '../../components/CustomerLayout';
 import EmptyState from '../../components/EmptyState';
 import { useCart } from '../../lib/cart-context';
 import { useSupportConfig } from '../../lib/support-config';
+import { api } from '../../lib/api';
+import { CouponOffersModal } from '../../components/CouponOffersModal';
+import { Tag, Sparkles, X, Check } from 'lucide-react';
 
 export default function CartPage() {
   const { data: supportConfig } = useSupportConfig();
@@ -24,7 +27,28 @@ export default function CartPage() {
   const [pincode, setPincode] = useState('');
   const [pincodeStatus, setPincodeStatus] = useState<string | null>(null);
   const [promoCode, setPromoCode] = useState('');
-  const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    title?: string;
+    savingsAmount: number;
+    message: string;
+    badgeText?: string;
+  } | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [isValidatingPromo, setIsValidatingPromo] = useState(false);
+  const [isOffersModalOpen, setIsOffersModalOpen] = useState(false);
+
+  const apiItems = items.map((it) => ({
+    productId: it.productId,
+    variantId: it.variantId || undefined,
+    categoryId: it.product?.categoryId || undefined,
+    brandId: (it.product?.metadata as any)?.brand || undefined,
+    quantity: it.quantity,
+    price: Number(it.priceAtAdd),
+    purchaseMode: (it.purchaseMode || 'sell') as 'sell' | 'lease',
+    hasWarranty: it.hasWarranty,
+    warrantyPrice: it.warrantyPrice,
+  }));
 
   const checkPincode = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,15 +59,54 @@ export default function CartPage() {
     }
   };
 
-  const handleApplyPromo = (e: React.FormEvent) => {
+  const handleApplyPromo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (promoCode.trim().toUpperCase() === 'FIRST500') {
-      setAppliedPromo('FIRST500 applied! Extra ₹500 discount will be computed at checkout.');
-    } else if (promoCode.trim().toUpperCase().startsWith('MITRA')) {
-      setAppliedPromo(`Referral code ${promoCode.trim().toUpperCase()} applied! Discount computed at checkout.`);
-    } else if (promoCode.trim()) {
-      setAppliedPromo(`Code ${promoCode.trim().toUpperCase()} verified. Discount applied at checkout.`);
+    const cleanCode = promoCode.trim().toUpperCase();
+    if (!cleanCode) return;
+    setIsValidatingPromo(true);
+    setPromoError(null);
+    try {
+      const preview = await api.previewCoupon({
+        code: cleanCode,
+        items: apiItems,
+      });
+      if (preview.valid) {
+        setAppliedCoupon({
+          code: cleanCode,
+          title: preview.coupon?.title,
+          savingsAmount: preview.savingsAmount,
+          message: preview.message,
+          badgeText: preview.coupon?.badgeText,
+        });
+        setPromoCode('');
+        setPromoError(null);
+      } else {
+        setPromoError(preview.message || 'Invalid coupon code');
+      }
+    } catch (err: any) {
+      try {
+        const refRes = await api.validateDiscount(cleanCode, subtotal);
+        if (refRes.valid) {
+          setAppliedCoupon({
+            code: cleanCode,
+            title: 'Mitra Referral Code',
+            savingsAmount: refRes.discountAmount || 0,
+            message: refRes.message || 'Referral discount applied!',
+          });
+          setPromoCode('');
+          setPromoError(null);
+          return;
+        }
+      } catch {}
+      setPromoError(err?.message || 'Invalid or ineligible coupon code');
+    } finally {
+      setIsValidatingPromo(false);
     }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setPromoError(null);
   };
 
   if (itemCount === 0) {
@@ -61,9 +124,6 @@ export default function CartPage() {
       </CustomerLayout>
     );
   }
-
-  // Estimated GST (18% inclusive)
-  const gstAmount = Math.round(subtotal * 0.18 / 1.18);
 
   return (
     <CustomerLayout>
@@ -169,7 +229,7 @@ export default function CartPage() {
                               Month 1 advance, ₹{unitPrice.toLocaleString('en-IN')}/month thereafter
                             </p>
                             <p className="text-[10px] text-slate-400">
-                              Later months are invoiced separately • Quarterly servicing included
+                              Later months are charged through AutoPay • Quarterly servicing included
                             </p>
                           </div>
                         ) : (
@@ -285,7 +345,7 @@ export default function CartPage() {
               <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 flex items-center justify-between gap-4">
                 <div className="space-y-0.5">
                   <span className="text-xs font-bold text-[#1D6FF2]">Corporate Procurement?</span>
-                  <p className="text-xs text-slate-600">Save 18% with GST Input Tax Invoice on all business orders.</p>
+                  <p className="text-xs text-slate-600">Tax invoices are provided where applicable.</p>
                 </div>
                 <Link
                   href="/products"
@@ -328,31 +388,90 @@ export default function CartPage() {
                     <span className="font-bold text-emerald-700 uppercase">Included</span>
                   </div>
 
-                  <div className="flex justify-between text-slate-500 pt-2 border-t border-[#E4E9F2] text-[11px]">
-                    <span>Includes 18% GST (Tax Credit Available)</span>
-                    <span className="font-mono tabular-nums">~₹{gstAmount.toLocaleString('en-IN')}</span>
-                  </div>
+                  {appliedCoupon && (
+                    <div className="flex justify-between text-emerald-700 font-bold bg-emerald-50/60 p-2 rounded-xl border border-emerald-100">
+                      <span className="flex items-center gap-1.5">
+                        <Tag className="w-3.5 h-3.5" />
+                        <span>Coupon Savings ({appliedCoupon.code})</span>
+                      </span>
+                      <span className="tabular-nums">-₹{appliedCoupon.savingsAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+
+                  <p className="border-t border-[#E4E9F2] pt-2 text-[11px] text-slate-500">
+                    Applicable tax is calculated by the server at checkout.
+                  </p>
                 </div>
 
-                {/* Promo Code Box */}
-                <div className="pt-2 border-t border-[#E4E9F2]">
-                  <form onSubmit={handleApplyPromo} className="flex gap-2">
-                    <input
-                      type="text"
-                      value={promoCode}
-                      onChange={(e) => setPromoCode(e.target.value)}
-                      placeholder="Coupon / Referral Code"
-                      className="h-10 w-full px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-xs uppercase placeholder:normal-case focus:outline-none focus:border-[#1D6FF2]"
-                    />
-                    <button
-                      type="submit"
-                      className="h-10 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F4B] font-bold text-xs transition-colors cursor-pointer flex items-center justify-center shrink-0"
-                    >
-                      Apply
-                    </button>
-                  </form>
-                  {appliedPromo && (
-                    <p className="text-[11px] text-emerald-700 font-bold mt-1.5">{appliedPromo}</p>
+                {/* Applied Coupon or Offers Selector */}
+                <div className="pt-2 border-t border-[#E4E9F2] space-y-3">
+                  {appliedCoupon ? (
+                    <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg shrink-0 mt-0.5">
+                          <Tag className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono font-bold text-xs text-emerald-950 tracking-wider">
+                              {appliedCoupon.code}
+                            </span>
+                            {appliedCoupon.badgeText && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded">
+                                {appliedCoupon.badgeText}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-emerald-700 font-medium mt-0.5 truncate">
+                            Saving ₹{appliedCoupon.savingsAmount.toLocaleString('en-IN')} on this order
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRemoveCoupon}
+                        className="text-xs font-bold text-rose-600 hover:text-rose-800 p-1 rounded hover:bg-rose-50 transition-colors shrink-0 cursor-pointer"
+                        title="Remove coupon"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsOffersModalOpen(true)}
+                        className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 hover:bg-blue-50 text-[#1D6FF2] transition-colors cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-[#1D6FF2] animate-pulse" />
+                          <span className="text-xs font-bold text-[#0B1F4B]">View Available Offers</span>
+                        </div>
+                        <span className="text-[11px] font-bold text-[#1D6FF2] group-hover:translate-x-0.5 transition-transform">
+                          Select →
+                        </span>
+                      </button>
+
+                      <form onSubmit={handleApplyPromo} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={promoCode}
+                          onChange={(e) => setPromoCode(e.target.value)}
+                          placeholder="Enter Coupon / Referral Code"
+                          className="h-10 w-full px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-xs uppercase placeholder:normal-case focus:outline-none focus:border-[#1D6FF2]"
+                        />
+                        <button
+                          type="submit"
+                          disabled={isValidatingPromo}
+                          className="h-10 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F4B] font-bold text-xs transition-colors cursor-pointer flex items-center justify-center shrink-0 disabled:opacity-50"
+                        >
+                          {isValidatingPromo ? 'Checking...' : 'Apply'}
+                        </button>
+                      </form>
+                      {promoError && (
+                        <p className="text-[11px] text-rose-600 font-medium mt-1">{promoError}</p>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -364,13 +483,13 @@ export default function CartPage() {
                       <span className="text-[10px] text-[#475569]">All Taxes &amp; Shipping Included</span>
                     </div>
                     <span className="text-2xl font-bold text-[#111827] tabular-nums">
-                      ₹{subtotal.toLocaleString('en-IN')}
+                      ₹{Math.max(0, subtotal - (appliedCoupon?.savingsAmount || 0)).toLocaleString('en-IN')}
                     </span>
                   </div>
 
                   {monthlyTotal > 0 && (
                     <p className="text-[11px] text-purple-700 font-medium bg-purple-50 p-2.5 rounded-xl border border-purple-200">
-                      ℹ️ Includes ₹{monthlyTotal.toLocaleString('en-IN')} Month 1 advance. ₹{monthlyTotal.toLocaleString('en-IN')}/month thereafter is invoiced separately.
+                      ℹ️ First month is due at checkout. Future monthly charges follow the AutoPay mandate.
                     </p>
                   )}
                 </div>
@@ -378,7 +497,7 @@ export default function CartPage() {
                 {/* Checkout CTA */}
                 <div className="space-y-2 pt-2">
                   <Link
-                    href="/checkout"
+                    href={appliedCoupon ? `/checkout?coupon=${encodeURIComponent(appliedCoupon.code)}` : '/checkout'}
                     className="w-full h-11 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs active:scale-95 transition-all text-center"
                   >
                     <span>Proceed to Secure Checkout</span>
@@ -419,6 +538,24 @@ export default function CartPage() {
           </div>
         </div>
       </div>
+
+      <CouponOffersModal
+        open={isOffersModalOpen}
+        onClose={() => setIsOffersModalOpen(false)}
+        items={apiItems}
+        appliedCode={appliedCoupon?.code || null}
+        onApplyCoupon={(code, preview) => {
+          setAppliedCoupon({
+            code,
+            title: preview.coupon?.title,
+            savingsAmount: preview.savingsAmount,
+            message: preview.message,
+            badgeText: preview.coupon?.badgeText,
+          });
+          setPromoCode('');
+          setPromoError(null);
+        }}
+      />
     </CustomerLayout>
   );
 }

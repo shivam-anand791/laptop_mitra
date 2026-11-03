@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   Headers,
+  Param,
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
@@ -40,6 +41,87 @@ export class PaymentController {
       throw new BadRequestException('orderId is required');
     }
     return this.paymentService.createOrderForUser(orderId, user.id, user.role);
+  }
+
+  @Get('tax-policy')
+  @Public()
+  @ApiOperation({ summary: 'Get the current public GST calculation policy' })
+  @ApiResponse({ status: 200, description: 'GST policy used for backend checkout calculations' })
+  async getTaxPolicy() {
+    return this.paymentService.getTaxPolicy();
+  }
+
+  @Post('razorpay/subscription')
+  @UseGuards(RolesGuard)
+  @Roles('CUSTOMER', 'ADMIN')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Create a Razorpay subscription for an owned rental order' })
+  async createRentalSubscription(@GetUser() user: any, @Body('orderId') orderId: string) {
+    if (!orderId) throw new BadRequestException('orderId is required');
+    return this.paymentService.createRentalSubscriptionForUser(orderId, user.id, user.role);
+  }
+
+  @Post('razorpay/subscription/verify')
+  @UseGuards(RolesGuard)
+  @Roles('CUSTOMER', 'ADMIN')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify Razorpay rental mandate and first payment' })
+  async verifyRentalSubscription(
+    @GetUser() user: any,
+    @Body() body: {
+      orderId: string;
+      razorpaySubscriptionId: string;
+      razorpayPaymentId: string;
+      razorpaySignature: string;
+    },
+  ) {
+    if (
+      !body?.orderId
+      || !body?.razorpaySubscriptionId
+      || !body?.razorpayPaymentId
+      || !body?.razorpaySignature
+    ) {
+      throw new BadRequestException('Missing rental payment verification fields');
+    }
+    return this.paymentService.verifyRentalSubscription(
+      body.orderId,
+      body.razorpaySubscriptionId,
+      body.razorpayPaymentId,
+      body.razorpaySignature,
+      user.id,
+      user.role,
+    );
+  }
+
+  @Post('rental/:subscriptionId/termination-request')
+  @UseGuards(RolesGuard)
+  @Roles('CUSTOMER', 'ADMIN')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request admin review for ending a rental subscription' })
+  async requestRentalTermination(@GetUser() user: any, @Param('subscriptionId') subscriptionId: string) {
+    return this.paymentService.requestRentalTermination(subscriptionId, user.id, user.role);
+  }
+
+  @Post('admin/rentals/:subscriptionId/approve-termination')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cancel an approved rental termination with Razorpay' })
+  async approveRentalTermination(@Param('subscriptionId') subscriptionId: string) {
+    return this.paymentService.approveRentalTermination(subscriptionId);
+  }
+
+  @Get('admin/rentals/termination-requests')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List rental terminations awaiting admin review' })
+  async getRentalTerminationRequests() {
+    return this.paymentService.getRentalTerminationRequests();
   }
 
   @Post('razorpay/verify')

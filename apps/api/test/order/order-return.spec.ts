@@ -7,6 +7,9 @@ import { ProductService } from '../../src/modules/product/product.service';
 import { NotificationService } from '../../src/modules/notifications/notification.service';
 import { DiscountService } from '../../src/modules/discount/discount.service';
 import { PaymentService } from '../../src/modules/payments/payment.service';
+import { PincodeService } from '../../src/modules/shipping/pincode.service';
+import { TaxService } from '../../src/modules/tax/tax.service';
+import { createNoTaxService } from '../helpers/no-tax-service';
 
 describe('OrderService - Return Request Tests (POST /orders/:id/return)', () => {
   let orderService: OrderService;
@@ -69,6 +72,8 @@ describe('OrderService - Return Request Tests (POST /orders/:id/return)', () => 
         { provide: ProductService, useValue: {} },
         { provide: NotificationService, useValue: {} },
         { provide: DiscountService, useValue: {} },
+        { provide: PincodeService, useValue: {} },
+        { provide: TaxService, useValue: createNoTaxService() },
         { provide: PaymentService, useValue: {} },
       ],
     }).compile();

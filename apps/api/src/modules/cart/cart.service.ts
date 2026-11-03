@@ -11,20 +11,6 @@ export class CartService {
     private productService: ProductService,
   ) {}
 
-  private resolveUnitPrice(product: any, purchaseMode: 'sell' | 'lease'): number {
-    let basePrice: number;
-    if (purchaseMode === 'lease') {
-      if (product.leasePriceMonthly === null || product.leasePriceMonthly === undefined) {
-        throw new BadRequestException('This product does not have a fixed monthly lease price. Please request a quote.');
-      }
-      basePrice = Number(product.leasePriceMonthly);
-    } else {
-      basePrice = Number(product.price);
-    }
-
-    return basePrice;
-  }
-
   async getOrCreateCart(userId: string) {
     const existingCart = await this.prisma.cart.findFirst({
       where: { userId },
@@ -69,6 +55,7 @@ export class CartService {
     configuration: string = 'default',
     hasWarranty: boolean = false,
     variantId?: string,
+    tenureMonths?: number,
   ) {
     const normalizedMode = purchaseMode === 'lease' ? 'lease' : 'sell';
 
@@ -80,6 +67,13 @@ export class CartService {
     }
 
     const cart = await this.getOrCreateCart(userId);
+    if (cart.items.some((item) => (item.purchaseMode === 'lease' ? 'lease' : 'sell') !== normalizedMode)) {
+      throw new BadRequestException('Buy and rent items must be kept in separate carts. Your current cart was not changed.');
+    }
+    if (normalizedMode === 'lease' && ![1, 3, 6, 12, 24].includes(Number(tenureMonths))) {
+      throw new BadRequestException('Choose a supported rental tenure before adding this item.');
+    }
+
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
       include: { variants: { where: { isActive: true, isDefault: true }, take: 1 } },
@@ -100,13 +94,45 @@ export class CartService {
 
     let unitPrice: number;
     if (variant) {
-      const variantPrice = normalizedMode === 'lease' ? variant.leasePriceMonthly : variant.price;
-      if (variantPrice === null || variantPrice === undefined) {
-        throw new BadRequestException('This variant does not have a fixed monthly lease price. Please request a quote.');
+      if (normalizedMode === 'lease') {
+        const approvedPrice = await this.prisma.rentalPrice.findFirst({
+          where: {
+            productId,
+            variantId: variant.id,
+            tenureMonths: Number(tenureMonths),
+            status: 'APPROVED',
+            sourceType: 'MANUAL',
+            auditHistory: { some: { action: 'APPROVED' } },
+          },
+          orderBy: { approvedAt: 'desc' },
+        });
+        if (!approvedPrice?.approvedAt) {
+          throw new BadRequestException('This configuration has no approved rental price for the selected tenure.');
+        }
+        unitPrice = Number(approvedPrice.monthlyPrice);
+      } else {
+        unitPrice = Number(variant.price);
       }
-      unitPrice = Number(variantPrice);
     } else {
-      unitPrice = this.resolveUnitPrice(product, normalizedMode);
+      if (normalizedMode === 'lease') {
+        const approvedPrice = await this.prisma.rentalPrice.findFirst({
+          where: {
+            productId,
+            variantId: null,
+            tenureMonths: Number(tenureMonths),
+            status: 'APPROVED',
+            sourceType: 'MANUAL',
+            auditHistory: { some: { action: 'APPROVED' } },
+          },
+          orderBy: { approvedAt: 'desc' },
+        });
+        if (!approvedPrice?.approvedAt) {
+          throw new BadRequestException('This product has no approved rental price for the selected tenure.');
+        }
+        unitPrice = Number(approvedPrice.monthlyPrice);
+      } else {
+        unitPrice = Number(product.price);
+      }
     }
     const warrantyPrice = (hasWarranty && normalizedMode === 'sell') ? WARRANTY_PRICE_PER_UNIT : 0;
     const stock = variant?.stock ?? product.stock;
@@ -117,6 +143,7 @@ export class CartService {
       (item) =>
         item.productId === productId &&
         (item.purchaseMode || 'sell') === normalizedMode &&
+        (item.tenureMonths || null) === (normalizedMode === 'lease' ? Number(tenureMonths) : null) &&
         (item.variantId || null) === (selectedVariantId || null) &&
         (item.configuration || 'default') === normalizedConfig,
     );
@@ -148,11 +175,12 @@ export class CartService {
         product: { connect: { id: productId } },
         ...(selectedVariantId ? { variant: { connect: { id: selectedVariantId } } } : {}),
         lineKey: selectedVariantId
-          ? `variant:${selectedVariantId}:${normalizedMode}`
-          : `${productId}:${normalizedMode}:${normalizedConfig}`,
+          ? `variant:${selectedVariantId}:${normalizedMode}:${tenureMonths || 'none'}`
+          : `${productId}:${normalizedMode}:${normalizedConfig}:${tenureMonths || 'none'}`,
         quantity,
         priceAtAdd: unitPrice,
         purchaseMode: normalizedMode,
+        tenureMonths: normalizedMode === 'lease' ? Number(tenureMonths) : null,
         configuration: normalizedConfig,
         hasWarranty: !!hasWarranty && normalizedMode === 'sell',
         warrantyPrice,
@@ -244,15 +272,27 @@ export class CartService {
 
     let oneTimeTotal = 0;
     let monthlyTotal = 0;
-    const items = cart.items.map((item) => {
-      const variantPrice = item.purchaseMode === 'lease'
-        ? item.variant?.leasePriceMonthly
-        : item.variant?.price;
-      const unitPrice = variantPrice === null || variantPrice === undefined
-        ? Number(item.priceAtAdd)
-        : Number(variantPrice);
-      return { ...item, priceAtAdd: unitPrice };
-    });
+    const items = await Promise.all(cart.items.map(async (item) => {
+      if (item.purchaseMode === 'lease') {
+        const approvedPrice = await this.prisma.rentalPrice.findFirst({
+          where: {
+            productId: item.productId,
+            variantId: item.variantId || null,
+            tenureMonths: item.tenureMonths,
+            status: 'APPROVED',
+            sourceType: 'MANUAL',
+          },
+          orderBy: { approvedAt: 'desc' },
+        });
+        if (!approvedPrice?.approvedAt) {
+          throw new BadRequestException('This rental no longer has an approved price for the selected tenure.');
+        }
+        return { ...item, priceAtAdd: Number(approvedPrice.monthlyPrice) };
+      }
+
+      const currentPrice = item.variant?.price ?? item.product.price;
+      return { ...item, priceAtAdd: Number(currentPrice) };
+    }));
 
     for (const item of items) {
       const price = Number(item.priceAtAdd);

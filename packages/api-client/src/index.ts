@@ -158,10 +158,19 @@ export class LaptopMitraApiClient {
     configuration: string = 'default',
     hasWarranty: boolean = false,
     variantId?: string,
+    tenureMonths?: number,
   ): Promise<{ cartItem: CartItem; message: string }> {
     return this.request<{ cartItem: CartItem; message: string }>('/cart/items', {
       method: 'POST',
-      body: JSON.stringify({ productId, quantity, purchaseMode, configuration, hasWarranty, ...(variantId ? { variantId } : {}) }),
+      body: JSON.stringify({
+        productId,
+        quantity,
+        purchaseMode,
+        configuration,
+        hasWarranty,
+        ...(variantId ? { variantId } : {}),
+        ...(tenureMonths ? { tenureMonths } : {}),
+      }),
     });
   }
 
@@ -738,6 +747,164 @@ export class LaptopMitraApiClient {
     return this.request<any>(`/admin/withdrawals/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status, adminNotes }),
+    });
+  }
+
+  // Item-level Pre-dispatch Cancellation
+  async cancelOrderItem(orderId: string, itemId: string, reason?: string): Promise<{ message: string; cancelledItem: any; order: any }> {
+    return this.request<{ message: string; cancelledItem: any; order: any }>(`/orders/${orderId}/items/${itemId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  // Razorpay Subscriptions for Rentals
+  async createRazorpaySubscription(orderId: string): Promise<any> {
+    return this.request<any>('/payments/razorpay/subscription', {
+      method: 'POST',
+      body: JSON.stringify({ orderId }),
+    });
+  }
+
+  async verifyRentalSubscription(data: any): Promise<any> {
+    return this.request<any>('/payments/razorpay/verify-subscription', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async requestRentalTermination(subscriptionId: string, reason?: string): Promise<any> {
+    return this.request<any>(`/payments/subscriptions/${subscriptionId}/terminate`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  // Available Coupons & Preview
+  async getAvailableCoupons(payload?: any): Promise<{ eligible: any[]; ineligible: any[] } & any[]> {
+    const q = payload && typeof payload === 'object' ? '?' + new URLSearchParams(payload).toString() : '';
+    return this.request<{ eligible: any[]; ineligible: any[] } & any[]>(`/coupons/available${q}`);
+  }
+
+  async previewCoupon(data: { code: string; [key: string]: any } | string, subtotal?: number, categoryIds?: string[]): Promise<any> {
+    const body = typeof data === 'string' ? { code: data, subtotal, categoryIds } : data;
+    return this.request<any>('/coupons/preview', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  // Situation-aware Help & Change Requests
+  async getItemSituation(orderItemId: string): Promise<any> {
+    return this.request<any>(`/support/items/${orderItemId}/situation`);
+  }
+
+  async createChangeRequest(data: {
+    orderId: string;
+    orderItemId?: string;
+    type: string;
+    requestedData: Record<string, any>;
+  }): Promise<any> {
+    return this.request<any>('/support/change-requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getCustomerChangeRequests(orderId?: string): Promise<any[]> {
+    return this.request<any[]>(`/support/change-requests${orderId ? `?orderId=${orderId}` : ''}`);
+  }
+
+  // Buyback Engine
+  async getBuybackConfig(): Promise<{ settings: any; tiers: any[] }> {
+    return this.request<{ settings: any; tiers: any[] }>('/support/buyback/config');
+  }
+
+  async createBuybackRequest(data: {
+    orderId: string;
+    orderItemId: string;
+    unitNumber?: number;
+    conditionChecklist: any;
+    payoutDetails?: any;
+    photos?: string[];
+    pickupAddress?: any;
+  }): Promise<any> {
+    return this.request<any>('/support/buyback/requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getCustomerBuybacks(orderId?: string): Promise<any[]> {
+    return this.request<any[]>(`/support/buyback/requests${orderId ? `?orderId=${orderId}` : ''}`);
+  }
+
+  async getBuybackById(id: string): Promise<any> {
+    return this.request<any>(`/support/buyback/requests/${id}`);
+  }
+
+  async acceptRevisedBuybackOffer(id: string): Promise<any> {
+    return this.request<any>(`/support/buyback/requests/${id}/accept-revised`, {
+      method: 'POST',
+    });
+  }
+
+  async declineRevisedBuybackOffer(id: string): Promise<any> {
+    return this.request<any>(`/support/buyback/requests/${id}/decline-revised`, {
+      method: 'POST',
+    });
+  }
+
+  // Lease Contracts & Buyouts
+  async getLeaseContracts(): Promise<any[]> {
+    return this.request<any[]>('/lease/contracts');
+  }
+
+  async getLeaseContractById(id: string): Promise<any> {
+    return this.request<any>(`/lease/contracts/${id}`);
+  }
+
+  async requestLeaseBuyout(id: string, notes?: string): Promise<any> {
+    return this.request<any>(`/lease/contracts/${id}/buyout-request`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  }
+
+  // Admin Lease & Item-level actions
+  async adminCancelOrderItem(orderId: string, itemId: string, reason: string): Promise<any> {
+    return this.request<any>(`/admin/orders/${orderId}/items/${itemId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async getAdminLeaseContracts(params?: { status?: string; search?: string }): Promise<any[]> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    const qStr = query.toString();
+    return this.request<any[]>(`/admin/lease/contracts${qStr ? `?${qStr}` : ''}`);
+  }
+
+  async setAdminLeaseBuyoutQuote(id: string, data: { quoteAmount: number; expiresAt?: string; notes?: string }): Promise<any> {
+    return this.request<any>(`/admin/lease/contracts/${id}/buyout-quote`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async completeAdminLeaseBuyout(id: string, notes?: string): Promise<any> {
+    return this.request<any>(`/admin/lease/contracts/${id}/buyout-complete`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  }
+
+  async terminateAdminLease(id: string, reason: string): Promise<any> {
+    return this.request<any>(`/admin/lease/contracts/${id}/terminate`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
     });
   }
 }

@@ -39,6 +39,13 @@ export interface ProductVariant {
   price: number;
   compareAtPrice?: number | null;
   leasePriceMonthly?: number | null;
+  rentalPlans?: Array<{
+    tenureMonths: 1 | 3 | 6 | 12 | 24;
+    monthlyPrice: number;
+    totalRent: number;
+    securityDeposit?: number;
+    deliveryCharge?: number;
+  }>;
   stock: number;
   allowBackorder?: boolean;
   isActive: boolean;
@@ -63,6 +70,13 @@ export interface Product {
   isFeatured: boolean;
   isNewArrival: boolean;
   leasePriceMonthly?: number | null;
+  rentalPlans?: Array<{
+    tenureMonths: 1 | 3 | 6 | 12 | 24;
+    monthlyPrice: number;
+    totalRent: number;
+    securityDeposit?: number;
+    deliveryCharge?: number;
+  }>;
   bulkSellPrice?: number | null;
   bulkLeasePrice?: number | null;
   tags?: string | null;
@@ -109,7 +123,6 @@ export interface ProductFilterFacets {
   };
   totalCount: number;
 }
-
 
 export interface CartItem {
   id: string;
@@ -205,6 +218,7 @@ export interface OrderItem {
   quantity: number;
   price: number;
   purchaseMode?: 'sell' | 'lease';
+  tenureMonths?: 1 | 3 | 6 | 12 | 24 | null;
   configuration?: 'default' | 'ram-16gb' | string;
   hasWarranty?: boolean;
   warrantyPrice?: number;
@@ -227,6 +241,32 @@ export interface Order {
   referralCode?: string | null;
   referralDiscount?: number;
   finalAmount: number;
+  taxRate?: number;
+  taxAmount?: number;
+  taxInclusive?: boolean;
+  pricingSnapshot?: Record<string, unknown> | null;
+  rentalSubscription?: {
+    id: string;
+    tenureMonths: 1 | 3 | 6 | 12 | 24;
+    monthlyAmount: number;
+    totalCommitment: number;
+    taxRate: number;
+    taxAmount: number;
+    taxInclusive: boolean;
+    razorpaySubscriptionId?: string | null;
+    mandateStatus: string;
+    status: string;
+    nextChargeAt?: Date | string | null;
+    terminationRequestedAt?: Date | string | null;
+    cancelledAt?: Date | string | null;
+    payments?: Array<{
+      id: string;
+      amount: number;
+      status: string;
+      cycleNumber?: number | null;
+      createdAt: Date | string;
+    }>;
+  } | null;
   shippingAddress?: Record<string, any> | null;
   phone?: string | null;
   email: string;
@@ -376,4 +416,162 @@ export interface AuditLog {
   entityId: string;
   metadata?: Record<string, any> | null;
   createdAt: Date | string;
+}
+
+
+// ---------------------------------------------------------------------------
+// Situation-Aware "Need Help" Engine Types
+// ---------------------------------------------------------------------------
+
+export type ItemSituationKey =
+  | 'OUTRIGHT_BEFORE_DISPATCH'
+  | 'OUTRIGHT_IN_TRANSIT'
+  | 'OUTRIGHT_DELIVERED_RETURN_WINDOW'
+  | 'OUTRIGHT_DELIVERED_IN_WARRANTY'
+  | 'OUTRIGHT_DELIVERED_BUYBACK_ELIGIBLE'
+  | 'OUTRIGHT_DELIVERED_OUT_OF_WARRANTY'
+  | 'OUTRIGHT_RETURN_ACTIVE'
+  | 'OUTRIGHT_BUYBACK_ACTIVE'
+  | 'LEASE_PENDING_DISPATCH'
+  | 'LEASE_ACTIVE'
+  | 'ORDER_CANCELLED'
+  | 'GENERAL_HELP';
+
+export type ActionCategory =
+  | 'RETURN'
+  | 'WARRANTY'
+  | 'BUYBACK'
+  | 'ORDER_CHANGE'
+  | 'LEASE'
+  | 'INVOICE'
+  | 'SUPPORT'
+  | 'GENERAL'
+  | 'CORPORATE';
+
+export type ActionType = 'SELF_SERVE' | 'REQUEST_FORM' | 'TICKET' | 'MODAL' | 'LINK';
+
+export const ACTION_HANDLERS_WEB = [
+  'CANCEL_ORDER',
+  'REQUEST_ADDRESS_CHANGE',
+  'REQUEST_PHONE_CHANGE',
+  'REQUEST_RETURN',
+  'CLAIM_WARRANTY',
+  'REQUEST_BUYBACK',
+  'DOWNLOAD_INVOICE',
+  'TRACK_SHIPMENT',
+  'REQUEST_CALLBACK',
+  'CREATE_TICKET',
+  'LEASE_BUYOUT',
+  'LEASE_MAINTENANCE',
+  'CORP_GST_CORRECTION',
+  'CORP_ADD_UNITS',
+  'CORP_ACCOUNT_MANAGER_CALLBACK',
+] as const;
+
+export const ACTION_HANDLERS_MOBILE = [
+  'CANCEL_ORDER',
+  'REQUEST_ADDRESS_CHANGE',
+  'REQUEST_PHONE_CHANGE',
+  'REQUEST_RETURN',
+  'CLAIM_WARRANTY',
+  'REQUEST_BUYBACK',
+  'REQUEST_CALLBACK',
+  'CREATE_TICKET',
+] as const;
+
+export function isActionImplemented(actionId: string, platform: 'web' | 'mobile' = 'web'): boolean {
+  if (platform === 'mobile') {
+    return (ACTION_HANDLERS_MOBILE as readonly string[]).includes(actionId);
+  }
+  return (ACTION_HANDLERS_WEB as readonly string[]).includes(actionId);
+}
+
+export interface ItemAction {
+  id: string;
+  label: string;
+  category: ActionCategory;
+  enabled: boolean;
+  disabledReason?: string;
+  actionType: ActionType;
+  targetUrl?: string;
+}
+
+export interface SituationResponse {
+  orderItemId: string;
+  itemStatus?: string;
+  orderId: string;
+  orderNumber: string;
+  productTitle: string;
+  quantity: number;
+  unitPrice: number;
+  purchaseMode: 'sell' | 'lease';
+  situation: ItemSituationKey;
+  situationTitle: string;
+  situationDescription: string;
+  actions: ItemAction[];
+  delivery: {
+    status: string;
+    deliveredAt?: string | null;
+    daysSinceDelivery?: number | null;
+  } | null;
+  warranty: {
+    hasWarranty: boolean;
+    warrantyDays: number;
+    warrantyExpiresAt?: string | null;
+    isInWarranty: boolean;
+  };
+  buyback: {
+    isEligible: boolean;
+    deviceAgeMonths?: number | null;
+    tierPercentage?: number | null;
+    estimatedPayout?: number | null;
+    convenienceCharge?: number;
+    ineligibilityReason?: string | null;
+    activeRequest?: {
+      id: string;
+      requestNumber: string;
+      status: string;
+      initialQuotedAmount: number;
+      revisedQuotedAmount?: number | null;
+      finalPayoutAmount?: number | null;
+    } | null;
+  } | null;
+  returnState: {
+    hasActiveReturn: boolean;
+    returnRequest?: {
+      id: string;
+      returnNumber: string;
+      status: string;
+      type: string;
+    } | null;
+  };
+  businessProfile: {
+    isBusinessAccount: boolean;
+    companyName?: string | null;
+    priorityEnabled: boolean;
+  } | null;
+  invoice: {
+    canDownload: boolean;
+    ineligibilityReason?: string | null;
+  };
+  leaseContract?: {
+    id: string;
+    contractNumber: string;
+    status: string;
+    tenureMonths: number;
+    monthlyAmount: number;
+    buyoutQuoteAmount?: number | null;
+    buyoutQuoteExpiresAt?: string | null;
+    buyoutStatus?: string | null;
+    startDate?: string;
+    endDate?: string;
+    installments?: Array<{
+      id: string;
+      installmentNumber: number;
+      dueDate: string;
+      amount: number;
+      status: string;
+      paidAt?: string | null;
+    }>;
+  } | null;
 }

@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { OrderService } from '../../src/modules/order/order.service';
 import { WARRANTY_PRICE_PER_UNIT } from '../../src/modules/cart/cart.service';
+import { createNoTaxService } from '../helpers/no-tax-service';
 
 describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, Multi-Mode Orders & Razorpay', () => {
   let orderService: OrderService;
@@ -16,7 +17,6 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
     id: 'prod-buy-1',
     name: 'ThinkPad X1 Carbon',
     price: 80000,
-    leasePriceMonthly: null,
     stock: 5,
     allowBackorder: false,
     status: 'ACTIVE',
@@ -26,7 +26,6 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
     id: 'prod-lease-1',
     name: 'Dell Latitude 5420',
     price: 50000,
-    leasePriceMonthly: 3500,
     stock: 10,
     allowBackorder: false,
     status: 'ACTIVE',
@@ -36,7 +35,6 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
     id: 'prod-lease-fallback',
     name: 'HP EliteBook 840',
     price: 40000,
-    leasePriceMonthly: null,
     stock: 8,
     allowBackorder: false,
     status: 'ACTIVE',
@@ -71,6 +69,16 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
       cartItem: {
         deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
       },
+      rentalPrice: {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => (
+          where.productId === mockProductLease.id
+            ? Promise.resolve({ monthlyPrice: 3500, approvedAt: new Date() })
+            : Promise.resolve(null)
+        )),
+      },
+      rentalSubscription: {
+        create: jest.fn().mockResolvedValue({ id: 'rental-1' }),
+      },
       user: {
         findFirst: jest.fn().mockResolvedValue(null),
       },
@@ -103,6 +111,7 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
       notificationService,
       discountService,
       pincodeService,
+      createNoTaxService(),
       paymentService,
     );
   });
@@ -151,7 +160,7 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
   });
 
   describe('1. Price Resolution', () => {
-    it('rejects order creation if a lease item has null leasePriceMonthly', async () => {
+    it('rejects rental order creation if no approved price exists for the selected tenure', async () => {
       prisma.cart.findFirst.mockResolvedValue({
         id: 'cart-1',
         items: [
@@ -160,6 +169,7 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
             product: mockProductLeaseFallback,
             quantity: 1,
             purchaseMode: 'lease',
+            tenureMonths: 12,
             configuration: 'default',
             hasWarranty: false,
           },
@@ -273,11 +283,8 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
     expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 'cart-cod' } });
   });
 
-  describe('3. BUY and RENT Coexistence & Order Totals (Option A: Month 1 Advance)', () => {
-    it('creates an order with BUY item + warranty and LEASE item (charged as Month 1 advance)', async () => {
-      // 1 Buy item: ₹80,000 + 16GB Pro upgrade (+₹4,000) + Warranty (+₹1,999) = ₹85,999
-      // 2 Lease items: ₹3,500/mo * 2 units = ₹7,000 Month 1 advance
-      // Expected Subtotal & FinalAmount = ₹85,999 + ₹7,000 = ₹92,999.00
+  describe('3. Purchase and rental separation', () => {
+    it('rejects a mixed purchase and rental order without reserving stock or clearing the cart', async () => {
       prisma.cart.findFirst.mockResolvedValue({
         id: 'cart-1',
         items: [
@@ -294,13 +301,14 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
             product: mockProductLease,
             quantity: 2,
             purchaseMode: 'lease',
+            tenureMonths: 12,
             configuration: 'default',
             hasWarranty: false,
           },
         ],
       });
 
-      const order = await orderService.createOrder(
+      await expect(orderService.createOrder(
         'user-1',
         undefined,
         undefined,
@@ -308,27 +316,11 @@ describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, M
         '9876543210',
         'Multi-mode order',
         'user@example.com',
-      );
+      )).rejects.toThrow('Buy and rent items must be checked out separately');
 
-      expect(order).toBeDefined();
-      expect(Number(order.subtotal)).toBe(88999);
-      expect(Number(order.finalAmount)).toBe(88999);
-      expect(order.items.length).toBe(2);
-
-      const buyLine = order.items.find((i: any) => i.purchaseMode === 'sell');
-      const leaseLine = order.items.find((i: any) => i.purchaseMode === 'lease');
-
-      expect(buyLine).toBeDefined();
-      expect(buyLine.configuration).toBe('default');
-      expect(buyLine.hasWarranty).toBe(true);
-      expect(Number(buyLine.price)).toBe(80000);
-      expect(buyLine.warrantyPrice).toBe(WARRANTY_PRICE_PER_UNIT);
-
-      expect(leaseLine).toBeDefined();
-      expect(leaseLine.purchaseMode).toBe('lease');
-      expect(leaseLine.quantity).toBe(2);
-      expect(Number(leaseLine.price)).toBe(3500); // Month 1 rate per unit
-      expect(leaseLine.hasWarranty).toBe(false);
+      expect(prisma.product.updateMany).not.toHaveBeenCalled();
+      expect(prisma.cartItem.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.order.create).not.toHaveBeenCalled();
     });
   });
 

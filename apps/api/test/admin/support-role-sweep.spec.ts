@@ -124,7 +124,21 @@ describe('S2.1 Support Role Security & Admin Route Sweep', () => {
 
         lines.forEach((line, idx) => {
           if (line.includes('@Roles') && line.includes("'SUPPORT'")) {
-            // Only support and return routes may grant SUPPORT access
+            const isReadOnlyPermittedFile =
+              file.includes('admin-coupon.controller.ts') || file.includes('admin-lease.controller.ts');
+            if (isReadOnlyPermittedFile) {
+              const methodSnippet = lines.slice(Math.max(0, idx - 2), idx + 3).join(' ');
+              const isReadOnlyGet = methodSnippet.includes('@Get');
+              if (!isReadOnlyGet) {
+                accidentalSupportRoles.push({
+                  file: path.relative(srcDir, file),
+                  line: `L${idx + 1}: ${line.trim()} (Mutations must not allow SUPPORT)`,
+                });
+              }
+              return;
+            }
+
+            // Only support and return routes (and read-only coupons) may grant SUPPORT access
             const isSupportOrReturnRoute =
               file.includes('support') || file.includes('return');
             if (!isSupportOrReturnRoute) {
@@ -139,6 +153,25 @@ describe('S2.1 Support Role Security & Admin Route Sweep', () => {
 
       expect(accidentalSupportRoles).toEqual([]);
     });
+
+    it('verifies every coupon mutation route strictly forbids SUPPORT and requires ADMIN', () => {
+      const couponCtrlPath = path.join(__dirname, '../../src/modules/admin/admin-coupon.controller.ts');
+      const text = fs.readFileSync(couponCtrlPath, 'utf8');
+      
+      // Matches methods decorated with @Post, @Put, @Patch, or @Delete
+      const mutationBlocks = text.match(/@(Post|Put|Patch|Delete)[\s\S]*?async\s+([a-zA-Z0-9_]+)/g) || [];
+      expect(mutationBlocks.length).toBeGreaterThanOrEqual(4);
+
+      for (const block of mutationBlocks) {
+        // Assert @Roles exists
+        expect(block).toContain('@Roles');
+        // Assert @Roles strictly specifies ADMIN
+        expect(block).toMatch(/@Roles\([^)]*'ADMIN'[^)]*\)/);
+        // Assert SUPPORT is never present in mutation @Roles
+        expect(block).not.toContain("'SUPPORT'");
+      }
+    });
+
   });
 
   describe('Role Assignment Endpoint (ADMIN Only, Audited, No Self-Demotion)', () => {

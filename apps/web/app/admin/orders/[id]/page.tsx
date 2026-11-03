@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { adminApi } from '../../../../lib/admin-api';
 import { useAdminOrder, useUpdateOrderStatus } from '../../../../lib/admin-queries';
 import {
   OrderStatus,
@@ -139,6 +140,18 @@ export default function AdminOrderDetailPage() {
     });
   };
 
+  const handleCancelItem = async (itemId: string, productName: string) => {
+    const reason = window.prompt(`Enter reason for cancelling ${productName}:`, 'Staff pre-dispatch cancellation');
+    if (!reason || !order) return;
+    try {
+      await adminApi.adminCancelOrderItem(order.id, itemId, reason);
+      addToast('success', 'Item cancelled and inventory restored.');
+      refetch();
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to cancel item.');
+    }
+  };
+
 
   // Safe typed parsing of shipping address
   const shipping = parseShippingAddress(order?.shippingAddress);
@@ -261,11 +274,24 @@ export default function AdminOrderDetailPage() {
                             </div>
                           </div>
 
-                          <div className="text-right shrink-0">
+                          <div className="text-right shrink-0 flex flex-col items-end gap-1">
                             <p className="text-xs font-bold text-gray-900 dark:text-white">
                               {formatINR(lineTotal)}
                             </p>
                             <span className="text-[10px] text-gray-400">Line total</span>
+                            {item.status === 'CANCELLED' ? (
+                              <span className="inline-block px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 rounded">
+                                Cancelled
+                              </span>
+                            ) : ['PENDING', 'CONFIRMED'].includes(order.status) ? (
+                              <button
+                                type="button"
+                                onClick={() => handleCancelItem(item.id, product?.name || 'Item')}
+                                className="text-[10px] text-rose-600 hover:text-rose-800 underline font-medium cursor-pointer"
+                              >
+                                Cancel item
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       );

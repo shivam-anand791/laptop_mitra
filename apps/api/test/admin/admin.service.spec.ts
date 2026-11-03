@@ -1,5 +1,11 @@
 /// <reference types="jest" />
-import { BadRequestException, NotFoundException, ForbiddenException, ServiceUnavailableException, ExecutionContext } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+  ServiceUnavailableException,
+  ExecutionContext,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
@@ -65,6 +71,15 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
       productImage: {
         deleteMany: jest.fn(),
       },
+      rentalPrice: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      rentalPriceAudit: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
+      },
     };
 
     firebaseServiceMock = {
@@ -75,11 +90,114 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
     adminController = new AdminController(adminService);
   });
 
+  describe('Rental price approval safeguards', () => {
+    it.each([
+      { sourceType: 'ILLUSTRATIVE', securityDeposit: '0', deliveryCharge: '0' },
+      { sourceType: 'MANUAL', securityDeposit: '500', deliveryCharge: '0' },
+      { sourceType: 'MANUAL', securityDeposit: '0', deliveryCharge: '500' },
+      { sourceType: 'MANUAL', securityDeposit: '0', deliveryCharge: '0' },
+    ])('rejects unsafe draft approvals: %o', async (priceFields) => {
+      prismaMock.rentalPrice.findUnique.mockResolvedValue({
+        id: 'rental-1',
+        productId: 'product-1',
+        variantId: null,
+        tenureMonths: 12,
+        monthlyPrice: '1000',
+        status: 'DRAFT',
+        ...priceFields,
+      });
+
+      await expect(adminService.approveRentalPrice('rental-1', 'admin-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prismaMock.rentalPrice.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.rentalPrice.update).not.toHaveBeenCalled();
+    });
+
+    it('approves manual rental pricing only when one-time charges are zero', async () => {
+      prismaMock.rentalPrice.findUnique.mockResolvedValue({
+        id: 'rental-1',
+        productId: 'product-1',
+        variantId: null,
+        tenureMonths: 12,
+        monthlyPrice: '1000',
+        securityDeposit: '0',
+        deliveryCharge: '0',
+        status: 'DRAFT',
+        sourceType: 'MANUAL',
+        changeReason: 'Verified business price',
+      });
+      prismaMock.rentalPriceAudit.findFirst.mockResolvedValue({ id: 'audit-1' });
+      prismaMock.rentalPrice.update.mockResolvedValue({ id: 'rental-1', status: 'APPROVED' });
+
+      await expect(adminService.approveRentalPrice('rental-1', 'admin-1')).resolves.toMatchObject({
+        id: 'rental-1',
+        status: 'APPROVED',
+      });
+      expect(prismaMock.rentalPriceAudit.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'APPROVED', adminId: 'admin-1' }),
+        }),
+      );
+    });
+
+    it('records an audit entry when a manual rental draft is edited', async () => {
+      prismaMock.rentalPrice.findUnique.mockResolvedValue({
+        id: 'rental-1',
+        status: 'DRAFT',
+        sourceType: 'MANUAL',
+        monthlyPrice: '1000',
+        securityDeposit: '0',
+        deliveryCharge: '0',
+      });
+      prismaMock.rentalPrice.update.mockResolvedValue({
+        id: 'rental-1',
+        monthlyPrice: '1200',
+        securityDeposit: '0',
+        deliveryCharge: '0',
+      });
+
+      await adminService.updateRentalPriceDraft(
+        'rental-1',
+        {
+          monthlyPrice: 1200,
+          securityDeposit: 0,
+          deliveryCharge: 0,
+          reason: 'Reviewed supplier costs',
+        },
+        'admin-1',
+      );
+
+      expect(prismaMock.rentalPriceAudit.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          rentalPriceId: 'rental-1',
+          action: 'UPDATED',
+          previousMonthlyPrice: '1000',
+          newMonthlyPrice: '1200',
+          adminId: 'admin-1',
+          reason: 'Reviewed supplier costs',
+        }),
+      });
+    });
+  });
+
   describe('User Management (Task 6)', () => {
     it('returns all users without exposing sensitive authentication tokens', async () => {
       const mockUsers = [
-        { id: 'u1', name: 'Admin User', email: 'admin@laptopmitra.com', role: 'ADMIN', status: 'ACTIVE' },
-        { id: 'u2', name: 'Customer User', email: 'cust@example.com', role: 'CUSTOMER', status: 'ACTIVE' },
+        {
+          id: 'u1',
+          name: 'Admin User',
+          email: 'admin@laptopmitra.com',
+          role: 'ADMIN',
+          status: 'ACTIVE',
+        },
+        {
+          id: 'u2',
+          name: 'Customer User',
+          email: 'cust@example.com',
+          role: 'CUSTOMER',
+          status: 'ACTIVE',
+        },
       ];
       prismaMock.user.findMany.mockResolvedValue(mockUsers);
       prismaMock.user.count.mockResolvedValue(2);
@@ -102,7 +220,11 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
     });
 
     it('returns read-only ticket and return history for an existing customer', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 'u2', name: 'Customer', email: 'customer@example.test' });
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: 'u2',
+        name: 'Customer',
+        email: 'customer@example.test',
+      });
       prismaMock.supportTicket.findMany.mockResolvedValue([
         { id: 't1', ticketNumber: 'LM-T-1', category: 'PAYMENT', csatScore: 5 },
       ]);
@@ -125,7 +247,12 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
     });
 
     it('updates user status when allowed', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 'u2', role: 'CUSTOMER', status: 'ACTIVE', firebaseUid: 'f-u2' });
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: 'u2',
+        role: 'CUSTOMER',
+        status: 'ACTIVE',
+        firebaseUid: 'f-u2',
+      });
       prismaMock.user.update.mockResolvedValue({ id: 'u2', status: 'SUSPENDED' });
 
       const updated = await adminService.updateUserStatus('u2', 'SUSPENDED', 'admin-1');
@@ -147,7 +274,11 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
     });
 
     it('forbids an administrator from modifying status of another administrator', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ id: 'admin-2', role: 'ADMIN', status: 'ACTIVE' });
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: 'admin-2',
+        role: 'ADMIN',
+        status: 'ACTIVE',
+      });
 
       await expect(
         adminService.updateUserStatus('admin-2', 'SUSPENDED', 'admin-1'),
@@ -156,9 +287,9 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
     });
 
     it('rejects invalid user status with 400', async () => {
-      await expect(
-        adminService.updateUserStatus('u2', 'SUPER_ADMIN', 'admin-1'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(adminService.updateUserStatus('u2', 'SUPER_ADMIN', 'admin-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('returns 404 when user is not found', async () => {
@@ -185,7 +316,14 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
 
     describe('Legal Transitions', () => {
       it('allows PENDING -> CONFIRMED', async () => {
-        const order = { id: 'ord-1', status: 'PENDING', paymentMethod: 'cod', paymentStatus: 'PENDING', items: [], deliveries: [] };
+        const order = {
+          id: 'ord-1',
+          status: 'PENDING',
+          paymentMethod: 'cod',
+          paymentStatus: 'PENDING',
+          items: [],
+          deliveries: [],
+        };
         prismaMock.order.findUnique.mockResolvedValue(order);
         prismaMock.order.update.mockResolvedValue({ ...order, status: 'CONFIRMED' });
 
@@ -194,7 +332,14 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
       });
 
       it('allows PENDING -> CANCELLED', async () => {
-        const order = { id: 'ord-1', status: 'PENDING', paymentMethod: 'cod', paymentStatus: 'PENDING', items: [], deliveries: [] };
+        const order = {
+          id: 'ord-1',
+          status: 'PENDING',
+          paymentMethod: 'cod',
+          paymentStatus: 'PENDING',
+          items: [],
+          deliveries: [],
+        };
         prismaMock.order.findUnique.mockResolvedValue(order);
         prismaMock.order.update.mockResolvedValue({ ...order, status: 'CANCELLED' });
 
@@ -203,7 +348,14 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
       });
 
       it('allows CONFIRMED -> SHIPPING', async () => {
-        const order = { id: 'ord-1', status: 'CONFIRMED', paymentMethod: 'razorpay', paymentStatus: 'COMPLETED', items: [], deliveries: [] };
+        const order = {
+          id: 'ord-1',
+          status: 'CONFIRMED',
+          paymentMethod: 'razorpay',
+          paymentStatus: 'COMPLETED',
+          items: [],
+          deliveries: [],
+        };
         prismaMock.order.findUnique.mockResolvedValue(order);
         prismaMock.order.update.mockResolvedValue({ ...order, status: 'SHIPPING' });
 
@@ -214,9 +366,15 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
         expect(result.status).toBe('SHIPPING');
       });
 
-
       it('allows CONFIRMED -> CANCELLED', async () => {
-        const order = { id: 'ord-1', status: 'CONFIRMED', paymentMethod: 'cod', paymentStatus: 'PENDING', items: [], deliveries: [] };
+        const order = {
+          id: 'ord-1',
+          status: 'CONFIRMED',
+          paymentMethod: 'cod',
+          paymentStatus: 'PENDING',
+          items: [],
+          deliveries: [],
+        };
         prismaMock.order.findUnique.mockResolvedValue(order);
         prismaMock.order.update.mockResolvedValue({ ...order, status: 'CANCELLED' });
 
@@ -225,16 +383,34 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
       });
 
       it('allows SHIPPING -> DELIVERED', async () => {
-        const order = { id: 'ord-1', status: 'SHIPPING', paymentMethod: 'cod', paymentStatus: 'PENDING', items: [], deliveries: [] };
+        const order = {
+          id: 'ord-1',
+          status: 'SHIPPING',
+          paymentMethod: 'cod',
+          paymentStatus: 'PENDING',
+          items: [],
+          deliveries: [],
+        };
         prismaMock.order.findUnique.mockResolvedValue(order);
-        prismaMock.order.update.mockResolvedValue({ ...order, status: 'DELIVERED', paymentStatus: 'COMPLETED' });
+        prismaMock.order.update.mockResolvedValue({
+          ...order,
+          status: 'DELIVERED',
+          paymentStatus: 'COMPLETED',
+        });
 
         const result = await adminService.updateOrderStatus('ord-1', 'DELIVERED', 'admin-1');
         expect(result.status).toBe('DELIVERED');
       });
 
       it('allows DELIVERED -> REFUNDED', async () => {
-        const order = { id: 'ord-1', status: 'DELIVERED', paymentMethod: 'razorpay', paymentStatus: 'COMPLETED', items: [], deliveries: [] };
+        const order = {
+          id: 'ord-1',
+          status: 'DELIVERED',
+          paymentMethod: 'razorpay',
+          paymentStatus: 'COMPLETED',
+          items: [],
+          deliveries: [],
+        };
         prismaMock.order.findUnique.mockResolvedValue(order);
         prismaMock.order.update.mockResolvedValue({ ...order, status: 'REFUNDED' });
 
@@ -245,39 +421,90 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
 
     describe('Illegal Transitions (Rejected with 400)', () => {
       it('rejects PENDING -> SHIPPING', async () => {
-        prismaMock.order.findUnique.mockResolvedValue({ id: 'ord-1', status: 'PENDING', items: [], deliveries: [] });
-        await expect(adminService.updateOrderStatus('ord-1', 'SHIPPING', 'admin-1')).rejects.toThrow(BadRequestException);
+        prismaMock.order.findUnique.mockResolvedValue({
+          id: 'ord-1',
+          status: 'PENDING',
+          items: [],
+          deliveries: [],
+        });
+        await expect(
+          adminService.updateOrderStatus('ord-1', 'SHIPPING', 'admin-1'),
+        ).rejects.toThrow(BadRequestException);
       });
 
       it('rejects PENDING -> DELIVERED', async () => {
-        prismaMock.order.findUnique.mockResolvedValue({ id: 'ord-1', status: 'PENDING', items: [], deliveries: [] });
-        await expect(adminService.updateOrderStatus('ord-1', 'DELIVERED', 'admin-1')).rejects.toThrow(BadRequestException);
+        prismaMock.order.findUnique.mockResolvedValue({
+          id: 'ord-1',
+          status: 'PENDING',
+          items: [],
+          deliveries: [],
+        });
+        await expect(
+          adminService.updateOrderStatus('ord-1', 'DELIVERED', 'admin-1'),
+        ).rejects.toThrow(BadRequestException);
       });
 
       it('rejects CONFIRMED -> DELIVERED', async () => {
-        prismaMock.order.findUnique.mockResolvedValue({ id: 'ord-1', status: 'CONFIRMED', items: [], deliveries: [] });
-        await expect(adminService.updateOrderStatus('ord-1', 'DELIVERED', 'admin-1')).rejects.toThrow(BadRequestException);
+        prismaMock.order.findUnique.mockResolvedValue({
+          id: 'ord-1',
+          status: 'CONFIRMED',
+          items: [],
+          deliveries: [],
+        });
+        await expect(
+          adminService.updateOrderStatus('ord-1', 'DELIVERED', 'admin-1'),
+        ).rejects.toThrow(BadRequestException);
       });
 
       it('rejects SHIPPING -> CANCELLED', async () => {
-        prismaMock.order.findUnique.mockResolvedValue({ id: 'ord-1', status: 'SHIPPING', items: [], deliveries: [] });
-        await expect(adminService.updateOrderStatus('ord-1', 'CANCELLED', 'admin-1')).rejects.toThrow(BadRequestException);
+        prismaMock.order.findUnique.mockResolvedValue({
+          id: 'ord-1',
+          status: 'SHIPPING',
+          items: [],
+          deliveries: [],
+        });
+        await expect(
+          adminService.updateOrderStatus('ord-1', 'CANCELLED', 'admin-1'),
+        ).rejects.toThrow(BadRequestException);
       });
 
       it('rejects DELIVERED -> CANCELLED', async () => {
-        prismaMock.order.findUnique.mockResolvedValue({ id: 'ord-1', status: 'DELIVERED', items: [], deliveries: [] });
-        await expect(adminService.updateOrderStatus('ord-1', 'CANCELLED', 'admin-1')).rejects.toThrow(BadRequestException);
+        prismaMock.order.findUnique.mockResolvedValue({
+          id: 'ord-1',
+          status: 'DELIVERED',
+          items: [],
+          deliveries: [],
+        });
+        await expect(
+          adminService.updateOrderStatus('ord-1', 'CANCELLED', 'admin-1'),
+        ).rejects.toThrow(BadRequestException);
       });
 
       it('rejects transitions from terminal CANCELLED state', async () => {
-        prismaMock.order.findUnique.mockResolvedValue({ id: 'ord-1', status: 'CANCELLED', items: [], deliveries: [] });
-        await expect(adminService.updateOrderStatus('ord-1', 'CONFIRMED', 'admin-1')).rejects.toThrow(BadRequestException);
-        await expect(adminService.updateOrderStatus('ord-1', 'CANCELLED', 'admin-1')).rejects.toThrow(BadRequestException);
+        prismaMock.order.findUnique.mockResolvedValue({
+          id: 'ord-1',
+          status: 'CANCELLED',
+          items: [],
+          deliveries: [],
+        });
+        await expect(
+          adminService.updateOrderStatus('ord-1', 'CONFIRMED', 'admin-1'),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          adminService.updateOrderStatus('ord-1', 'CANCELLED', 'admin-1'),
+        ).rejects.toThrow(BadRequestException);
       });
 
       it('rejects transitions from terminal REFUNDED state', async () => {
-        prismaMock.order.findUnique.mockResolvedValue({ id: 'ord-1', status: 'REFUNDED', items: [], deliveries: [] });
-        await expect(adminService.updateOrderStatus('ord-1', 'DELIVERED', 'admin-1')).rejects.toThrow(BadRequestException);
+        prismaMock.order.findUnique.mockResolvedValue({
+          id: 'ord-1',
+          status: 'REFUNDED',
+          items: [],
+          deliveries: [],
+        });
+        await expect(
+          adminService.updateOrderStatus('ord-1', 'DELIVERED', 'admin-1'),
+        ).rejects.toThrow(BadRequestException);
       });
     });
 
@@ -331,9 +558,20 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
 
     describe('Payment Status Rules (Task 4)', () => {
       it('COD delivered marks payment COMPLETED', async () => {
-        const order = { id: 'ord-cod', status: 'SHIPPING', paymentMethod: 'cod', paymentStatus: 'PENDING', items: [], deliveries: [] };
+        const order = {
+          id: 'ord-cod',
+          status: 'SHIPPING',
+          paymentMethod: 'cod',
+          paymentStatus: 'PENDING',
+          items: [],
+          deliveries: [],
+        };
         prismaMock.order.findUnique.mockResolvedValue(order);
-        prismaMock.order.update.mockResolvedValue({ ...order, status: 'DELIVERED', paymentStatus: 'COMPLETED' });
+        prismaMock.order.update.mockResolvedValue({
+          ...order,
+          status: 'DELIVERED',
+          paymentStatus: 'COMPLETED',
+        });
 
         await adminService.updateOrderStatus('ord-cod', 'DELIVERED', 'admin-1');
 
@@ -348,9 +586,20 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
       });
 
       it('online payment delivered does NOT touch paymentStatus', async () => {
-        const order = { id: 'ord-online', status: 'SHIPPING', paymentMethod: 'razorpay', paymentStatus: 'PENDING', items: [], deliveries: [] };
+        const order = {
+          id: 'ord-online',
+          status: 'SHIPPING',
+          paymentMethod: 'razorpay',
+          paymentStatus: 'PENDING',
+          items: [],
+          deliveries: [],
+        };
         prismaMock.order.findUnique.mockResolvedValue(order);
-        prismaMock.order.update.mockResolvedValue({ ...order, status: 'DELIVERED', paymentStatus: 'PENDING' });
+        prismaMock.order.update.mockResolvedValue({
+          ...order,
+          status: 'DELIVERED',
+          paymentStatus: 'PENDING',
+        });
 
         await adminService.updateOrderStatus('ord-online', 'DELIVERED', 'admin-1');
 
@@ -365,9 +614,20 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
       });
 
       it('cancelled order marks payment REFUNDED only if paymentStatus was COMPLETED', async () => {
-        const paidOrder = { id: 'ord-paid', status: 'CONFIRMED', paymentMethod: 'razorpay', paymentStatus: 'COMPLETED', items: [], deliveries: [] };
+        const paidOrder = {
+          id: 'ord-paid',
+          status: 'CONFIRMED',
+          paymentMethod: 'razorpay',
+          paymentStatus: 'COMPLETED',
+          items: [],
+          deliveries: [],
+        };
         prismaMock.order.findUnique.mockResolvedValue(paidOrder);
-        prismaMock.order.update.mockResolvedValue({ ...paidOrder, status: 'CANCELLED', paymentStatus: 'REFUNDED' });
+        prismaMock.order.update.mockResolvedValue({
+          ...paidOrder,
+          status: 'CANCELLED',
+          paymentStatus: 'REFUNDED',
+        });
 
         await adminService.updateOrderStatus('ord-paid', 'CANCELLED', 'admin-1');
 
@@ -382,9 +642,20 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
       });
 
       it('cancelled order does NOT set paymentStatus to REFUNDED if payment was PENDING', async () => {
-        const unpaidOrder = { id: 'ord-unpaid', status: 'PENDING', paymentMethod: 'cod', paymentStatus: 'PENDING', items: [], deliveries: [] };
+        const unpaidOrder = {
+          id: 'ord-unpaid',
+          status: 'PENDING',
+          paymentMethod: 'cod',
+          paymentStatus: 'PENDING',
+          items: [],
+          deliveries: [],
+        };
         prismaMock.order.findUnique.mockResolvedValue(unpaidOrder);
-        prismaMock.order.update.mockResolvedValue({ ...unpaidOrder, status: 'CANCELLED', paymentStatus: 'PENDING' });
+        prismaMock.order.update.mockResolvedValue({
+          ...unpaidOrder,
+          status: 'CANCELLED',
+          paymentStatus: 'PENDING',
+        });
 
         await adminService.updateOrderStatus('ord-unpaid', 'CANCELLED', 'admin-1');
 
@@ -426,12 +697,16 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
           }),
         );
       });
-
     });
 
     describe('Database Failure Resilience (Task 5)', () => {
       it('returns 503 ServiceUnavailableException if database write fails', async () => {
-        prismaMock.order.findUnique.mockResolvedValue({ id: 'ord-fail', status: 'PENDING', items: [], deliveries: [] });
+        prismaMock.order.findUnique.mockResolvedValue({
+          id: 'ord-fail',
+          status: 'PENDING',
+          items: [],
+          deliveries: [],
+        });
         prismaMock.$transaction.mockRejectedValue(new Error('Connection lost to database'));
 
         await expect(
@@ -490,15 +765,23 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
 
   describe('AdminController Endpoint Delegation (Task 3)', () => {
     it('delegates updateUserStatus to adminService with admin context', async () => {
-      jest.spyOn(adminService, 'updateUserStatus').mockResolvedValue({ id: 'u1', status: 'SUSPENDED' } as any);
-      const res = await adminController.updateUserStatus({ id: 'admin-1' }, 'u1', { status: 'SUSPENDED' });
+      jest
+        .spyOn(adminService, 'updateUserStatus')
+        .mockResolvedValue({ id: 'u1', status: 'SUSPENDED' } as any);
+      const res = await adminController.updateUserStatus({ id: 'admin-1' }, 'u1', {
+        status: 'SUSPENDED',
+      });
       expect(res.status).toBe('SUSPENDED');
       expect(adminService.updateUserStatus).toHaveBeenCalledWith('u1', 'SUSPENDED', 'admin-1');
     });
 
     it('delegates updateOrderStatus to adminService with admin context', async () => {
-      jest.spyOn(adminService, 'updateOrderStatus').mockResolvedValue({ id: 'o1', status: 'CONFIRMED' } as any);
-      const res = await adminController.updateOrderStatus({ id: 'admin-1' }, 'o1', { status: 'CONFIRMED' });
+      jest
+        .spyOn(adminService, 'updateOrderStatus')
+        .mockResolvedValue({ id: 'o1', status: 'CONFIRMED' } as any);
+      const res = await adminController.updateOrderStatus({ id: 'admin-1' }, 'o1', {
+        status: 'CONFIRMED',
+      });
       expect(res.status).toBe('CONFIRMED');
       expect(adminService.updateOrderStatus).toHaveBeenCalledWith('o1', 'CONFIRMED', 'admin-1');
     });
@@ -521,7 +804,11 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
       });
 
       it('accepts valid pagination parameters', async () => {
-        const dto = plainToInstance(AdminPaginationDto, { page: 2, pageSize: 50, search: 'laptop' });
+        const dto = plainToInstance(AdminPaginationDto, {
+          page: 2,
+          pageSize: 50,
+          search: 'laptop',
+        });
         const errors = await validate(dto);
         expect(errors).toHaveLength(0);
       });
@@ -585,7 +872,15 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
           paymentStatus: 'COMPLETED',
           finalAmount: '12000',
           user: { id: 'u-1', name: 'John Doe', email: 'john@example.com' },
-          items: [{ id: 'item-1', productId: 'p-1', quantity: 1, price: '12000', product: { name: 'ThinkPad' } }],
+          items: [
+            {
+              id: 'item-1',
+              productId: 'p-1',
+              quantity: 1,
+              price: '12000',
+              product: { name: 'ThinkPad' },
+            },
+          ],
           deliveries: [{ id: 'del-1', status: 'SHIPPED', shippedAt: new Date() }],
         };
         prismaMock.order.findMany.mockResolvedValue([leanOrder]);
@@ -604,7 +899,11 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
         prismaMock.product.findMany.mockResolvedValue([]);
         prismaMock.product.count.mockResolvedValue(0);
 
-        await adminService.getAllProducts({ lowStock: true, status: 'ACTIVE', categoryId: 'cat-laptops' });
+        await adminService.getAllProducts({
+          lowStock: true,
+          status: 'ACTIVE',
+          categoryId: 'cat-laptops',
+        });
 
         expect(prismaMock.product.findMany).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -628,7 +927,14 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
           paymentStatus: 'COMPLETED',
           shippingAddress: { city: 'Bengaluru', pincode: '560001' },
           notes: 'Deliver to front desk',
-          user: { id: 'user-1', name: 'John', email: 'john@test.com', phone: '9876543210', role: 'CUSTOMER', status: 'ACTIVE' },
+          user: {
+            id: 'user-1',
+            name: 'John',
+            email: 'john@test.com',
+            phone: '9876543210',
+            role: 'CUSTOMER',
+            status: 'ACTIVE',
+          },
           items: [
             {
               id: 'it-1',
@@ -666,12 +972,12 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
           .mockResolvedValueOnce(3); // lowStockProducts
         prismaMock.order.count
           .mockResolvedValueOnce(100) // totalOrders
-          .mockResolvedValueOnce(10)  // pendingOrders
-          .mockResolvedValueOnce(80)  // deliveredOrders
-          .mockResolvedValueOnce(5);  // ordersToday
+          .mockResolvedValueOnce(10) // pendingOrders
+          .mockResolvedValueOnce(80) // deliveredOrders
+          .mockResolvedValueOnce(5); // ordersToday
         prismaMock.order.aggregate
           .mockResolvedValueOnce({ _sum: { finalAmount: 250000.5 } }) // revenueCompleted
-          .mockResolvedValueOnce({ _sum: { finalAmount: 35000.0 } });  // revenuePending
+          .mockResolvedValueOnce({ _sum: { finalAmount: 35000.0 } }); // revenuePending
 
         const stats = await adminService.getDashboardStats();
 
@@ -720,15 +1026,11 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
           },
         ]);
         prismaMock.user.findMany.mockResolvedValue([]);
-        prismaMock.order.groupBy.mockResolvedValue([
-          { status: 'DELIVERED', _count: { _all: 1 } },
-        ]);
+        prismaMock.order.groupBy.mockResolvedValue([{ status: 'DELIVERED', _count: { _all: 1 } }]);
         prismaMock.orderItem.groupBy.mockResolvedValue([
           { productId: 'p1', _sum: { quantity: 4, price: 6000 } },
         ]);
-        prismaMock.product.findMany.mockResolvedValue([
-          { id: 'p1', name: 'Dell XPS 13' },
-        ]);
+        prismaMock.product.findMany.mockResolvedValue([{ id: 'p1', name: 'Dell XPS 13' }]);
 
         const analytics = await adminService.getAnalytics({ range: '7d' });
 
@@ -781,7 +1083,9 @@ describe('AdminService & AdminController (Phase 3 & Phase 4 Backend Correctness)
     describe('Controller Query Delegation', () => {
       it('delegates getAllOrders with query to service', async () => {
         const query: AdminOrderQueryDto = { page: 1, pageSize: 20, status: 'PENDING' };
-        jest.spyOn(adminService, 'getAllOrders').mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
+        jest
+          .spyOn(adminService, 'getAllOrders')
+          .mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
 
         const res = await adminController.getAllOrders(query);
         expect(res.page).toBe(1);

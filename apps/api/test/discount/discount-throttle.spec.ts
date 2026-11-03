@@ -79,9 +79,11 @@ function postJson(port: number, path: string, payload: any): Promise<{ status: n
         port,
         path,
         method: 'POST',
+        agent: false,
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(data),
+          'Connection': 'close',
         },
       },
       (res) => {

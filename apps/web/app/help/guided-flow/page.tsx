@@ -632,7 +632,7 @@ function GuidedFlowContent() {
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center gap-2 text-xs font-bold text-slate-800 mb-1">
-                      <FileText className="w-4 h-4 text-blue-600" /> GST Tax Invoice
+                      <FileText className="w-4 h-4 text-blue-600" /> Tax Invoice
                     </div>
                     <p className="text-xs text-slate-600">
                       Download your official tax invoice with serial numbers and GSTIN details.

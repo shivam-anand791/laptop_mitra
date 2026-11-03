@@ -4,6 +4,7 @@ import { OrderService } from '../../src/modules/order/order.service';
 import { RolesGuard } from '../../src/guards/roles.guard';
 import { Reflector } from '@nestjs/core';
 import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { createNoTaxService } from '../helpers/no-tax-service';
 
 describe('OrderController - Security Tests', () => {
   let controller: OrderController;
@@ -96,7 +97,7 @@ describe('OrderController - Security Tests', () => {
 
     expect(orderService.createOrder).toHaveBeenCalledWith(
       'user-a', undefined, undefined, body.shippingAddress, body.phone, undefined,
-      body.email, mockUserA, 'razorpay', 'request-key', 'address-a',
+      body.email, mockUserA, 'razorpay', 'request-key', 'address-a', undefined,
     );
   });
 
@@ -244,8 +245,9 @@ describe('OrderService - Security Logic', () => {
       {} as any,
       {} as any,
       { dispatchOrderUpdate: jest.fn() } as any,
-      { validateDiscountCode: jest.fn() } as any,
+      { validateDiscountCode: jest.fn(), restoreOrderDiscount: jest.fn().mockResolvedValue(true) } as any,
       pincodeService as any,
+      createNoTaxService(),
     );
   });
 

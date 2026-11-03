@@ -30,6 +30,14 @@ jest.mock('razorpay', () => {
       })),
       refund: jest.fn().mockResolvedValue({ id: 'rfnd_test_1', status: 'processed' }),
     },
+    plans: {
+      create: jest.fn().mockResolvedValue({ id: 'plan_test_1' }),
+    },
+    subscriptions: {
+      create: jest.fn().mockResolvedValue({ id: 'sub_test_1', status: 'created' }),
+      fetch: jest.fn(),
+      cancel: jest.fn(),
+    },
   }));
 });
 
@@ -37,6 +45,7 @@ import { PaymentService } from '../../src/modules/payments/payment.service';
 import { ConfigService } from '@nestjs/config';
 import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import * as crypto from 'crypto';
+import { createNoTaxService } from '../helpers/no-tax-service';
 
 describe('PaymentService (Security & Integrity Tests)', () => {
   let paymentService: PaymentService;
@@ -59,6 +68,11 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         findMany: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      rentalSubscription: {
+        findUnique: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       $transaction: jest.fn().mockImplementation(async (callbackOrPromises, _options) => {
         if (typeof callbackOrPromises === 'function') {
           return callbackOrPromises(prisma);
@@ -74,6 +88,7 @@ describe('PaymentService (Security & Integrity Tests)', () => {
       configService as ConfigService,
       prisma,
       notificationService,
+      createNoTaxService(),
     );
   });
 
@@ -108,6 +123,93 @@ describe('PaymentService (Security & Integrity Tests)', () => {
           currency: 'INR',
         }),
       }));
+    });
+
+    describe('Rental subscription initialization', () => {
+      it('creates a provider subscription only after claiming the local rental record', async () => {
+        const reservationExpiresAt = new Date(Date.now() + 60_000);
+        prisma.order.findUnique.mockResolvedValue({
+          id: 'rental-order-1',
+          orderNumber: 'LM-RENT-1',
+          userId: 'user-1',
+          status: 'PENDING',
+          paymentStatus: 'PENDING',
+          paymentMethod: 'razorpay_subscription',
+          inventoryStatus: 'RESERVED',
+          reservationExpiresAt,
+          items: [{ purchaseMode: 'lease' }],
+          rentalSubscription: {
+            id: 'rental-1',
+            userId: 'user-1',
+            status: 'PENDING_AUTHORIZATION',
+            razorpaySubscriptionId: null,
+            razorpayPlanId: null,
+            monthlyAmount: 2500,
+            tenureMonths: 6,
+          },
+        });
+
+        const razorpay = (paymentService as any).razorpay;
+        const result = await paymentService.createRentalSubscriptionForUser(
+          'rental-order-1',
+          'user-1',
+          'CUSTOMER',
+        );
+
+        expect(prisma.rentalSubscription.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+          where: { id: 'rental-1', status: 'PENDING_AUTHORIZATION', razorpaySubscriptionId: null },
+          data: { status: 'CREATING' },
+        }));
+        expect(razorpay.plans.create).toHaveBeenCalledWith(expect.objectContaining({
+          period: 'monthly',
+          item: expect.objectContaining({ amount: 250000, currency: 'INR' }),
+        }));
+        expect(razorpay.subscriptions.create).toHaveBeenCalledWith(expect.objectContaining({
+          plan_id: 'plan_test_1',
+          total_count: 6,
+          notes: { orderId: 'rental-order-1', rentalSubscriptionId: 'rental-1' },
+        }));
+        expect(result).toMatchObject({
+          subscriptionId: 'sub_test_1',
+          amount: 250000,
+          currency: 'INR',
+        });
+      });
+
+      it('does not create another provider subscription when a stored subscription already exists', async () => {
+        prisma.order.findUnique.mockResolvedValue({
+          id: 'rental-order-1',
+          orderNumber: 'LM-RENT-1',
+          userId: 'user-1',
+          status: 'PENDING',
+          paymentStatus: 'PENDING',
+          paymentMethod: 'razorpay_subscription',
+          inventoryStatus: 'RESERVED',
+          reservationExpiresAt: new Date(Date.now() + 60_000),
+          items: [{ purchaseMode: 'lease' }],
+          rentalSubscription: {
+            id: 'rental-1',
+            userId: 'user-1',
+            status: 'PENDING_AUTHORIZATION',
+            razorpaySubscriptionId: 'sub_existing',
+            razorpayPlanId: 'plan_existing',
+            monthlyAmount: 2500,
+            tenureMonths: 6,
+          },
+        });
+
+        const razorpay = (paymentService as any).razorpay;
+        const result = await paymentService.createRentalSubscriptionForUser(
+          'rental-order-1',
+          'user-1',
+          'CUSTOMER',
+        );
+
+        expect(result.subscriptionId).toBe('sub_existing');
+        expect(razorpay.plans.create).not.toHaveBeenCalled();
+        expect(razorpay.subscriptions.create).not.toHaveBeenCalled();
+        expect(prisma.rentalSubscription.updateMany).not.toHaveBeenCalled();
+      });
     });
 
     it('rejects order payment creation for another user order (IDOR Protection)', async () => {

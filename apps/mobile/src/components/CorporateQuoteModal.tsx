@@ -125,7 +125,7 @@ export default function CorporateQuoteModal({
           <View style={styles.sheetHeader}>
             <View>
               <Text style={styles.sheetTitle}>Corporate Quote &amp; Lease</Text>
-              <Text style={styles.sheetSubtitle}>Bulk fleet pricing &amp; 18% GST invoice</Text>
+              <Text style={styles.sheetSubtitle}>Bulk fleet pricing &amp; tax invoices where applicable</Text>
             </View>
             <TouchableOpacity onPress={handleResetAndClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Ionicons name="close" size={22} color={colors.textSecondary} />

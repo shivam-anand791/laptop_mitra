@@ -13,6 +13,7 @@ import {
   UpdateAdminSettingsDto,
   CorporateInquiry,
 } from './types';
+import type { SaveRentalPriceDraft, UpdateRentalPriceDraft } from './admin-api';
 
 /**
  * Hierarchical query keys for admin data operations
@@ -30,6 +31,10 @@ export const adminQueryKeys = {
   analytics: () => [...adminQueryKeys.all, 'analytics'] as const,
   settings: () => [...adminQueryKeys.all, 'settings'] as const,
   inquiries: () => [...adminQueryKeys.all, 'inquiries'] as const,
+  rentalPrices: () => [...adminQueryKeys.all, 'rental-prices'] as const,
+  rentalPricingCatalog: () => [...adminQueryKeys.all, 'rental-pricing-catalog'] as const,
+  rentalPriceHistory: (id: string) => [...adminQueryKeys.all, 'rental-price-history', id] as const,
+  rentalTerminationRequests: () => [...adminQueryKeys.all, 'rental-termination-requests'] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -53,7 +58,10 @@ export function useAdminOrders(params?: {
   to?: string;
   search?: string;
 }) {
-  return useQuery<{ items: AdminOrder[]; total: number; page: number; pageSize: number } | AdminOrder[], Error>({
+  return useQuery<
+    { items: AdminOrder[]; total: number; page: number; pageSize: number } | AdminOrder[],
+    Error
+  >({
     queryKey: [...adminQueryKeys.orders(), params],
     queryFn: () => adminApi.getOrders(params),
     placeholderData: keepPreviousData,
@@ -61,7 +69,10 @@ export function useAdminOrders(params?: {
 }
 
 export function useAdminRecentOrders(pageSize: number = 5) {
-  return useQuery<{ items: AdminOrder[]; total: number; page: number; pageSize: number } | AdminOrder[], Error>({
+  return useQuery<
+    { items: AdminOrder[]; total: number; page: number; pageSize: number } | AdminOrder[],
+    Error
+  >({
     queryKey: [...adminQueryKeys.orders(), { pageSize }],
     queryFn: () => adminApi.getOrders({ pageSize }),
   });
@@ -137,8 +148,7 @@ export function useUpdateOrderStatus() {
       status: OrderStatus | string;
       courierName?: string;
       trackingNumber?: string;
-    }) =>
-      adminApi.updateOrderStatus(id, status, { courierName, trackingNumber }),
+    }) => adminApi.updateOrderStatus(id, status, { courierName, trackingNumber }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.orders() });
       if (variables?.id) {
@@ -149,7 +159,6 @@ export function useUpdateOrderStatus() {
     },
   });
 }
-
 
 export function useUpdateUserStatus() {
   const queryClient = useQueryClient();
@@ -213,12 +222,80 @@ export function useUpdateAdminSettings() {
   });
 }
 
-export function useAdminInquiries(params?: {
-  status?: string;
-  page?: number;
-  pageSize?: number;
-}) {
-  return useQuery<{ items: CorporateInquiry[]; total: number; page: number; pageSize: number }, Error>({
+export function useAdminRentalPrices() {
+  return useQuery({
+    queryKey: adminQueryKeys.rentalPrices(),
+    queryFn: () => adminApi.getRentalPrices(),
+  });
+}
+
+export function useAdminRentalPricingCatalog() {
+  return useQuery({
+    queryKey: adminQueryKeys.rentalPricingCatalog(),
+    queryFn: () => adminApi.getRentalPricingCatalog(),
+  });
+}
+
+export function useAdminRentalPriceHistory(id: string | null) {
+  return useQuery({
+    queryKey: adminQueryKeys.rentalPriceHistory(id ?? ''),
+    queryFn: () => adminApi.getRentalPriceHistory(id!),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateRentalPriceDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SaveRentalPriceDraft) => adminApi.createRentalPriceDraft(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.rentalPrices() });
+    },
+  });
+}
+
+export function useUpdateRentalPriceDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateRentalPriceDraft }) =>
+      adminApi.updateRentalPriceDraft(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.rentalPrices() });
+    },
+  });
+}
+
+export function useApproveRentalPrice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => adminApi.approveRentalPrice(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.rentalPrices() });
+    },
+  });
+}
+
+export function useAdminRentalTerminationRequests() {
+  return useQuery({
+    queryKey: adminQueryKeys.rentalTerminationRequests(),
+    queryFn: () => adminApi.getRentalTerminationRequests(),
+  });
+}
+
+export function useApproveRentalTermination() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (subscriptionId: string) => adminApi.approveRentalTermination(subscriptionId),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.rentalTerminationRequests() }),
+  });
+}
+
+export function useAdminInquiries(params?: { status?: string; page?: number; pageSize?: number }) {
+  return useQuery<
+    { items: CorporateInquiry[]; total: number; page: number; pageSize: number },
+    Error
+  >({
     queryKey: [...adminQueryKeys.inquiries(), params],
     queryFn: () => adminApi.getCorporateInquiries(params),
     placeholderData: keepPreviousData,
@@ -229,15 +306,8 @@ export function useUpdateInquiryStatus() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      id,
-      status,
-      adminNotes,
-    }: {
-      id: string;
-      status: string;
-      adminNotes?: string;
-    }) => adminApi.updateCorporateInquiryStatus(id, status, adminNotes),
+    mutationFn: ({ id, status, adminNotes }: { id: string; status: string; adminNotes?: string }) =>
+      adminApi.updateCorporateInquiryStatus(id, status, adminNotes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.inquiries() });
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.stats() });

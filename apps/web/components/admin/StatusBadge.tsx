@@ -68,6 +68,15 @@ const statusMap: Record<string, StatusSemanticVariant> = {
   MEDIUM: 'info',
   LOW: 'neutral',
 
+  // Coupons & Redemptions
+  SCHEDULED: 'info',
+  EXPIRED: 'neutral',
+  EXHAUSTED: 'warning',
+  PAUSED: 'warning',
+  DRAFT: 'neutral',
+  ARCHIVED: 'neutral',
+  REDEEMED: 'success',
+  RESTORED: 'info',
 };
 
 const variantStyles: Record<StatusSemanticVariant, string> = {

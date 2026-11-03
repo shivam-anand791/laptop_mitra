@@ -26,7 +26,8 @@ export type MainStackParamList = {
   MainTabs: undefined;
   Search: undefined;
   ProductDetail: { productId: string };
-  Checkout: undefined;
+  Checkout: { initialCoupon?: string } | undefined;
+  MyCoupons: undefined;
   OrderHistory: undefined;
   OrderDetail: { orderId: string };
   Profile: undefined;

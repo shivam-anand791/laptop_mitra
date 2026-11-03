@@ -15,6 +15,7 @@ import { QueryState } from '../../../components/admin/QueryState';
 import { useToast } from '../../../components/ui/Toast';
 import Modal from '../../../components/ui/Modal';
 import Button from '../../../components/ui/Button';
+import UserCorporateAndNotesModal from '../../../components/admin/UserCorporateAndNotesModal';
 
 // ---------------------------------------------------------------------------
 // Role & Status Badges
@@ -171,6 +172,7 @@ function UsersPageContent() {
   // 3. Status Mutation with Confirmation Modal
   const updateUserStatusMutation = useUpdateUserStatus();
   const [historyUser, setHistoryUser] = useState<AdminUser | null>(null);
+  const [corporateModalUser, setCorporateModalUser] = useState<AdminUser | null>(null);
   const historyQuery = useAdminUserSupportHistory(historyUser?.id ?? null);
   const [modalState, setModalState] = useState<{
     open: boolean;
@@ -468,6 +470,13 @@ function UsersPageContent() {
                         >
                           Support history
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setCorporateModalUser(row)}
+                          className="text-xs font-semibold text-purple-600 hover:text-purple-700 dark:text-purple-400 px-2.5 py-1 rounded-md border border-purple-200 dark:border-purple-900/60 hover:bg-purple-50 dark:hover:bg-purple-950/20 transition-colors"
+                        >
+                          Corporate & Notes
+                        </button>
                         {isSelf ? (
                         <span
                           className="text-xs text-gray-400 dark:text-gray-500 italic select-none"
@@ -699,6 +708,12 @@ function UsersPageContent() {
           </div>
         ) : null}
       </Modal>
+
+      <UserCorporateAndNotesModal
+        user={corporateModalUser}
+        open={!!corporateModalUser}
+        onClose={() => setCorporateModalUser(null)}
+      />
     </div>
   );
 }

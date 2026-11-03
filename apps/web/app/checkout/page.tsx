@@ -9,8 +9,10 @@ import { useCart } from '../../lib/cart-context';
 import { useAuth } from '../../lib/auth-context';
 import { api } from '../../lib/api';
 import { Address, CreateAddressDto, Order, PincodeVerificationResult } from '../../lib/types';
-import { config, NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../lib/config';
+import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../lib/config';
 import { useSupportConfig } from '../../lib/support-config';
+import { CouponOffersModal } from '../../components/CouponOffersModal';
+import { Tag, Sparkles } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -45,8 +47,23 @@ export default function CheckoutPage() {
     amount: number;
     message: string;
     type: string;
+    badgeText?: string;
+    allowedPaymentMethods?: string;
   } | null>(null);
   const [discountError, setDiscountError] = useState<string | null>(null);
+  const [isOffersModalOpen, setIsOffersModalOpen] = useState(false);
+
+  const apiItems = items.map((it) => ({
+    productId: it.productId,
+    variantId: it.variantId || undefined,
+    categoryId: it.product?.categoryId || undefined,
+    brandId: (it.product?.metadata as any)?.brand || undefined,
+    quantity: it.quantity,
+    price: Number(it.priceAtAdd),
+    purchaseMode: (it.purchaseMode || 'sell') as 'sell' | 'lease',
+    hasWarranty: it.hasWarranty,
+    warrantyPrice: it.warrantyPrice,
+  }));
 
   // Payment & Order Status
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
@@ -64,6 +81,17 @@ export default function CheckoutPage() {
   const [saveAddressToAccount, setSaveAddressToAccount] = useState(false);
 
   const canUseSavedAddresses = !!user && user.role === 'CUSTOMER' && !user.isGuest;
+  const hasRentalOrder = items.some((item) => item.purchaseMode === 'lease');
+  const hasMixedCart = new Set(items.map((item) => item.purchaseMode === 'lease' ? 'lease' : 'sell')).size > 1;
+
+  useEffect(() => {
+    if (hasRentalOrder) {
+      setPaymentMethod('razorpay');
+      setAppliedDiscount(null);
+      setDiscountCodeInput('');
+      setDiscountError(null);
+    }
+  }, [hasRentalOrder]);
 
   useEffect(() => {
     let active = true;
@@ -217,27 +245,69 @@ export default function CheckoutPage() {
     };
   }, []);
 
-  const handleApplyDiscount = async () => {
+  const applyCouponByCode = async (codeToApply: string) => {
+    const cleanCode = codeToApply.trim().toUpperCase();
+    if (!cleanCode || hasRentalOrder) return;
     setDiscountError(null);
-    if (!discountCodeInput.trim()) return;
 
     try {
-      const res = await api.validateDiscount(discountCodeInput, subtotal);
-      if (res.valid) {
+      const preview = await api.previewCoupon({
+        code: cleanCode,
+        items: apiItems,
+        paymentMethod,
+      });
+      if (preview.valid) {
+        const allowedMethods = preview.coupon?.allowedPaymentMethods;
         setAppliedDiscount({
-          code: discountCodeInput.trim().toUpperCase(),
-          amount: res.discountAmount,
-          message: res.message,
-          type: res.isReferral || discountCodeInput.toUpperCase().startsWith('MITRA') ? 'referral' : 'coupon',
+          code: cleanCode,
+          amount: preview.savingsAmount,
+          message: preview.message,
+          type: 'coupon',
+          badgeText: preview.coupon?.badgeText,
+          allowedPaymentMethods: allowedMethods,
         });
+        if (allowedMethods === 'ONLINE_ONLY' || allowedMethods === 'PREPAID') {
+          setPaymentMethod('razorpay');
+        }
         setDiscountCodeInput('');
+        setDiscountError(null);
+        return;
       } else {
-        setDiscountError(res.message);
+        setDiscountError(preview.message || 'Invalid coupon code');
       }
     } catch (err: any) {
-      setDiscountError(err?.message || 'Failed to validate discount code');
+      try {
+        const refRes = await api.validateDiscount(cleanCode, subtotal);
+        if (refRes.valid) {
+          setAppliedDiscount({
+            code: cleanCode,
+            amount: refRes.discountAmount,
+            message: refRes.message,
+            type: 'referral',
+          });
+          setDiscountCodeInput('');
+          setDiscountError(null);
+          return;
+        }
+      } catch {}
+      setDiscountError(err?.message || 'Invalid discount coupon code');
     }
   };
+
+  const handleApplyDiscount = async () => {
+    if (hasRentalOrder || !discountCodeInput.trim()) return;
+    await applyCouponByCode(discountCodeInput);
+  };
+
+  // Auto-apply coupon from URL query param if present
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const couponFromUrl = params.get('coupon');
+    if (couponFromUrl && !hasRentalOrder && !appliedDiscount && items.length > 0) {
+      applyCouponByCode(couponFromUrl);
+    }
+  }, [hasRentalOrder, items.length]);
 
   const removeDiscount = () => {
     setAppliedDiscount(null);
@@ -292,6 +362,14 @@ export default function CheckoutPage() {
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (cartSyncing || cartSyncError || itemCount === 0 || (canUseSavedAddresses && savedAddressesLoading)) return;
+    if (hasMixedCart) {
+      alert('Buy and rent items must be checked out separately. Your cart has not been changed.');
+      return;
+    }
+    if (hasRentalOrder && paymentMethod === 'cod') {
+      alert('Rental orders require an AutoPay mandate and cannot use Cash on Delivery.');
+      return;
+    }
     if (!formData.fullName || !formData.phone || !formData.address || !formData.pincode) {
       alert('Please fill in all mandatory shipping address fields');
       return;
@@ -331,8 +409,8 @@ export default function CheckoutPage() {
 
       // 1. Create order on backend
       const orderPayload = {
-        discountCode: appliedDiscount?.type === 'coupon' ? appliedDiscount.code : undefined,
-        referralCode: appliedDiscount?.type === 'referral' ? appliedDiscount.code : undefined,
+        discountCode: !hasRentalOrder && appliedDiscount?.type === 'coupon' ? appliedDiscount.code : undefined,
+        referralCode: !hasRentalOrder && appliedDiscount?.type === 'referral' ? appliedDiscount.code : undefined,
         paymentMethod: paymentMethod,
         email: formData.email,
         idempotencyKey: `lm-web-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
@@ -353,25 +431,26 @@ export default function CheckoutPage() {
 
       // 2. If Razorpay selected, initialize payment modal
       if (paymentMethod === 'razorpay') {
-        const razorpayKey = config.NEXT_PUBLIC_RAZORPAY_KEY_ID;
-
-        if (!razorpayKey) {
-          alert('Payments are not configured');
-          setIsSubmitting(false);
-          return;
-        }
-
         try {
-          const rzpOrder = await api.createRazorpayOrder(order.id);
+          const payment = hasRentalOrder
+            ? await api.createRazorpaySubscription(order.id)
+            : await api.createRazorpayOrder(order.id);
+          if (!payment.keyId) throw new Error('Payment gateway key is unavailable');
 
           if (typeof window !== 'undefined' && window.Razorpay) {
             const options = {
-              key: razorpayKey,
-              amount: rzpOrder.amount,
-              currency: 'INR',
+              key: payment.keyId,
               name: 'LaptopMitra',
-              description: `Order ${order.orderNumber} - Certified Refurbished Laptop`,
-              order_id: rzpOrder.id,
+              description: hasRentalOrder
+                ? `Rental AutoPay authorization for ${order.orderNumber}`
+                : `Order ${order.orderNumber} - Certified Refurbished Laptop`,
+              ...(hasRentalOrder
+                ? { subscription_id: payment.subscriptionId }
+                : {
+                    order_id: payment.id,
+                    amount: payment.amount,
+                    currency: payment.currency || 'INR',
+                  }),
               image: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=200&q=80',
               prefill: {
                 name: formData.fullName,
@@ -383,16 +462,25 @@ export default function CheckoutPage() {
               },
               handler: async (response: any) => {
                 try {
-                  await api.verifyRazorpayPayment({
-                    orderId: order.id,
-                    razorpayOrderId: response.razorpay_order_id,
-                    razorpayPaymentId: response.razorpay_payment_id,
-                    razorpaySignature: response.razorpay_signature,
-                  });
+                  if (hasRentalOrder) {
+                    await api.verifyRentalSubscription({
+                      orderId: order.id,
+                      razorpaySubscriptionId: response.razorpay_subscription_id,
+                      razorpayPaymentId: response.razorpay_payment_id,
+                      razorpaySignature: response.razorpay_signature,
+                    });
+                  } else {
+                    await api.verifyRazorpayPayment({
+                      orderId: order.id,
+                      razorpayOrderId: response.razorpay_order_id,
+                      razorpayPaymentId: response.razorpay_payment_id,
+                      razorpaySignature: response.razorpay_signature,
+                    });
+                  }
                   clearCart();
                   setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any, status: 'CONFIRMED' as any });
                 } catch {
-                  alert(`We could not confirm payment for order ${order.orderNumber}. Check your order history before trying again.`);
+                  router.push(`/account/orders/${order.id}`);
                 }
               },
               modal: {
@@ -405,16 +493,12 @@ export default function CheckoutPage() {
             const rzpInstance = new window.Razorpay(options);
             rzpInstance.open();
           } else {
-            await api.cancelOrder(order.id);
-            alert('Secure payment checkout is unavailable. Your pending order was cancelled. Please try again.');
+            alert('Secure checkout is unavailable. Your order is still pending; retry payment from Order Details.');
+            router.push(`/account/orders/${order.id}`);
           }
-        } catch {
-          try {
-            await api.cancelOrder(order.id);
-          } catch {
-            // Reservation expiry handles cleanup if cancellation cannot reach the API.
-          }
-          alert('Payment could not be started. Your order has not been confirmed. Please try again.');
+        } catch (error) {
+          alert(error instanceof Error ? error.message : 'Payment could not be started. Your order is still pending.');
+          router.push(`/account/orders/${order.id}`);
         }
       } else {
         // COD (Cash on Delivery)
@@ -754,11 +838,11 @@ export default function CheckoutPage() {
                         2
                       </span>
                       <h2 className="text-base font-black text-[#0B1F4B]">
-                        Business GST Invoice (Optional)
+                        Business Invoice Details (Optional)
                       </h2>
                     </div>
                     <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                      Save 18% Input Credit
+                      For eligible invoices
                     </span>
                   </div>
 
@@ -815,16 +899,13 @@ export default function CheckoutPage() {
                         />
                         <div>
                           <span className="font-black text-sm text-[#0B1F4B] block">
-                            UPI / Credit Card / Debit Card / NetBanking
+                            {hasRentalOrder ? 'Razorpay AutoPay (Recurring Rental Payments)' : 'UPI / Credit Card / Debit Card / NetBanking'}
                           </span>
                           <span className="text-xs text-slate-500">
-                            Instant confirmation via Razorpay 256-bit secure gateway
+                            {hasRentalOrder
+                              ? 'Authorize the monthly rental mandate and first payment securely via Razorpay'
+                              : 'Instant confirmation via Razorpay 256-bit secure gateway'}
                           </span>
-                          {!config.NEXT_PUBLIC_RAZORPAY_KEY_ID && (
-                            <span className="text-xs text-rose-600 font-bold block mt-1">
-                              Payments are not configured
-                            </span>
-                          )}
                         </div>
                       </div>
                       <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 shrink-0">
@@ -832,28 +913,36 @@ export default function CheckoutPage() {
                       </span>
                     </label>
 
-                    <label className={`p-4 rounded-2xl border-2 flex items-center justify-between cursor-pointer transition-all ${
-                      paymentMethod === 'cod' ? 'border-[#1D6FF2] bg-blue-50/30' : 'border-[#E4E9F2] hover:bg-slate-50'
-                    }`}>
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="radio"
-                          name="paymentMethod"
-                          checked={paymentMethod === 'cod'}
-                          disabled={!codEligible}
-                          onChange={() => codEligible && setPaymentMethod('cod')}
-                          className="w-4 h-4 text-[#1D6FF2] focus:ring-[#1D6FF2] disabled:cursor-not-allowed cursor-pointer"
-                        />
-                        <div>
-                          <span className="font-black text-sm text-[#0B1F4B] block">
-                            Cash on Delivery (Pay at Doorstep)
-                          </span>
-                          <span className="text-xs text-slate-500">
-                            {codEligible ? 'Verification call required prior to dispatch' : 'Available only for verified, serviceable Delhi NCR PIN codes'}
-                          </span>
+                    {!hasRentalOrder && (
+                      <label className={`p-4 rounded-2xl border-2 flex items-center justify-between transition-all ${
+                        paymentMethod === 'cod' ? 'border-[#1D6FF2] bg-blue-50/30' : 'border-[#E4E9F2] hover:bg-slate-50'
+                      } ${(!codEligible || (appliedDiscount?.allowedPaymentMethods === 'ONLINE_ONLY' || appliedDiscount?.allowedPaymentMethods === 'PREPAID')) ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            checked={paymentMethod === 'cod'}
+                            disabled={!codEligible || (appliedDiscount?.allowedPaymentMethods === 'ONLINE_ONLY' || appliedDiscount?.allowedPaymentMethods === 'PREPAID')}
+                            onChange={() => {
+                              if (codEligible && appliedDiscount?.allowedPaymentMethods !== 'ONLINE_ONLY' && appliedDiscount?.allowedPaymentMethods !== 'PREPAID') {
+                                setPaymentMethod('cod');
+                              }
+                            }}
+                            className="w-4 h-4 text-[#1D6FF2] focus:ring-[#1D6FF2] disabled:cursor-not-allowed cursor-pointer"
+                          />
+                          <div>
+                            <span className="font-black text-sm text-[#0B1F4B] block">
+                              Cash on Delivery (Pay at Doorstep)
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              {(appliedDiscount?.allowedPaymentMethods === 'ONLINE_ONLY' || appliedDiscount?.allowedPaymentMethods === 'PREPAID')
+                                ? `Coupon ${appliedDiscount.code} is valid on online prepaid payments only. Remove coupon to select COD.`
+                                : (codEligible ? 'Verification call required prior to dispatch' : 'Available only for verified, serviceable Delhi NCR PIN codes')}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    </label>
+                      </label>
+                    )}
                   </div>
                 </div>
               </div>
@@ -886,46 +975,85 @@ export default function CheckoutPage() {
                     ))}
                   </div>
 
-                  {/* Coupon Box */}
-                  <div className="pt-2 border-t border-[#E4E9F2]">
-                    {!appliedDiscount ? (
-                      <div className="space-y-1.5">
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={discountCodeInput}
-                            onChange={(e) => setDiscountCodeInput(e.target.value)}
-                            placeholder="Discount / Referral Code"
-                            className="h-10 w-full px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-xs uppercase placeholder:normal-case focus:outline-none focus:border-[#1D6FF2]"
-                          />
+                  {/* Applied Coupon or Offers Selector */}
+                  {!hasRentalOrder && (
+                    <div className="pt-2 border-t border-[#E4E9F2] space-y-3">
+                      {appliedDiscount ? (
+                        <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg shrink-0 mt-0.5">
+                              <Tag className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-mono font-bold text-xs text-emerald-950 tracking-wider">
+                                  {appliedDiscount.code}
+                                </span>
+                                {appliedDiscount.badgeText && (
+                                  <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded">
+                                    {appliedDiscount.badgeText}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-emerald-700 font-medium mt-0.5 truncate">
+                                Saving ₹{appliedDiscount.amount.toLocaleString('en-IN')} on this order
+                              </p>
+                            </div>
+                          </div>
                           <button
                             type="button"
-                            onClick={handleApplyDiscount}
-                            className="h-10 px-4 rounded-xl bg-[#0B1F4B] hover:bg-[#162D66] text-white font-bold text-xs transition-colors cursor-pointer shrink-0 flex items-center justify-center"
+                            onClick={removeDiscount}
+                            className="text-xs font-bold text-rose-600 hover:text-rose-800 p-1 rounded hover:bg-rose-50 transition-colors shrink-0 cursor-pointer"
+                            title="Remove coupon"
                           >
-                            Apply
+                            Remove
                           </button>
                         </div>
-                        {discountError && (
-                          <p className="text-[11px] text-rose-600 font-bold">{discountError}</p>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
-                        <div>
-                          <span className="font-bold block">✓ {appliedDiscount.code} Applied</span>
-                          <span className="text-[11px]">{appliedDiscount.message}</span>
+                      ) : (
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsOffersModalOpen(true)}
+                            className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 hover:bg-blue-50 text-[#1D6FF2] transition-colors cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="w-4 h-4 text-[#1D6FF2] animate-pulse" />
+                              <span className="text-xs font-bold text-[#0B1F4B]">View Available Offers</span>
+                            </div>
+                            <span className="text-[11px] font-bold text-[#1D6FF2] group-hover:translate-x-0.5 transition-transform">
+                              Select →
+                            </span>
+                          </button>
+
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={discountCodeInput}
+                              onChange={(e) => setDiscountCodeInput(e.target.value)}
+                              placeholder="Coupon / Referral Code"
+                              className="h-10 w-full px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-xs uppercase placeholder:normal-case focus:outline-none focus:border-[#1D6FF2]"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleApplyDiscount}
+                              className="h-10 px-4 rounded-xl bg-[#0B1F4B] hover:bg-[#162D66] text-white font-bold text-xs transition-colors cursor-pointer shrink-0 flex items-center justify-center"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                          {discountError && (
+                            <p className="text-[11px] text-rose-600 font-bold">{discountError}</p>
+                          )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={removeDiscount}
-                          className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer ml-2"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
+
+                  {hasMixedCart && (
+                    <p role="alert" className="text-sm font-semibold text-rose-700">
+                      Buy and rent items must be checked out separately. Remove one type of item to continue.
+                    </p>
+                  )}
 
                   {/* Calculations */}
                   <div className="space-y-2.5 text-xs pt-2 border-t border-[#E4E9F2]">
@@ -959,18 +1087,22 @@ export default function CheckoutPage() {
                   {/* Total Amount */}
                   <div className="pt-3 border-t border-[#E2E8F0] flex items-baseline justify-between">
                     <div>
-                      <span className="text-sm font-bold text-[#111827] block">Final Payable</span>
-                      <span className="text-[10px] text-[#475569]">All Taxes &amp; Shipping Included</span>
+                      <span className="text-sm font-bold text-[#111827] block">{hasRentalOrder ? 'First month payment' : 'Estimated total'}</span>
+                      <span className="text-[10px] text-[#475569]">
+                        {hasRentalOrder ? 'Final amount, including applicable tax, is calculated by the server' : 'Applicable tax is calculated by the server before payment'}
+                      </span>
                     </div>
-                    <span className="text-2xl font-bold text-[#111827] tabular-nums">
-                      ₹{finalAmount.toLocaleString('en-IN')}
-                    </span>
+                    {!hasRentalOrder && (
+                      <span className="text-2xl font-bold text-[#111827] tabular-nums">
+                        ₹{finalAmount.toLocaleString('en-IN')}
+                      </span>
+                    )}
                   </div>
 
                   {/* Submit CTA */}
                   <button
                     type="submit"
-                    disabled={isSubmitting || cartSyncing || !!cartSyncError || authLoading || (canUseSavedAddresses && savedAddressesLoading) || isVerifyingPincode || !pincodeVerification?.valid || !pincodeVerification.serviceable}
+                    disabled={isSubmitting || cartSyncing || !!cartSyncError || authLoading || (canUseSavedAddresses && savedAddressesLoading) || isVerifyingPincode || !pincodeVerification?.valid || !pincodeVerification.serviceable || hasMixedCart}
                     className="w-full h-11 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs active:scale-95 transition-all text-center cursor-pointer"
                   >
                     {isSubmitting ? (
@@ -979,7 +1111,7 @@ export default function CheckoutPage() {
                         Processing Order...
                       </span>
                     ) : (
-                      <span>🔒 Place Order • ₹{finalAmount.toLocaleString('en-IN')}</span>
+                      <span>{hasRentalOrder ? '🔒 Continue to AutoPay Setup' : `🔒 Place Order • ₹${finalAmount.toLocaleString('en-IN')}`}</span>
                     )}
                   </button>
                   {cartSyncError && <p role="alert" className="text-xs text-red-600">{cartSyncError} <button type="button" onClick={() => window.location.reload()} className="font-bold underline">Retry</button></p>}
@@ -1005,6 +1137,30 @@ export default function CheckoutPage() {
           </form>
         </div>
       </div>
+
+      <CouponOffersModal
+        open={isOffersModalOpen}
+        onClose={() => setIsOffersModalOpen(false)}
+        items={apiItems}
+        paymentMethod={paymentMethod}
+        appliedCode={appliedDiscount?.code || null}
+        onApplyCoupon={(code, preview) => {
+          const allowedMethods = preview.coupon?.allowedPaymentMethods;
+          setAppliedDiscount({
+            code,
+            amount: preview.savingsAmount,
+            message: preview.message,
+            type: 'coupon',
+            badgeText: preview.coupon?.badgeText,
+            allowedPaymentMethods: allowedMethods,
+          });
+          if (allowedMethods === 'ONLINE_ONLY' || allowedMethods === 'PREPAID') {
+            setPaymentMethod('razorpay');
+          }
+          setDiscountCodeInput('');
+          setDiscountError(null);
+        }}
+      />
     </CustomerLayout>
   );
 }

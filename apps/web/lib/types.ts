@@ -39,6 +39,14 @@ export interface ProductVariant {
   price: number;
   compareAtPrice?: number | null;
   leasePriceMonthly?: number | null;
+  rentalPrices?: any[];
+  rentalPlans?: Array<{
+    tenureMonths: 1 | 3 | 6 | 12 | 24;
+    monthlyPrice: number;
+    totalRent: number;
+    securityDeposit?: number;
+    deliveryCharge?: number;
+  }>;
   stock: number;
   allowBackorder?: boolean;
   isActive: boolean;
@@ -75,6 +83,14 @@ export interface Product {
   isFeatured: boolean;
   isNewArrival: boolean;
   leasePriceMonthly?: number | null;
+  rentalPrices?: any[];
+  rentalPlans?: Array<{
+    tenureMonths: 1 | 3 | 6 | 12 | 24;
+    monthlyPrice: number;
+    totalRent: number;
+    securityDeposit?: number;
+    deliveryCharge?: number;
+  }>;
   bulkSellPrice?: number | null;
   bulkLeasePrice?: number | null;
   tags?: string | null;
@@ -110,7 +126,6 @@ export interface ProductFilterFacets {
   totalCount: number;
 }
 
-
 export interface CartItem {
   id: string;
   cartId?: string;
@@ -120,6 +135,7 @@ export interface CartItem {
   quantity: number;
   priceAtAdd: number;
   purchaseMode?: 'sell' | 'lease';
+  tenureMonths?: 1 | 3 | 6 | 12 | 24 | null;
   configuration?: 'default' | 'ram-16gb' | string;
   hasWarranty?: boolean;
   warrantyPrice?: number;
@@ -209,6 +225,12 @@ export interface OrderItem {
   product?: Product;
   warrantyStatus?: string | null;
   warrantyValidUntil?: string | null;
+  status?: string;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
+  cancelledBy?: string | null;
+  refundAmount?: number | null;
+  refundStatus?: string | null;
 }
 
 export interface Order {
@@ -226,6 +248,31 @@ export interface Order {
   referralCode?: string | null;
   referralDiscount?: number;
   finalAmount: number;
+  taxRate?: number;
+  taxAmount?: number;
+  taxInclusive?: boolean;
+  rentalSubscription?: {
+    id: string;
+    tenureMonths: 1 | 3 | 6 | 12 | 24;
+    monthlyAmount: number;
+    totalCommitment: number;
+    taxRate: number;
+    taxAmount: number;
+    taxInclusive: boolean;
+    razorpaySubscriptionId?: string | null;
+    mandateStatus: string;
+    status: string;
+    nextChargeAt?: string | null;
+    terminationRequestedAt?: string | null;
+    cancelledAt?: string | null;
+    payments?: Array<{
+      id: string;
+      amount: number;
+      status: string;
+      cycleNumber?: number | null;
+      createdAt: string;
+    }>;
+  } | null;
   shippingAddress?: Record<string, any> | null;
   phone?: string | null;
   email: string;
@@ -254,7 +301,6 @@ export interface OrderListResponse {
   counts?: OrderCounts;
 }
 
-
 export interface NotificationPreferences {
   emailOrderUpdates: boolean;
   emailPromotions: boolean;
@@ -279,7 +325,15 @@ export interface PaymentRecord {
   razorpayOrderId?: string | null;
   amount: number;
   currency?: string;
-  status: 'PENDING' | 'COMPLETED' | 'PAID' | 'CAPTURED' | 'FAILED' | 'REFUNDED' | 'REFUND_PENDING' | string;
+  status:
+    | 'PENDING'
+    | 'COMPLETED'
+    | 'PAID'
+    | 'CAPTURED'
+    | 'FAILED'
+    | 'REFUNDED'
+    | 'REFUND_PENDING'
+    | string;
   refundStatus?: 'NONE' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | string;
   refundAmount?: number;
   createdAt: string;
@@ -291,7 +345,8 @@ export interface PaymentRecord {
 
 export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
 export type UserRole = 'CUSTOMER' | 'ADMIN' | 'MODERATOR' | 'SUPPORT' | 'GUEST';
-export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED';
+export type OrderStatus =
+  'PENDING' | 'CONFIRMED' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED';
 export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
 export type ProductStatus = 'ACTIVE' | 'INACTIVE' | 'DISCONTINUED';
 
@@ -336,6 +391,12 @@ export interface AdminOrderItem {
   price: string | number;
   product?: AdminProduct | Product | null;
   createdAt?: string | Date;
+  status?: string;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
+  cancelledBy?: string | null;
+  refundAmount?: number | string | null;
+  refundStatus?: string | null;
 }
 
 export interface AdminOrder {
@@ -490,5 +551,10 @@ export {
   type SavedReply,
   type SupportSettings,
   type PincodeVerificationResult,
+  type TaxPolicy,
+  type DiscountCode,
+  type CouponRedemption,
+  type CouponType,
+  type CouponStatus,
+  type CouponVisibility,
 } from '@laptopmitra/types';
-

@@ -323,7 +323,7 @@ export default function HomeScreen() {
           <Text style={styles.corporateBannerTag}>B2B &amp; LEASING SOLUTIONS</Text>
           <Text style={styles.corporateBannerTitle}>Bulk Laptops for Growing Teams</Text>
           <Text style={styles.corporateBannerSubtitle}>
-            Unlock tiered wholesale volume rates up to 25% OFF, customized OS imaging, 18% GST input credit invoice, and monthly leasing.
+            Unlock tiered wholesale volume rates up to 25% OFF, customized OS imaging, tax invoices where applicable, and monthly leasing.
           </Text>
           <TouchableOpacity
             style={styles.corporateBannerBtn}

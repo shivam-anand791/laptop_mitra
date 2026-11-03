@@ -108,6 +108,26 @@ export class OrderController {
     return this.orderService.cancelOrder(id, user.id, user.role);
   }
 
+  @Post(':id/items/:itemId/cancel')
+  @ApiOperation({ summary: 'Cancel a single item in an order before dispatch' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiParam({ name: 'itemId', type: String })
+  @ApiResponse({ status: 200, description: 'Order item cancelled successfully' })
+  async cancelOrderItem(
+    @GetUser() user: any,
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.orderService.cancelOrderItem(
+      orderId,
+      itemId,
+      user.id,
+      user.role,
+      reason || 'Customer requested item cancellation',
+    );
+  }
+
   @Post(':id/return')
   @ApiOperation({ summary: 'Request return / replacement for a delivered order' })
   @ApiParam({ name: 'id', type: String })

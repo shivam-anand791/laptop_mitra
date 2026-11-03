@@ -39,6 +39,7 @@ export interface ProductVariant {
   price: number;
   compareAtPrice?: number | null;
   leasePriceMonthly?: number | null;
+  rentalPlans?: RentalPlan[];
   stock: number;
   allowBackorder?: boolean;
   isActive: boolean;
@@ -63,6 +64,7 @@ export interface Product {
   isFeatured: boolean;
   isNewArrival: boolean;
   leasePriceMonthly?: number | null;
+  rentalPlans?: RentalPlan[];
   bulkSellPrice?: number | null;
   bulkLeasePrice?: number | null;
   tags?: string | null;
@@ -101,6 +103,7 @@ export interface CartItem {
   quantity: number;
   priceAtAdd: number;
   purchaseMode?: 'sell' | 'lease';
+  tenureMonths?: RentalTenureMonths | null;
   configuration?: 'default' | 'ram-16gb' | string;
   hasWarranty?: boolean;
   warrantyPrice?: number;
@@ -186,12 +189,19 @@ export interface OrderItem {
   quantity: number;
   price: number;
   purchaseMode?: 'sell' | 'lease';
+  tenureMonths?: RentalTenureMonths | null;
   configuration?: 'default' | 'ram-16gb' | string;
   hasWarranty?: boolean;
   warrantyPrice?: number;
   product?: Product;
   warrantyStatus?: string | null;
   warrantyValidUntil?: string | null;
+  status?: string;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
+  cancelledBy?: string | null;
+  refundAmount?: number | null;
+  refundStatus?: string | null;
 }
 
 export const ORDER_STATUSES = [
@@ -202,13 +212,13 @@ export const ORDER_STATUSES = [
   'CANCELLED',
   'REFUNDED',
 ] as const;
-export type OrderStatus = typeof ORDER_STATUSES[number];
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export const USER_STATUSES = ['ACTIVE', 'SUSPENDED', 'DELETED'] as const;
-export type UserStatus = typeof USER_STATUSES[number];
+export type UserStatus = (typeof USER_STATUSES)[number];
 
 export const USER_ROLES = ['CUSTOMER', 'ADMIN', 'MODERATOR', 'SUPPORT', 'GUEST'] as const;
-export type UserRole = typeof USER_ROLES[number];
+export type UserRole = (typeof USER_ROLES)[number];
 
 export const ORDER_TRANSITION_MAP: Record<OrderStatus, readonly OrderStatus[]> = {
   PENDING: ['CONFIRMED', 'CANCELLED'],
@@ -293,6 +303,11 @@ export interface Order {
   referralCode?: string | null;
   referralDiscount?: number;
   finalAmount: number;
+  taxRate?: number;
+  taxAmount?: number;
+  taxInclusive?: boolean;
+  pricingSnapshot?: Record<string, unknown> | null;
+  rentalSubscription?: RentalSubscriptionSummary | null;
   shippingAddress?: Record<string, any> | null;
   phone?: string | null;
   email: string;
@@ -345,8 +360,6 @@ export interface ProductFilterFacets {
   totalCount: number;
 }
 
-
-
 export interface CreateOrderPayload {
   referralCode?: string;
   discountCode?: string;
@@ -357,8 +370,6 @@ export interface CreateOrderPayload {
   paymentMethod?: 'razorpay' | 'cod' | string;
   idempotencyKey?: string;
 }
-
-
 
 export interface NotificationPreferences {
   emailOrderUpdates: boolean;
@@ -383,20 +394,82 @@ export interface PaymentRecord {
   createdAt: string;
 }
 
+export type CouponType = 'percentage' | 'fixed' | 'free_shipping' | 'free_warranty';
+export type CouponStatus = 'DRAFT' | 'SCHEDULED' | 'ACTIVE' | 'PAUSED' | 'EXPIRED' | 'EXHAUSTED' | 'ARCHIVED';
+export type CouponVisibility = 'PUBLIC' | 'PRIVATE' | 'TARGETED';
+
 export interface DiscountCode {
   id: string;
   code: string;
   name: string;
+  title?: string | null;
   description?: string | null;
-  type: 'percentage' | 'fixed' | 'free_shipping';
+  internalNote?: string | null;
+  type: CouponType | string;
   value: number;
+  maxDiscountCap?: number | null;
+  maxDiscountValue?: number | null;
   minOrderValue?: number | null;
+  maxOrderValue?: number | null;
   maxUses?: number | null;
   uses: number;
   maxUsesPerUser?: number | null;
+  dailyLimit?: number | null;
+  dailyUses?: number;
+  appliesTo?: 'ALL' | 'PRODUCT' | 'CATEGORY' | 'BRAND' | string;
+  appliesToIds?: string | null;
+  excludedProductIds?: string | null;
+  excludedCategoryIds?: string | null;
+  allowRentLease?: boolean;
+  excludeWarranty?: boolean;
+  allowedPaymentMethods?: 'ANY' | 'ONLINE_ONLY' | 'COD_ONLY' | 'PREPAID' | string;
+  firstOrderOnly?: boolean;
+  targetedUserIds?: string | null;
+  targetPincodes?: string | null;
+  minQuantity?: number | null;
+  canCombineWithReferral?: boolean;
+  status: CouponStatus | string;
+  visibility: CouponVisibility | string;
+  badgeText?: string | null;
+  terms?: string | null;
+  highlight?: boolean;
   isActive: boolean;
   validFrom?: Date | string | null;
   validUntil?: Date | string | null;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+  _count?: {
+    redemptions?: number;
+  };
+}
+
+export interface CouponRedemption {
+  id: string;
+  discountCodeId: string;
+  userId: string;
+  orderId: string;
+  status: 'REDEEMED' | 'RESTORED';
+  discountType: string;
+  discountValue: number;
+  discountAmount: number | string;
+  orderSubtotal: number | string;
+  allocatedLines?: any;
+  restoredAt?: string | null;
+  restorationReason?: string | null;
+  createdAt: string;
+  user?: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+  };
+  order?: {
+    id: string;
+    orderNumber: string;
+    status: string;
+    paymentStatus: string;
+    finalAmount: number;
+  };
 }
 
 export interface AdminSettings {
@@ -408,6 +481,11 @@ export interface AdminSettings {
   freeShippingThreshold: number;
   standardDeliveryDays: string;
   expressDeliveryDays: string;
+  gstEnabled: boolean;
+  gstRate: number;
+  gstAppliesToPurchases: boolean;
+  gstAppliesToRentals: boolean;
+  gstPriceInclusive: boolean;
 }
 
 export type UpdateAdminSettingsDto = Partial<AdminSettings>;
@@ -563,10 +641,10 @@ export const TICKET_STATUSES = [
   'CLOSED',
   'MERGED',
 ] as const;
-export type TicketStatus = typeof TICKET_STATUSES[number];
+export type TicketStatus = (typeof TICKET_STATUSES)[number];
 
 export const TICKET_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
-export type TicketPriority = typeof TICKET_PRIORITIES[number];
+export type TicketPriority = (typeof TICKET_PRIORITIES)[number];
 
 export const TICKET_CATEGORIES = [
   'ORDER_INQUIRY',
@@ -578,7 +656,7 @@ export const TICKET_CATEGORIES = [
   'WARRANTY_CLAIM',
   'GENERAL_INQUIRY',
 ] as const;
-export type TicketCategory = typeof TICKET_CATEGORIES[number] | string;
+export type TicketCategory = (typeof TICKET_CATEGORIES)[number] | string;
 
 export const TICKET_EVENT_TYPES = [
   'CREATED',
@@ -597,7 +675,7 @@ export const TICKET_EVENT_TYPES = [
   'RESOLVED',
   'CLOSED',
 ] as const;
-export type TicketEventType = typeof TICKET_EVENT_TYPES[number];
+export type TicketEventType = (typeof TICKET_EVENT_TYPES)[number];
 
 export interface SupportTicket {
   id: string;
@@ -713,7 +791,7 @@ export interface UpdateTicketDto {
 
 // Returns & Refunds
 export const RETURN_TYPES = ['REFUND', 'REPLACEMENT'] as const;
-export type ReturnType = typeof RETURN_TYPES[number];
+export type ReturnType = (typeof RETURN_TYPES)[number];
 
 export const RETURN_STATUSES = [
   'REQUESTED',
@@ -725,7 +803,7 @@ export const RETURN_STATUSES = [
   'REPLACED',
   'CANCELLED',
 ] as const;
-export type ReturnStatus = typeof RETURN_STATUSES[number];
+export type ReturnStatus = (typeof RETURN_STATUSES)[number];
 
 export interface ReturnItem {
   id: string;
@@ -854,76 +932,56 @@ export interface SupportSettings {
   updatedAt: Date | string;
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // Rental / Lease Duration & Pricing Structure
 // ---------------------------------------------------------------------------
 
-export type RentalTenureMonths = 3 | 6 | 12 | 24;
+export type RentalTenureMonths = 1 | 3 | 6 | 12 | 24;
 
-export interface RentalPlanCalculation {
+export interface RentalPlan {
   tenureMonths: RentalTenureMonths;
-  label: string;
-  monthlyRate: number;
+  monthlyPrice: number;
   totalRent: number;
-  refundableDeposit: number;
-  discountPercentage: number;
-  isBestValue: boolean;
-  savingsVsShortTerm: number;
+  securityDeposit?: number;
+  deliveryCharge?: number;
+  percentage: number;
+  approvedAt: Date | string;
 }
 
-export function calculateRentalPlans(base12MonthRate: number): RentalPlanCalculation[] {
-  const rate12 = Math.round(base12MonthRate);
-  const rate3 = Math.round(base12MonthRate * 1.28);
-  const rate6 = Math.round(base12MonthRate * 1.15);
-  const rate24 = Math.round(base12MonthRate * 0.82);
+export interface TaxPolicy {
+  enabled: boolean;
+  rate: number;
+  appliesToPurchases: boolean;
+  appliesToRentals: boolean;
+  priceInclusive: boolean;
+}
 
-  const deposit = Math.max(2500, Math.round((base12MonthRate * 1.2) / 500) * 500);
-
-  return [
-    {
-      tenureMonths: 3,
-      label: '3 Months (Flex)',
-      monthlyRate: rate3,
-      totalRent: rate3 * 3,
-      refundableDeposit: deposit,
-      discountPercentage: 0,
-      isBestValue: false,
-      savingsVsShortTerm: 0,
-    },
-    {
-      tenureMonths: 6,
-      label: '6 Months',
-      monthlyRate: rate6,
-      totalRent: rate6 * 6,
-      refundableDeposit: deposit,
-      discountPercentage: Math.round(((rate3 - rate6) / rate3) * 100),
-      isBestValue: false,
-      savingsVsShortTerm: (rate3 - rate6) * 6,
-    },
-    {
-      tenureMonths: 12,
-      label: '12 Months',
-      monthlyRate: rate12,
-      totalRent: rate12 * 12,
-      refundableDeposit: deposit,
-      discountPercentage: Math.round(((rate3 - rate12) / rate3) * 100),
-      isBestValue: true,
-      savingsVsShortTerm: (rate3 - rate12) * 12,
-    },
-    {
-      tenureMonths: 24,
-      label: '24 Months (Enterprise)',
-      monthlyRate: rate24,
-      totalRent: rate24 * 24,
-      refundableDeposit: deposit,
-      discountPercentage: Math.round(((rate3 - rate24) / rate3) * 100),
-      isBestValue: false,
-      savingsVsShortTerm: (rate3 - rate24) * 24,
-    },
-  ];
+export interface RentalSubscriptionSummary {
+  id: string;
+  orderId: string;
+  tenureMonths: RentalTenureMonths;
+  monthlyAmount: number;
+  totalCommitment: number;
+  taxRate: number;
+  taxAmount: number;
+  taxInclusive: boolean;
+  razorpaySubscriptionId?: string | null;
+  mandateStatus: string;
+  status: string;
+  nextChargeAt?: Date | string | null;
+  terminationRequestedAt?: Date | string | null;
+  cancelledAt?: Date | string | null;
+  payments?: Array<{
+    id: string;
+    razorpayPaymentId: string;
+    amount: number;
+    status: string;
+    taxRate: number;
+    taxAmount: number;
+    taxInclusive: boolean;
+    cycleNumber?: number | null;
+    createdAt: Date | string;
+  }>;
 }
 
 export interface PincodeVerificationResult {
@@ -938,3 +996,170 @@ export interface PincodeVerificationResult {
   codAvailable: boolean;
   message: string;
 }
+
+
+// ---------------------------------------------------------------------------
+// Situation-Aware "Need Help" Engine Types
+// ---------------------------------------------------------------------------
+
+export type ItemSituationKey =
+  | 'OUTRIGHT_BEFORE_DISPATCH'
+  | 'OUTRIGHT_IN_TRANSIT'
+  | 'OUTRIGHT_DELIVERED_RETURN_WINDOW'
+  | 'OUTRIGHT_DELIVERED_IN_WARRANTY'
+  | 'OUTRIGHT_DELIVERED_BUYBACK_ELIGIBLE'
+  | 'OUTRIGHT_DELIVERED_OUT_OF_WARRANTY'
+  | 'OUTRIGHT_RETURN_ACTIVE'
+  | 'OUTRIGHT_BUYBACK_ACTIVE'
+  | 'LEASE_PENDING_DISPATCH'
+  | 'LEASE_ACTIVE'
+  | 'ORDER_CANCELLED'
+  | 'GENERAL_HELP';
+
+export type ActionCategory =
+  | 'RETURN'
+  | 'WARRANTY'
+  | 'BUYBACK'
+  | 'ORDER_CHANGE'
+  | 'LEASE'
+  | 'INVOICE'
+  | 'SUPPORT'
+  | 'GENERAL'
+  | 'CORPORATE';
+
+export type ActionType = 'SELF_SERVE' | 'REQUEST_FORM' | 'TICKET' | 'MODAL' | 'LINK';
+
+export const ACTION_HANDLERS_WEB = [
+  'CANCEL_ORDER',
+  'REQUEST_ADDRESS_CHANGE',
+  'REQUEST_PHONE_CHANGE',
+  'REQUEST_RETURN',
+  'CLAIM_WARRANTY',
+  'REQUEST_BUYBACK',
+  'DOWNLOAD_INVOICE',
+  'TRACK_SHIPMENT',
+  'REQUEST_CALLBACK',
+  'CREATE_TICKET',
+  'LEASE_BUYOUT',
+  'LEASE_MAINTENANCE',
+  'CORP_GST_CORRECTION',
+  'CORP_ADD_UNITS',
+  'CORP_ACCOUNT_MANAGER_CALLBACK',
+] as const;
+
+export const ACTION_HANDLERS_MOBILE = [
+  'CANCEL_ORDER',
+  'REQUEST_ADDRESS_CHANGE',
+  'REQUEST_PHONE_CHANGE',
+  'REQUEST_RETURN',
+  'CLAIM_WARRANTY',
+  'REQUEST_BUYBACK',
+  'REQUEST_CALLBACK',
+  'CREATE_TICKET',
+] as const;
+
+export function isActionImplemented(actionId: string, platform: 'web' | 'mobile' = 'web'): boolean {
+  if (platform === 'mobile') {
+    return (ACTION_HANDLERS_MOBILE as readonly string[]).includes(actionId);
+  }
+  return (ACTION_HANDLERS_WEB as readonly string[]).includes(actionId);
+}
+
+export interface ItemAction {
+  id: string;
+  label: string;
+  category: ActionCategory;
+  enabled: boolean;
+  disabledReason?: string;
+  actionType: ActionType;
+  targetUrl?: string;
+}
+
+export interface SituationResponse {
+  orderItemId: string;
+  itemStatus?: string;
+  orderId: string;
+  orderNumber: string;
+  productTitle: string;
+  quantity: number;
+  unitPrice: number;
+  purchaseMode: 'sell' | 'lease';
+  situation: ItemSituationKey;
+  situationTitle: string;
+  situationDescription: string;
+  actions: ItemAction[];
+  delivery: {
+    status: string;
+    deliveredAt?: string | null;
+    daysSinceDelivery?: number | null;
+  } | null;
+  warranty: {
+    hasWarranty: boolean;
+    warrantyDays: number;
+    warrantyExpiresAt?: string | null;
+    isInWarranty: boolean;
+  };
+  buyback: {
+    isEligible: boolean;
+    deviceAgeMonths?: number | null;
+    tierPercentage?: number | null;
+    estimatedPayout?: number | null;
+    convenienceCharge?: number;
+    ineligibilityReason?: string | null;
+    activeRequest?: {
+      id: string;
+      requestNumber: string;
+      status: string;
+      initialQuotedAmount: number;
+      revisedQuotedAmount?: number | null;
+      finalPayoutAmount?: number | null;
+    } | null;
+  } | null;
+  returnState: {
+    hasActiveReturn: boolean;
+    returnRequest?: {
+      id: string;
+      returnNumber: string;
+      status: string;
+      type: string;
+    } | null;
+  };
+  businessProfile: {
+    isBusinessAccount: boolean;
+    companyName?: string | null;
+    priorityEnabled: boolean;
+  } | null;
+  invoice: {
+    canDownload: boolean;
+    ineligibilityReason?: string | null;
+  };
+  leaseContract?: {
+    id: string;
+    contractNumber: string;
+    status: string;
+    tenureMonths: number;
+    monthlyAmount: number;
+    buyoutQuoteAmount?: number | null;
+    buyoutQuoteExpiresAt?: string | null;
+    buyoutStatus?: string | null;
+    startDate?: string;
+    endDate?: string;
+    installments?: Array<{
+      id: string;
+      installmentNumber: number;
+      dueDate: string;
+      amount: number;
+      status: string;
+      paidAt?: string | null;
+    }>;
+  } | null;
+}
+
+export const PHP_BUYBACK_TIERS = [
+  { fromMonths: 0, toMonths: 6, percentage: 70 },
+  { fromMonths: 6, toMonths: 12, percentage: 60 },
+  { fromMonths: 12, toMonths: 18, percentage: 50 },
+  { fromMonths: 18, toMonths: 24, percentage: 40 },
+  { fromMonths: 24, toMonths: 30, percentage: 30 },
+  { fromMonths: 30, toMonths: 36, percentage: 20 },
+] as const;

@@ -75,6 +75,7 @@ describe('Product Filters (SCH-02) - Dynamic Facets Extraction', () => {
     prismaMock = {
       product: {
         findMany: jest.fn().mockResolvedValue(mockActiveProducts),
+        findFirst: jest.fn(),
       },
     };
 
@@ -88,6 +89,55 @@ describe('Product Filters (SCH-02) - Dynamic Facets Extraction', () => {
 
     controller = module.get<ProductController>(ProductController);
     service = module.get<ProductService>(ProductService);
+  });
+
+  it('only exposes manually approved rental prices with an approval audit', async () => {
+    prismaMock.product.findFirst.mockResolvedValue({
+      id: 'prod-1',
+      name: 'Laptop',
+      slug: 'laptop',
+      price: 1000,
+      rentalPrices: [
+        {
+          tenureMonths: 12,
+          monthlyPrice: 100,
+          securityDeposit: 0,
+          deliveryCharge: 0,
+          percentage: 10,
+          status: 'APPROVED',
+          sourceType: 'MANUAL',
+          approvedAt: new Date('2026-01-01'),
+        },
+        {
+          tenureMonths: 6,
+          monthlyPrice: 90,
+          securityDeposit: 0,
+          deliveryCharge: 0,
+          percentage: 9,
+          status: 'APPROVED',
+          sourceType: 'ESTIMATED',
+          approvedAt: new Date('2026-01-01'),
+        },
+      ],
+      variants: [],
+    });
+
+    const product = await service.findOne('prod-1');
+    const rentalPriceFilter =
+      prismaMock.product.findFirst.mock.calls[0][0].include.rentalPrices.where;
+
+    expect(rentalPriceFilter).toEqual({
+      status: 'APPROVED',
+      sourceType: 'MANUAL',
+      auditHistory: { some: { action: 'APPROVED' } },
+    });
+    expect(product.rentalPlans).toEqual([
+      expect.objectContaining({
+        tenureMonths: 12,
+        monthlyPrice: 100,
+        totalRent: 1200,
+      }),
+    ]);
   });
 
   describe('ProductService.getFilterFacets()', () => {

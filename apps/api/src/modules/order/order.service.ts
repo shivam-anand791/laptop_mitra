@@ -19,6 +19,9 @@ import { DiscountService } from '../discount/discount.service';
 import { PaymentService } from '../payments/payment.service';
 import { AdminService } from '../admin/admin.service';
 import { PincodeService } from '../shipping/pincode.service';
+import { TaxService } from '../tax/tax.service';
+import { LeaseService } from './lease.service';
+import { Prisma } from '@prisma/client';
 import { allowInMemoryFallback } from '../../common/fallback';
 
 // In-memory orders for fallback
@@ -37,8 +40,10 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     private notificationService: NotificationService,
     private discountService: DiscountService,
     private pincodeService: PincodeService,
+    private taxService: TaxService,
     private paymentService?: PaymentService,
     @Optional() private adminService?: AdminService,
+    @Optional() private leaseService?: LeaseService,
   ) {}
 
   onModuleInit() {
@@ -88,6 +93,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
         quantity: it.quantity,
         price: itPrice,
         purchaseMode: it.purchaseMode || 'sell',
+        tenureMonths: it.tenureMonths || null,
         configuration: it.configuration || 'default',
         hasWarranty: !!it.hasWarranty,
         warrantyPrice: itWarrantyPrice,
@@ -124,6 +130,23 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
       referralCode: o.referralCode || null,
       referralDiscount: o.referralDiscount ? Number(o.referralDiscount) : 0,
       finalAmount,
+      taxRate: Number(o.taxRate || 0),
+      taxAmount: Number(o.taxAmount || 0),
+      taxInclusive: !!o.taxInclusive,
+      pricingSnapshot: o.pricingSnapshot || null,
+      rentalSubscription: o.rentalSubscription ? {
+        ...o.rentalSubscription,
+        monthlyAmount: Number(o.rentalSubscription.monthlyAmount),
+        totalCommitment: Number(o.rentalSubscription.totalCommitment),
+        taxRate: Number(o.rentalSubscription.taxRate),
+        taxAmount: Number(o.rentalSubscription.taxAmount),
+        payments: (o.rentalSubscription.payments || []).map((payment: any) => ({
+          ...payment,
+          amount: Number(payment.amount),
+          taxRate: Number(payment.taxRate),
+          taxAmount: Number(payment.taxAmount),
+        })),
+      } : null,
       shippingAddress: parsedShipping,
       phone: o.phone || null,
       email: o.email || '',
@@ -255,8 +278,30 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
         });
         if (!cart?.items?.length) throw new BadRequestException('Cart is empty');
 
+        const purchaseModes = new Set(cart.items.map((item: any) => item.purchaseMode === 'lease' ? 'lease' : 'sell'));
+        if (purchaseModes.size !== 1) {
+          throw new BadRequestException('Buy and rent items must be checked out separately. Your cart was not changed.');
+        }
+        const transactionType = purchaseModes.has('lease') ? 'rental' : 'purchase';
+        const resolvedPaymentMethod = transactionType === 'rental' ? 'razorpay_subscription' : paymentMethod;
+        if (transactionType === 'rental' && paymentMethod === 'cod') {
+          throw new BadRequestException('Rental orders require a Razorpay AutoPay mandate and cannot use COD.');
+        }
+        if (transactionType === 'rental' && (discountCode?.trim() || referralCode?.trim())) {
+          throw new BadRequestException('Discounts and referral codes are not available for rental subscriptions.');
+        }
+
+        const rentalItems = cart.items.filter((item: any) => item.purchaseMode === 'lease');
+        if (rentalItems.some((item: any) => ![1, 3, 6, 12, 24].includes(Number(item.tenureMonths)))) {
+          throw new BadRequestException('Every rental item must have a supported tenure selected.');
+        }
+        const rentalTenures = new Set(rentalItems.map((item: any) => Number(item.tenureMonths)));
+        if (rentalTenures.size > 1) {
+          throw new BadRequestException('All rental items in one subscription must use the same tenure.');
+        }
+
         let subtotalPaise = 0;
-        const pricedItems = cart.items.map((item: any) => {
+        const pricedItems = await Promise.all(cart.items.map(async (item: any) => {
           const quantity = Number(item.quantity);
           if (!Number.isSafeInteger(quantity) || quantity <= 0) {
             throw new BadRequestException('Cart contains an invalid quantity');
@@ -278,21 +323,49 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
           }
 
           let unitPrice: number;
+          let tenureMonths: number | null = null;
           if (variant) {
-            const variantPrice = mode === 'lease' ? variant.leasePriceMonthly : variant.price;
-            if (variantPrice === null || variantPrice === undefined) {
-              throw new BadRequestException(`Configuration "${variant.name}" does not have a fixed monthly lease price. Please request a quote.`);
-            }
-            unitPrice = Number(variantPrice);
-          } else {
-            let basePrice = Number(item.product.price);
             if (mode === 'lease') {
-              if (item.product.leasePriceMonthly === null || item.product.leasePriceMonthly === undefined) {
-                throw new BadRequestException(`Product "${item.product.name}" does not have a fixed monthly lease price. Please request a quote.`);
+              tenureMonths = Number(item.tenureMonths);
+              const approvedPrice = await transaction.rentalPrice.findFirst({
+                where: {
+                  productId: item.productId,
+                  variantId: variant.id,
+                  tenureMonths,
+                  status: 'APPROVED',
+                  sourceType: 'MANUAL',
+                  auditHistory: { some: { action: 'APPROVED' } },
+                },
+                orderBy: { approvedAt: 'desc' },
+              });
+              if (!approvedPrice?.approvedAt) {
+                throw new BadRequestException(`Configuration "${variant.name}" has no approved rental price for this tenure.`);
               }
-              basePrice = Number(item.product.leasePriceMonthly);
+              unitPrice = Number(approvedPrice.monthlyPrice);
+            } else {
+              unitPrice = Number(variant.price);
             }
-            unitPrice = basePrice;
+          } else {
+            if (mode === 'lease') {
+              tenureMonths = Number(item.tenureMonths);
+              const approvedPrice = await transaction.rentalPrice.findFirst({
+                where: {
+                  productId: item.productId,
+                  variantId: null,
+                  tenureMonths,
+                  status: 'APPROVED',
+                  sourceType: 'MANUAL',
+                  auditHistory: { some: { action: 'APPROVED' } },
+                },
+                orderBy: { approvedAt: 'desc' },
+              });
+              if (!approvedPrice?.approvedAt) {
+                throw new BadRequestException(`Product "${item.product.name}" has no approved rental price for this tenure.`);
+              }
+              unitPrice = Number(approvedPrice.monthlyPrice);
+            } else {
+              unitPrice = Number(item.product.price);
+            }
           }
           if (!Number.isFinite(unitPrice) || unitPrice < 0) {
             throw new BadRequestException('A product in your cart has invalid pricing');
@@ -310,12 +383,13 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
             unitPricePaise,
             warrantyUnitPricePaise,
             purchaseMode: mode,
+            tenureMonths,
             configuration: config,
             variant,
             hasWarranty: !!item.hasWarranty && mode === 'sell',
             product: item.product,
           };
-        });
+        }));
         if (!Number.isSafeInteger(subtotalPaise) || subtotalPaise <= 0) {
           throw new BadRequestException('Order total is invalid');
         }
@@ -342,8 +416,17 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
           userId,
           pricedItems,
           subtotalPaise,
+          referralCode,
+          resolvedPaymentMethod,
         );
         const couponDiscountPaise = coupon?.discountAmountPaise || 0;
+
+        const lineAllocationMap = new Map<string, number>();
+        if (coupon && coupon.allocatedLines) {
+          for (const line of coupon.allocatedLines) {
+            lineAllocationMap.set(line.id, line.allocatedDiscountPaise);
+          }
+        }
 
         let referral: any = null;
         let referralDiscountPaise = 0;
@@ -387,9 +470,12 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
         }
 
         const discountPaise = couponDiscountPaise + referralDiscountPaise;
-        const finalPaise = Math.max(0, subtotalPaise - discountPaise);
+        const afterDiscountPaise = Math.max(0, subtotalPaise - discountPaise);
+        const taxConfiguration = await this.taxService.getConfiguration();
+        const tax = this.taxService.calculate(afterDiscountPaise, transactionType, taxConfiguration);
+        const finalPaise = tax.totalAmountPaise;
         const now = new Date();
-        const reservationExpiresAt = paymentMethod === 'razorpay'
+        const reservationExpiresAt = resolvedPaymentMethod !== 'cod'
           ? new Date(now.getTime() + OrderService.RESERVATION_TTL_MS)
           : null;
         const created = await transaction.order.create({
@@ -397,13 +483,28 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
             userId,
             status: 'PENDING',
             paymentStatus: 'PENDING',
-            paymentMethod,
+            paymentMethod: resolvedPaymentMethod,
             subtotal: (subtotalPaise / 100).toFixed(2),
             discountAmount: (discountPaise / 100).toFixed(2),
             discountType: coupon && referral
               ? `${coupon.type}+referral`
               : coupon?.type || (referralDiscountPaise ? 'referral' : null),
             finalAmount: (finalPaise / 100).toFixed(2),
+            taxRate: tax.taxRate.toFixed(2),
+            taxAmount: (tax.taxAmountPaise / 100).toFixed(2),
+            taxInclusive: tax.taxInclusive,
+            pricingSnapshot: {
+              version: 1,
+              currency: 'INR',
+              transactionType,
+              subtotalPaise,
+              discountPaise,
+              taxableAmountPaise: tax.taxableAmountPaise,
+              taxRate: tax.taxRate,
+              taxAmountPaise: tax.taxAmountPaise,
+              taxInclusive: tax.taxInclusive,
+              totalAmountPaise: finalPaise,
+            },
             shippingAddress: shippingAddress
               ? { ...shippingAddress, ...(idempotencyKey ? { _idempotencyKey: idempotencyKey.trim() } : {}) }
               : (idempotencyKey ? { _idempotencyKey: idempotencyKey.trim() } : undefined),
@@ -412,31 +513,68 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
             notes: notes || null,
             referralCode: referralDiscountPaise ? referral.referralCode : null,
             referralDiscount: (referralDiscountPaise / 100).toFixed(2),
-            inventoryStatus: paymentMethod === 'cod' ? 'CONSUMED' : 'RESERVED',
+            inventoryStatus: resolvedPaymentMethod === 'cod' ? 'CONSUMED' : 'RESERVED',
             reservationExpiresAt,
             items: {
-              create: pricedItems.map((item: any) => ({
-                productId: item.productId,
-                ...(item.variant ? {
-                  variantId: item.variant.id,
-                  variantSku: item.variant.sku,
-                  variantName: item.variant.name,
-                  variantAttributes: item.variant.attributes,
-                } : {}),
-                quantity: item.quantity,
-                price: (item.unitPricePaise / 100).toFixed(2),
-                purchaseMode: item.purchaseMode,
-                configuration: item.configuration,
-                hasWarranty: item.hasWarranty,
-                warrantyPrice: (item.warrantyUnitPricePaise / 100).toFixed(2),
-              })),
+              create: pricedItems.map((item: any) => {
+                const itemAllocatedPaise = lineAllocationMap.get(item.variant?.id || item.productId) || 0;
+                const itemAllocatedRupees = itemAllocatedPaise / 100;
+                const unitNetRupees = Math.max(0, (item.unitPricePaise / 100) - (itemAllocatedRupees / (item.quantity || 1)));
+                return {
+                  productId: item.productId,
+                  ...(item.variant ? {
+                    variantId: item.variant.id,
+                    variantSku: item.variant.sku,
+                    variantName: item.variant.name,
+                    variantAttributes: item.variant.attributes,
+                  } : {}),
+                  quantity: item.quantity,
+                  price: (item.unitPricePaise / 100).toFixed(2),
+                  allocatedDiscount: itemAllocatedRupees.toFixed(2),
+                  netPrice: unitNetRupees.toFixed(2),
+                  purchaseMode: item.purchaseMode,
+                  tenureMonths: item.tenureMonths,
+                  configuration: item.configuration,
+                  hasWarranty: item.hasWarranty,
+                  warrantyPrice: (item.warrantyUnitPricePaise / 100).toFixed(2),
+                };
+              }),
             },
           },
           include: { items: { include: { product: true } } },
         });
 
+        if (transactionType === 'rental') {
+          const tenureMonths = rentalTenures.values().next().value as number;
+          const monthlyAmount = finalPaise / 100;
+          await transaction.rentalSubscription.create({
+            data: {
+              orderId: created.id,
+              userId,
+              tenureMonths,
+              monthlyAmount: monthlyAmount.toFixed(2),
+              totalCommitment: (monthlyAmount * tenureMonths).toFixed(2),
+              taxRate: tax.taxRate.toFixed(2),
+              taxAmount: (tax.taxAmountPaise / 100).toFixed(2),
+              taxInclusive: tax.taxInclusive,
+              pricingSnapshot: {
+                ...created.pricingSnapshot,
+                monthlyAmountPaise: finalPaise,
+                totalCommitmentPaise: finalPaise * tenureMonths,
+              },
+            },
+          });
+        }
+
         if (coupon) {
-          await this.discountService.consumeOrderDiscount(transaction, coupon.id, userId, created.id);
+          await this.discountService.consumeOrderDiscount(
+            transaction,
+            coupon.id,
+            userId,
+            created.id,
+            subtotalPaise / 100,
+            coupon.allocatedLines,
+          );
         }
         if (referral && referralDiscountPaise > 0) {
           await transaction.referralRedemption.create({
@@ -502,6 +640,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
           deliveries: true,
           payments: true,
           returnRequests: { orderBy: { createdAt: 'desc' }, take: 1 },
+          rentalSubscription: { include: { payments: { orderBy: { createdAt: 'asc' } } } },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -592,6 +731,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
           deliveries: true,
           payments: true,
           returnRequests: { orderBy: { createdAt: 'desc' }, take: 1 },
+          rentalSubscription: { include: { payments: { orderBy: { createdAt: 'asc' } } } },
         },
       });
       if (dbOrder) {
@@ -666,8 +806,11 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
       if (!['PENDING', 'CONFIRMED'].includes(order.status)) {
         throw new BadRequestException(`Cannot cancel order in status "${order.status}"`);
       }
+      if (order.paymentMethod === 'razorpay_subscription') {
+        throw new BadRequestException('Rental orders cannot be cancelled here. Submit a rental termination request for admin review.');
+      }
 
-      const wasPaid = order.paymentStatus === 'COMPLETED';
+      const wasPaid = order.paymentStatus === 'COMPLETED' || order.paymentStatus === 'PAID';
       if (wasPaid && !order.paymentId) {
         throw new ServiceUnavailableException('Captured payment record is missing');
       }
@@ -730,14 +873,190 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private async releaseOrderPromotions(transaction: any, orderId: string) {
-    const couponRedemption = await transaction.discountRedemption.findUnique({ where: { orderId } });
-    if (couponRedemption) {
-      await transaction.discountCode.updateMany({
-        where: { id: couponRedemption.discountCodeId, uses: { gt: 0 } },
-        data: { uses: { decrement: 1 } },
+  /**
+   * Proposal E: Item-level pre-dispatch cancellation.
+   * Cancels a single order item, proportionally reverses allocated coupon discounts,
+   * refunds warranty add-on, recalculates order totals with original snapshot preservation,
+   * releases item inventory, and cancels the whole order if it was the last active item.
+   */
+  async cancelOrderItem(
+    orderId: string,
+    orderItemId: string,
+    userId: string,
+    userRole: string,
+    reason: string,
+  ): Promise<any> {
+    return this.prisma.$transaction(async (tx: any) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          items: true,
+          payments: true,
+          discountRedemption: { include: { discountCode: true } },
+        },
       });
-      await transaction.discountRedemption.delete({ where: { orderId } });
+
+      if (!order) throw new NotFoundException(`Order with id ${orderId} not found`);
+      if (userRole !== 'ADMIN' && userRole !== 'SUPPORT' && order.userId !== userId) {
+        throw new ForbiddenException('Access denied: You can only cancel items in your own orders');
+      }
+
+      if (!['PENDING', 'CONFIRMED'].includes(order.status)) {
+        throw new BadRequestException(
+          `Cannot cancel items while order is in status "${order.status}". Pre-dispatch cancellation only.`,
+        );
+      }
+
+      const item = order.items.find((it: any) => it.id === orderItemId);
+      if (!item) throw new NotFoundException(`Item ${orderItemId} not found in order ${orderId}`);
+
+      if (item.status === 'CANCELLED') {
+        return {
+          order: this.normalizeOrder(order),
+          cancelledItem: item,
+          message: 'Item has already been cancelled.',
+        };
+      }
+
+      const activeItems = order.items.filter((it: any) => it.status !== 'CANCELLED');
+      const isLastActiveItem = activeItems.length <= 1;
+
+      // Item financial calculations
+      const itemBasePrice = Number(item.price) * item.quantity;
+      const itemWarrantyPrice = item.hasWarranty ? Number(item.warrantyPrice || 0) * item.quantity : 0;
+      const itemGrossTotal = itemBasePrice + itemWarrantyPrice;
+
+      // Proportional discount reversal without invalidating coupon minOrder on remaining items
+      const totalActiveBase = activeItems.reduce(
+        (sum: number, it: any) => sum + Number(it.price) * it.quantity,
+        0,
+      );
+      const allocatedDiscount = totalActiveBase > 0
+        ? Math.round((itemBasePrice / totalActiveBase) * Number(order.discountAmount))
+        : 0;
+
+      const itemNetPayable = Math.max(0, itemGrossTotal - allocatedDiscount);
+
+      const wasPaid = order.paymentStatus === 'COMPLETED' || order.paymentStatus === 'PAID';
+      let refundAmount = 0;
+      let refundStatus = 'NOT_APPLICABLE';
+
+      if (wasPaid) {
+        refundAmount = itemNetPayable;
+        refundStatus = 'REFUND_PENDING';
+      }
+
+      // 1. Release inventory if held
+      const inventoryWasHeld = ['RESERVED', 'CONSUMED'].includes(order.inventoryStatus);
+      if (inventoryWasHeld) {
+        const inventoryModel = item.variantId ? tx.productVariant : tx.product;
+        await inventoryModel.update({
+          where: { id: item.variantId || item.productId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+
+      // 2. If leased item, terminate lease contract and waive installments
+      if (tx.leaseContract) {
+        await tx.leaseContract.updateMany({
+          where: { orderItemId: item.id, status: 'ACTIVE' },
+          data: { status: 'TERMINATED' },
+        });
+      }
+      if (tx.leaseInstallment) {
+        await tx.leaseInstallment.updateMany({
+          where: { contract: { orderItemId: item.id }, status: 'PENDING' },
+          data: { status: 'WAIVED' },
+        });
+      }
+
+      // 3. Update OrderItem
+      const updatedItem = await tx.orderItem.update({
+        where: { id: item.id },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelReason: reason || 'Customer requested item cancellation',
+          cancelledBy: userId,
+          refundAmount: new Prisma.Decimal(refundAmount),
+          refundStatus,
+        },
+      });
+
+      // 4. Record immutable audit record
+      await tx.orderItemCancellation.create({
+        data: {
+          orderItemId: item.id,
+          orderId: order.id,
+          cancelledBy: userId,
+          reason: reason || 'Customer requested item cancellation',
+          refundAmount: new Prisma.Decimal(refundAmount),
+          refundStatus,
+          restockedQuantity: item.quantity,
+        },
+      });
+
+      // 5. Update Order totals
+      if (isLastActiveItem) {
+        const updatedOrder = await tx.order.update({
+          where: { id: order.id },
+          data: {
+            status: 'CANCELLED',
+            paymentStatus: wasPaid ? 'REFUND_PENDING' : order.paymentStatus,
+            inventoryStatus: inventoryWasHeld ? 'RELEASED' : order.inventoryStatus,
+            originalSubtotal: order.originalSubtotal ?? order.subtotal,
+            originalFinalAmount: order.originalFinalAmount ?? order.finalAmount,
+          },
+          include: { items: true, payments: true },
+        });
+        return {
+          order: this.normalizeOrder(updatedOrder),
+          cancelledItem: updatedItem,
+          orderCancelled: true,
+          refundAmount,
+          refundStatus,
+        };
+      } else {
+        const remainingActive = activeItems.filter((it: any) => it.id !== item.id);
+        const newSubtotal = remainingActive.reduce(
+          (sum: number, it: any) =>
+            sum + Number(it.price) * it.quantity + (it.hasWarranty ? Number(it.warrantyPrice || 0) * it.quantity : 0),
+          0,
+        );
+        const newDiscountAmount = Math.max(0, Number(order.discountAmount) - allocatedDiscount);
+        const taxRate = Number(order.taxRate || 0);
+        const newTaxAmount = taxRate > 0
+          ? Math.round((newSubtotal - newDiscountAmount) * (taxRate / 100))
+          : 0;
+        const newFinalAmount = Math.max(0, newSubtotal - newDiscountAmount + newTaxAmount);
+
+        const updatedOrder = await tx.order.update({
+          where: { id: order.id },
+          data: {
+            subtotal: new Prisma.Decimal(newSubtotal),
+            discountAmount: new Prisma.Decimal(newDiscountAmount),
+            taxAmount: new Prisma.Decimal(newTaxAmount),
+            finalAmount: new Prisma.Decimal(newFinalAmount),
+            originalSubtotal: order.originalSubtotal ?? order.subtotal,
+            originalFinalAmount: order.originalFinalAmount ?? order.finalAmount,
+          },
+          include: { items: true, payments: true },
+        });
+
+        return {
+          order: this.normalizeOrder(updatedOrder),
+          cancelledItem: updatedItem,
+          orderCancelled: false,
+          refundAmount,
+          refundStatus,
+        };
+      }
+    });
+  }
+
+  private async releaseOrderPromotions(transaction: any, orderId: string) {
+    if (this.discountService?.restoreOrderDiscount) {
+      await this.discountService.restoreOrderDiscount(transaction, orderId, 'Order cancelled or expired');
     }
     await transaction.referralRedemption.deleteMany({ where: { orderId } });
   }
@@ -747,7 +1066,15 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
       const expired = await (this.prisma as any).order.findMany({
         where: {
           status: 'PENDING',
-          paymentMethod: 'razorpay',
+          OR: [
+            { paymentMethod: 'razorpay' },
+            {
+              paymentMethod: 'razorpay_subscription',
+              rentalSubscription: {
+                is: { status: 'PENDING_AUTHORIZATION', razorpaySubscriptionId: null },
+              },
+            },
+          ],
           paymentStatus: { in: ['PENDING', 'FAILED'] },
           inventoryStatus: 'RESERVED',
           reservationExpiresAt: { lte: now },
@@ -801,6 +1128,13 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Returns are only available for delivered orders within the 7-day replacement window.');
     }
 
+    // Leased items cannot be returned via self-serve returns
+    if (order.items?.some((item: any) => item.purchaseMode === 'lease')) {
+      throw new BadRequestException(
+        'Leased items cannot be returned through self-serve returns. Please raise a lease support ticket to arrange servicing, renewal, or device return.',
+      );
+    }
+
     // Idempotent: if return was already requested, return current status without error
     if (order.returnStatus === 'REQUESTED') {
       return {
@@ -812,13 +1146,18 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     // 7-day window enforcement from delivered timestamp
     const deliveries = (order as any).deliveries || [];
     const delivery = deliveries.length > 0 ? deliveries[0] : null;
-    const deliveredTime = delivery?.deliveredAt
-      ? new Date(delivery.deliveredAt).getTime()
-      : (order.updatedAt ? new Date(order.updatedAt).getTime() : new Date(order.createdAt).getTime());
-    const now = Date.now();
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-
-    if (now - deliveredTime > sevenDaysMs) {
+    // 7-day window enforcement: must use Delivery.deliveredAt, never order.updatedAt
+    const deliveredAt = delivery?.deliveredAt ?? (order.status === 'DELIVERED' ? order.createdAt : null);
+    if (!deliveredAt) {
+      throw new BadRequestException('Order must be delivered before initiating a return request');
+    }
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const deliveredIST = new Date(new Date(deliveredAt).getTime() + IST_OFFSET_MS);
+    const deadlineIST = new Date(deliveredIST);
+    deadlineIST.setUTCDate(deadlineIST.getUTCDate() + 7);
+    deadlineIST.setUTCHours(23, 59, 59, 999);
+    const deadlineUTC = new Date(deadlineIST.getTime() - IST_OFFSET_MS);
+    if (Date.now() > deadlineUTC.getTime()) {
       throw new BadRequestException('Return window has expired. Returns and replacements are only allowed within 7 days of delivery.');
     }
 
@@ -878,10 +1217,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     const order = await this.findOne(id, userId);
     const invoiceNumber = `INV-${order.orderNumber}`;
     const issuedAt = order.createdAt;
-
-    const cgst = Math.round(order.finalAmount * 0.09);
-    const sgst = Math.round(order.finalAmount * 0.09);
-    const taxableAmount = order.finalAmount - (cgst + sgst);
+    const taxAmount = Number(order.taxAmount || 0);
 
     return {
       order,
@@ -895,10 +1231,10 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
         email: 'billing@laptopmitra.com',
       },
       taxBreakdown: {
-        taxableAmount,
-        cgst,
-        sgst,
-        totalTax: cgst + sgst,
+        taxableAmount: Number((Number(order.finalAmount) - taxAmount).toFixed(2)),
+        taxRate: Number(order.taxRate || 0),
+        taxAmount,
+        taxInclusive: !!order.taxInclusive,
         grandTotal: order.finalAmount,
       },
     };

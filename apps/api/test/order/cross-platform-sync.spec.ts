@@ -3,6 +3,7 @@
 import { ForbiddenException, BadRequestException } from '@nestjs/common';
 import { OrderService } from '../../src/modules/order/order.service';
 import { OrderController } from '../../src/modules/order/order.controller';
+import { createNoTaxService } from '../helpers/no-tax-service';
 import { CartService } from '../../src/modules/cart/cart.service';
 
 describe('Cross-Platform Data Synchronization (Web & Mobile)', () => {
@@ -67,6 +68,7 @@ describe('Cross-Platform Data Synchronization (Web & Mobile)', () => {
       notificationServiceMock,
       discountServiceMock,
       { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any,
+      createNoTaxService(),
     );
     orderController = new OrderController(orderService);
   });

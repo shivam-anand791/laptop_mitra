@@ -357,17 +357,34 @@ export class ProductService {
       sortOrder: img.sortOrder || 0,
       createdAt: img.createdAt || new Date().toISOString(),
     }));
-    const variants = (p.variants || []).map((variant: any) => ({
-      ...variant,
-      price: Number(variant.price),
-      compareAtPrice: variant.compareAtPrice === null ? null : Number(variant.compareAtPrice),
-      leasePriceMonthly: variant.leasePriceMonthly === null ? null : Number(variant.leasePriceMonthly),
-      attributes: typeof variant.attributes === 'string' ? JSON.parse(variant.attributes) : variant.attributes || {},
-      images: (variant.images || []).map((image: any) => ({
-        ...image,
-        url: image.url.startsWith('http') || !assetBaseUrl ? image.url : `${assetBaseUrl}/${image.url.replace(/^\//, '')}`,
-      })),
-    }));
+    const rentalPlans = (prices: any[] = []) => prices
+      .filter((price) => price.status === 'APPROVED' && price.sourceType === 'MANUAL' && price.approvedAt)
+      .map((price) => ({
+        tenureMonths: price.tenureMonths,
+        monthlyPrice: Number(price.monthlyPrice),
+        totalRent: Number(price.monthlyPrice) * price.tenureMonths,
+        securityDeposit: Number(price.securityDeposit),
+        deliveryCharge: Number(price.deliveryCharge),
+        percentage: Number(price.percentage),
+        approvedAt: price.approvedAt,
+      }))
+      .sort((a, b) => a.tenureMonths - b.tenureMonths);
+    const productRentalPlans = rentalPlans(p.rentalPrices);
+    const variants = (p.variants || []).map((variant: any) => {
+      const variantRentalPlans = rentalPlans(variant.rentalPrices);
+      return {
+        ...variant,
+        price: Number(variant.price),
+        compareAtPrice: variant.compareAtPrice === null ? null : Number(variant.compareAtPrice),
+        leasePriceMonthly: variantRentalPlans.find((plan) => plan.tenureMonths === 12)?.monthlyPrice ?? null,
+        rentalPlans: variantRentalPlans,
+        attributes: typeof variant.attributes === 'string' ? JSON.parse(variant.attributes) : variant.attributes || {},
+        images: (variant.images || []).map((image: any) => ({
+          ...image,
+          url: image.url.startsWith('http') || !assetBaseUrl ? image.url : `${assetBaseUrl}/${image.url.replace(/^\//, '')}`,
+        })),
+      };
+    });
 
     return {
       id: p.id,
@@ -377,7 +394,8 @@ export class ProductService {
       shortDescription: p.shortDescription || null,
       price,
       compareAtPrice,
-      leasePriceMonthly: p.leasePriceMonthly ? parseFloat(p.leasePriceMonthly.toString()) : null,
+      leasePriceMonthly: productRentalPlans.find((plan) => plan.tenureMonths === 12)?.monthlyPrice ?? null,
+      rentalPlans: productRentalPlans,
       bulkSellPrice: p.bulkSellPrice ? parseFloat(p.bulkSellPrice.toString()) : null,
       bulkLeasePrice: p.bulkLeasePrice ? parseFloat(p.bulkLeasePrice.toString()) : null,
       sku: p.sku || `LM-SKU-${p.id.slice(0, 6)}`,
@@ -473,7 +491,25 @@ export class ProductService {
             variants: {
               where: { isActive: true, isDefault: true },
               take: 1,
-              include: { images: { orderBy: { sortOrder: 'asc' } } },
+              include: {
+                images: { orderBy: { sortOrder: 'asc' } },
+                rentalPrices: {
+                  where: {
+                    status: 'APPROVED',
+                    sourceType: 'MANUAL',
+                    auditHistory: { some: { action: 'APPROVED' } },
+                  },
+                  orderBy: { approvedAt: 'desc' },
+                },
+              },
+            },
+            rentalPrices: {
+              where: {
+                status: 'APPROVED',
+                sourceType: 'MANUAL',
+                auditHistory: { some: { action: 'APPROVED' } },
+              },
+              orderBy: { approvedAt: 'desc' },
             },
           },
         }),
@@ -550,8 +586,26 @@ export class ProductService {
           images: true,
           variants: {
             where: { isActive: true },
-            include: { images: { orderBy: { sortOrder: 'asc' } } },
+            include: {
+              images: { orderBy: { sortOrder: 'asc' } },
+              rentalPrices: {
+                where: {
+                  status: 'APPROVED',
+                  sourceType: 'MANUAL',
+                  auditHistory: { some: { action: 'APPROVED' } },
+                },
+                orderBy: { approvedAt: 'desc' },
+              },
+            },
             orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+          },
+          rentalPrices: {
+            where: {
+              status: 'APPROVED',
+              sourceType: 'MANUAL',
+              auditHistory: { some: { action: 'APPROVED' } },
+            },
+            orderBy: { approvedAt: 'desc' },
           },
         },
       });

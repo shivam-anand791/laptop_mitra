@@ -20,8 +20,10 @@ import {
   useRemoveCartItem,
   useClearCart,
   useValidateDiscount,
+  usePreviewCoupon,
   useSupportConfig,
 } from '../../hooks/useApi';
+import CouponOffersModal from '../../components/CouponOffersModal';
 import { useAuth } from '../../providers/AuthProvider';
 import { CartItem } from '@laptopmitra/types';
 import { MainStackNavigationProp } from '../../navigation/types';
@@ -46,8 +48,11 @@ export default function CartScreen() {
     discountType: string;
     discountAmount: number;
     message: string;
+    badgeText?: string;
   } | null>(null);
+  const [offersModalVisible, setOffersModalVisible] = useState(false);
   const validateDiscount = useValidateDiscount();
+  const previewCoupon = usePreviewCoupon();
 
   const formatPrice = (price: number | string) => {
     const num = typeof price === 'string' ? parseFloat(price) : price;
@@ -113,33 +118,6 @@ export default function CartScreen() {
     );
   };
 
-  const handleApplyDiscount = () => {
-    if (!discountCode.trim()) return;
-    validateDiscount.mutate(
-      { code: discountCode.trim(), cartTotal: subtotal },
-      {
-        onSuccess: (result) => {
-          if (result.valid) {
-            setAppliedDiscount({
-              code: discountCode.trim(),
-              discountType: result.discountType ?? 'fixed',
-              discountAmount: result.discountAmount,
-              message: result.message,
-            });
-          } else {
-            Alert.alert('Invalid Promo Code', result.message || 'The code entered is invalid or expired.');
-          }
-        },
-        onError: (err) => Alert.alert('Error', err.message),
-      },
-    );
-  };
-
-  const handleRemoveDiscount = () => {
-    setAppliedDiscount(null);
-    setDiscountCode('');
-  };
-
   const items = cart?.items ?? [];
 
   // Calculate Option A Commercial Totals
@@ -159,6 +137,65 @@ export default function CartScreen() {
     }, 0);
 
   const subtotal = oneTimeTotal + monthlyTotal;
+
+  const apiItems = items.map((it: CartItem) => ({
+    productId: it.productId,
+    variantId: it.variantId || undefined,
+    categoryId: it.product?.categoryId || undefined,
+    quantity: it.quantity || 1,
+    price: Number(it.priceAtAdd || 0),
+    purchaseMode: it.purchaseMode || 'sell',
+    hasWarranty: it.hasWarranty,
+    warrantyPrice: it.warrantyPrice,
+  }));
+
+  const handleApplyDiscount = async () => {
+    const clean = discountCode.trim().toUpperCase();
+    if (!clean) return;
+
+    try {
+      const preview = await previewCoupon.mutateAsync({
+        code: clean,
+        items: apiItems,
+      });
+      if (preview && preview.valid) {
+        setAppliedDiscount({
+          code: clean,
+          discountType: preview.coupon?.type || 'fixed',
+          discountAmount: preview.savingsAmount,
+          message: preview.message,
+          badgeText: preview.coupon?.badgeText,
+        });
+        setDiscountCode('');
+        return;
+      }
+      Alert.alert('Ineligible Coupon', preview?.message || 'This coupon cannot be applied.');
+    } catch (err: any) {
+      // Check referral fallback
+      try {
+        const refRes = await validateDiscount.mutateAsync({
+          code: clean,
+          cartTotal: subtotal,
+        });
+        if (refRes && refRes.valid) {
+          setAppliedDiscount({
+            code: clean,
+            discountType: refRes.discountType ?? 'fixed',
+            discountAmount: refRes.discountAmount,
+            message: refRes.message,
+          });
+          setDiscountCode('');
+          return;
+        }
+      } catch {}
+      Alert.alert('Invalid Code', err?.message || 'Invalid or expired coupon code.');
+    }
+  };
+
+  const handleRemoveDiscount = () => {
+    setAppliedDiscount(null);
+    setDiscountCode('');
+  };
 
   const itemCount =
     cart?.itemCount ??
@@ -288,7 +325,7 @@ export default function CartScreen() {
           {/* Lease Option A Notice */}
           {isLease ? (
             <Text style={styles.leaseNoticeText}>
-              Month 1 advance, {formatPrice(itemUnitPrice)}/mo thereafter. Later months are invoiced separately.
+              First month is due at checkout. Future monthly charges follow the AutoPay mandate.
             </Text>
           ) : (
             /* Warranty Toggle for Buy */
@@ -380,6 +417,11 @@ export default function CartScreen() {
                   <View style={styles.appliedPromoLeft}>
                     <Ionicons name="checkmark-circle" size={16} color={colors.green} />
                     <Text style={styles.appliedPromoCode}>{appliedDiscount.code.toUpperCase()}</Text>
+                    {appliedDiscount.badgeText && (
+                      <View style={styles.appliedBadgePill}>
+                        <Text style={styles.appliedBadgeText}>{appliedDiscount.badgeText}</Text>
+                      </View>
+                    )}
                     <Text style={styles.appliedPromoAmount}>
                       (-{formatPrice(appliedDiscount.discountAmount)})
                     </Text>
@@ -389,24 +431,37 @@ export default function CartScreen() {
                   </TouchableOpacity>
                 </View>
               ) : (
-                <View style={styles.promoInputRow}>
-                  <TextInput
-                    style={styles.promoInput}
-                    placeholder="e.g. MITRA500"
-                    placeholderTextColor={colors.textMuted}
-                    value={discountCode}
-                    onChangeText={setDiscountCode}
-                    autoCapitalize="characters"
-                    returnKeyType="done"
-                  />
-                  <Button
-                    title="Apply"
-                    onPress={handleApplyDiscount}
-                    variant="navy"
-                    size="sm"
-                    loading={validateDiscount.isPending}
-                    disabled={!discountCode.trim()}
-                  />
+                <View style={{ gap: spacing.xs }}>
+                  <TouchableOpacity
+                    style={styles.viewOffersButton}
+                    onPress={() => setOffersModalVisible(true)}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="sparkles" size={16} color={colors.primary} />
+                      <Text style={styles.viewOffersText}>View Available Offers &amp; Coupons</Text>
+                    </View>
+                    <Text style={styles.viewOffersArrow}>Select →</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.promoInputRow}>
+                    <TextInput
+                      style={styles.promoInput}
+                      placeholder="e.g. MITRA500"
+                      placeholderTextColor={colors.textMuted}
+                      value={discountCode}
+                      onChangeText={setDiscountCode}
+                      autoCapitalize="characters"
+                      returnKeyType="done"
+                    />
+                    <Button
+                      title="Apply"
+                      onPress={handleApplyDiscount}
+                      variant="navy"
+                      size="sm"
+                      loading={previewCoupon.isPending || validateDiscount.isPending}
+                      disabled={!discountCode.trim()}
+                    />
+                  </View>
                 </View>
               )}
             </View>
@@ -450,16 +505,19 @@ export default function CartScreen() {
               </View>
 
               <View style={styles.breakdownRow}>
-                <Text style={styles.breakdownLabel}>Estimated GST (18%)</Text>
-                <Text style={styles.includedLabel}>Included</Text>
+                <Text style={styles.breakdownLabel}>Applicable tax</Text>
+                <Text style={styles.breakdownValue}>Calculated at checkout</Text>
               </View>
 
               <View style={styles.divider} />
 
               <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Due Now</Text>
+                <Text style={styles.totalLabel}>Estimated total</Text>
                 <Text style={styles.totalValue}>{formatPrice(finalAmount)}</Text>
               </View>
+              <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                Applicable tax is calculated by the server at checkout.
+              </Text>
             </View>
           </View>
         }
@@ -473,7 +531,7 @@ export default function CartScreen() {
         </View>
         <Button
           title="Proceed to Checkout"
-          onPress={() => navigation.navigate('Checkout')}
+          onPress={() => navigation.navigate('Checkout', appliedDiscount ? { initialCoupon: appliedDiscount.code } as any : undefined)}
           variant="primary"
           size="lg"
           icon={<Ionicons name="arrow-forward" size={16} color="#FFF" />}
@@ -481,6 +539,23 @@ export default function CartScreen() {
           style={styles.checkoutBtn}
         />
       </View>
+
+      <CouponOffersModal
+        visible={offersModalVisible}
+        onClose={() => setOffersModalVisible(false)}
+        items={apiItems}
+        appliedCode={appliedDiscount?.code ?? null}
+        onApplyCoupon={(code, preview) => {
+          setAppliedDiscount({
+            code,
+            discountType: preview.coupon?.type || 'fixed',
+            discountAmount: preview.savingsAmount,
+            message: preview.message,
+            badgeText: preview.coupon?.badgeText,
+          });
+          setDiscountCode('');
+        }}
+      />
     </View>
   );
 }
@@ -759,10 +834,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.greenText,
   },
-  includedLabel: {
-    fontSize: 11,
-    color: colors.textMuted,
-  },
   divider: {
     height: 1,
     backgroundColor: colors.cardBorderLight,
@@ -884,5 +955,37 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#92400E',
     fontWeight: '500',
+  },
+  viewOffersButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.primaryBorder,
+    backgroundColor: colors.primaryLight,
+  },
+  viewOffersText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  viewOffersArrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  appliedBadgePill: {
+    backgroundColor: colors.greenLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  appliedBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.greenText,
   },
 });

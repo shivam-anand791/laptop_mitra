@@ -25,6 +25,7 @@ export interface OrderCardProps {
   onCancel?: (order: Order) => void;
   onReturn?: (order: Order) => void;
   onReorder?: (order: Order) => void;
+  onNeedHelp?: (order: Order, item?: any) => void;
   isReordering?: boolean;
 }
 
@@ -33,6 +34,7 @@ export function OrderCard({
   onCancel,
   onReturn,
   onReorder,
+  onNeedHelp,
   isReordering = false,
 }: OrderCardProps) {
   const [copied, setCopied] = useState(false);
@@ -205,12 +207,22 @@ export function OrderCard({
           </Link>
 
           {/* Need help */}
-          <Link
-            href={`/help/guided-flow?orderId=${order.id}`}
-            className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold transition inline-flex items-center gap-1 shadow-2xs"
-          >
-            <HelpCircle className="w-3.5 h-3.5 text-slate-500" /> Need Help?
-          </Link>
+          {onNeedHelp ? (
+            <button
+              type="button"
+              onClick={() => onNeedHelp(order, firstItem)}
+              className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-amber-300 rounded-xl text-xs font-semibold transition inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-amber-600" /> Need Help?
+            </button>
+          ) : (
+            <Link
+              href={`/account/orders/${order.id}`}
+              className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold transition inline-flex items-center gap-1 shadow-2xs"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-amber-600" /> Need Help?
+            </Link>
+          )}
 
           {/* Invoice */}
           {canInvoice && (

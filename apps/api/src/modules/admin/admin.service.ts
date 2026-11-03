@@ -7,6 +7,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FirebaseService } from '../../firebase/firebase.service';
 import { PaymentEncryptionService } from '../../common/encryption/payment-encryption.service';
@@ -26,6 +27,8 @@ import { AdminOrderQueryDto } from './dto/admin-order-query.dto';
 import { AdminAnalyticsQueryDto } from './dto/admin-analytics-query.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { NotificationService } from '../notifications/notification.service';
+import { CreateRentalPriceDto, UpdateRentalPriceDto } from './dto/save-rental-price.dto';
+import { RENTAL_PRICE_TENURES } from './rental-pricing';
 
 @Injectable()
 export class AdminService {
@@ -146,6 +149,125 @@ export class AdminService {
     };
   }
 
+  async getUser360(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        businessProfile: true,
+        orders: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            paymentStatus: true,
+            finalAmount: true,
+            createdAt: true,
+          },
+        },
+        leaseContracts: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            contractNumber: true,
+            status: true,
+            tenureMonths: true,
+            monthlyAmount: true,
+            buyoutStatus: true,
+            createdAt: true,
+          },
+        },
+        buybackRequests: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            requestNumber: true,
+            status: true,
+            initialQuotedAmount: true,
+            finalPayoutAmount: true,
+            createdAt: true,
+          },
+        },
+        returnRequests: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            returnNumber: true,
+            status: true,
+            type: true,
+            createdAt: true,
+          },
+        },
+        customerTickets: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            ticketNumber: true,
+            subject: true,
+            status: true,
+            priority: true,
+            csatScore: true,
+            createdAt: true,
+          },
+        },
+        clientNotes: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            note: true,
+            authorName: true,
+            authorRole: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    const totalOrders = await this.prisma.order.count({ where: { userId } });
+    const totalLeases = await this.prisma.leaseContract.count({ where: { userId } });
+    const totalBuybacks = await this.prisma.buybackRequest.count({ where: { userId } });
+    const totalTickets = await this.prisma.supportTicket.count({ where: { userId } });
+
+    return {
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        status: user.status,
+        createdAt: user.createdAt,
+      },
+      businessProfile: user.businessProfile,
+      counts: {
+        totalOrders,
+        totalLeases,
+        totalBuybacks,
+        totalTickets,
+      },
+      orders: user.orders,
+      leaseContracts: user.leaseContracts,
+      buybackRequests: user.buybackRequests,
+      returnRequests: user.returnRequests,
+      tickets: user.customerTickets,
+      notes: user.clientNotes,
+    };
+  }
+
   async updateUserStatus(userId: string, status: string, currentAdminId?: string) {
     if (!USER_STATUSES.includes(status as UserStatus)) {
       throw new BadRequestException(`Status must be one of: ${USER_STATUSES.join(', ')}`);
@@ -193,17 +315,23 @@ export class AdminService {
         },
       });
 
-      if ((status === 'SUSPENDED' || status === 'DELETED') && user.firebaseUid && this.firebaseService) {
+      if (
+        (status === 'SUSPENDED' || status === 'DELETED') &&
+        user.firebaseUid &&
+        this.firebaseService
+      ) {
         try {
           await this.firebaseService.revokeRefreshTokens(user.firebaseUid);
           this.logger.log(`Revoked Firebase refresh tokens for suspended user ${userId}`);
         } catch (revokeErr: any) {
-          this.logger.warn(`Failed to revoke Firebase refresh tokens for user ${userId}: ${revokeErr?.message || revokeErr}`);
+          this.logger.warn(
+            `Failed to revoke Firebase refresh tokens for user ${userId}: ${revokeErr?.message || revokeErr}`,
+          );
         }
       }
 
       this.logger.log(
-        `[AUDIT] User status updated: adminId=${currentAdminId || 'system'}, targetUserId=${userId}, oldStatus=${user.status}, newStatus=${status}, timestamp=${new Date().toISOString()}`
+        `[AUDIT] User status updated: adminId=${currentAdminId || 'system'}, targetUserId=${userId}, oldStatus=${user.status}, newStatus=${status}, timestamp=${new Date().toISOString()}`,
       );
 
       return updatedUser;
@@ -222,7 +350,9 @@ export class AdminService {
     }
 
     if (currentAdminId && userId === currentAdminId) {
-      throw new BadRequestException('Administrators cannot modify their own role (self-demotion prohibited)');
+      throw new BadRequestException(
+        'Administrators cannot modify their own role (self-demotion prohibited)',
+      );
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -256,7 +386,7 @@ export class AdminService {
       });
 
       this.logger.log(
-        `[AUDIT] User role updated: adminId=${currentAdminId || 'system'}, targetUserId=${userId}, oldRole=${user.role}, newRole=${role}, timestamp=${new Date().toISOString()}`
+        `[AUDIT] User role updated: adminId=${currentAdminId || 'system'}, targetUserId=${userId}, oldRole=${user.role}, newRole=${role}, timestamp=${new Date().toISOString()}`,
       );
 
       return updatedUser;
@@ -316,7 +446,8 @@ export class AdminService {
   }
 
   private normalizeProductVariants(variants: any[]) {
-    if (!Array.isArray(variants)) throw new BadRequestException('Product variants must be an array');
+    if (!Array.isArray(variants))
+      throw new BadRequestException('Product variants must be an array');
     if (variants.length === 0) return [];
 
     const explicitDefaults = variants.filter((variant) => variant?.isDefault === true).length;
@@ -329,7 +460,8 @@ export class AdminService {
     const normalized = variants.map((variant, index) => {
       const name = typeof variant?.name === 'string' ? variant.name.trim() : '';
       const sku = typeof variant?.sku === 'string' ? variant.sku.trim() : '';
-      if (!name || !sku) throw new BadRequestException(`Variant ${index + 1} requires a name and SKU`);
+      if (!name || !sku)
+        throw new BadRequestException(`Variant ${index + 1} requires a name and SKU`);
       const skuKey = sku.toLowerCase();
       if (skus.has(skuKey)) throw new BadRequestException(`Duplicate variant SKU "${sku}"`);
       skus.add(skuKey);
@@ -340,9 +472,12 @@ export class AdminService {
       }
       const cleanAttributes: Record<string, string | number | boolean> = {};
       for (const [key, value] of Object.entries(attributes)) {
-        if (!key.trim() || !['string', 'number', 'boolean'].includes(typeof value)
-          || (typeof value === 'string' && !value.trim())
-          || (typeof value === 'number' && !Number.isFinite(value))) {
+        if (
+          !key.trim() ||
+          !['string', 'number', 'boolean'].includes(typeof value) ||
+          (typeof value === 'string' && !value.trim()) ||
+          (typeof value === 'number' && !Number.isFinite(value))
+        ) {
           throw new BadRequestException(`Variant "${name}" has an invalid attribute`);
         }
         cleanAttributes[key.trim()] = value as string | number | boolean;
@@ -353,8 +488,10 @@ export class AdminService {
 
       const price = Number(variant.price);
       const stock = Number(variant.stock ?? 0);
-      if (!Number.isFinite(price) || price < 0) throw new BadRequestException(`Variant "${name}" has an invalid price`);
-      if (!Number.isSafeInteger(stock) || stock < 0) throw new BadRequestException(`Variant "${name}" has invalid stock`);
+      if (!Number.isFinite(price) || price < 0)
+        throw new BadRequestException(`Variant "${name}" has an invalid price`);
+      if (!Number.isSafeInteger(stock) || stock < 0)
+        throw new BadRequestException(`Variant "${name}" has invalid stock`);
 
       const optionalPrice = (value: unknown, label: string) => {
         if (value === undefined || value === null || value === '') return null;
@@ -368,34 +505,42 @@ export class AdminService {
       const isDefault = explicitDefaults ? variant.isDefault === true : index === 0;
       if (isDefault) defaultCount += 1;
       const isActive = variant.isActive !== false;
-      if (isDefault && !isActive) throw new BadRequestException('The default variant must be active');
+      if (isDefault && !isActive)
+        throw new BadRequestException('The default variant must be active');
 
       if (isActive) {
         const keys = Object.keys(cleanAttributes).sort();
         if (activeAttributeKeys && keys.join('\0') !== activeAttributeKeys.join('\0')) {
-          throw new BadRequestException('Active variants for a product must define the same configuration attributes');
+          throw new BadRequestException(
+            'Active variants for a product must define the same configuration attributes',
+          );
         }
         activeAttributeKeys = keys;
-        const combinationKey = JSON.stringify(Object.fromEntries(keys.map((key) => [key, cleanAttributes[key]])));
+        const combinationKey = JSON.stringify(
+          Object.fromEntries(keys.map((key) => [key, cleanAttributes[key]])),
+        );
         if (activeCombinations.has(combinationKey)) {
           throw new BadRequestException(`Duplicate active configuration for variant "${name}"`);
         }
         activeCombinations.add(combinationKey);
       }
 
-      const images = Array.isArray(variant.images) ? variant.images.map((image: any, imageIndex: number) => {
-        if (typeof image?.url !== 'string' || !image.url.trim()) {
-          throw new BadRequestException(`Variant "${name}" has an invalid image URL`);
-        }
-        return {
-          url: image.url.trim(),
-          ...(typeof image.altText === 'string' ? { altText: image.altText.trim() } : {}),
-          isPrimary: image.isPrimary === true,
-          sortOrder: Number.isSafeInteger(Number(image.sortOrder)) && Number(image.sortOrder) >= 0
-            ? Number(image.sortOrder)
-            : imageIndex,
-        };
-      }) : [];
+      const images = Array.isArray(variant.images)
+        ? variant.images.map((image: any, imageIndex: number) => {
+            if (typeof image?.url !== 'string' || !image.url.trim()) {
+              throw new BadRequestException(`Variant "${name}" has an invalid image URL`);
+            }
+            return {
+              url: image.url.trim(),
+              ...(typeof image.altText === 'string' ? { altText: image.altText.trim() } : {}),
+              isPrimary: image.isPrimary === true,
+              sortOrder:
+                Number.isSafeInteger(Number(image.sortOrder)) && Number(image.sortOrder) >= 0
+                  ? Number(image.sortOrder)
+                  : imageIndex,
+            };
+          })
+        : [];
 
       return {
         ...(typeof variant.id === 'string' && variant.id ? { id: variant.id } : {}),
@@ -452,11 +597,13 @@ export class AdminService {
       throw new BadRequestException(`Product with SKU "${data.sku}" already exists`);
     }
 
-    const slug = data.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)+/g, '') + `-${Date.now().toString().slice(-4)}`;
-    const variants = data.variants === undefined ? undefined : this.normalizeProductVariants(data.variants);
+    const slug =
+      data.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)+/g, '') + `-${Date.now().toString().slice(-4)}`;
+    const variants =
+      data.variants === undefined ? undefined : this.normalizeProductVariants(data.variants);
     const defaultVariant = variants?.find((variant) => variant.isDefault);
 
     return this.prisma.product.create({
@@ -467,9 +614,25 @@ export class AdminService {
         price: defaultVariant?.price ?? price,
         compareAtPrice: defaultVariant?.compareAtPrice,
         stock: defaultVariant?.stock ?? (data.stock !== undefined ? Number(data.stock) : 0),
-        leasePriceMonthly: defaultVariant?.leasePriceMonthly ?? (data.leasePriceMonthly !== undefined && data.leasePriceMonthly !== null && data.leasePriceMonthly !== '' ? Number(data.leasePriceMonthly) : null),
-        bulkSellPrice: data.bulkSellPrice !== undefined && data.bulkSellPrice !== null && data.bulkSellPrice !== '' ? Number(data.bulkSellPrice) : null,
-        bulkLeasePrice: data.bulkLeasePrice !== undefined && data.bulkLeasePrice !== null && data.bulkLeasePrice !== '' ? Number(data.bulkLeasePrice) : null,
+        leasePriceMonthly:
+          defaultVariant?.leasePriceMonthly ??
+          (data.leasePriceMonthly !== undefined &&
+          data.leasePriceMonthly !== null &&
+          data.leasePriceMonthly !== ''
+            ? Number(data.leasePriceMonthly)
+            : null),
+        bulkSellPrice:
+          data.bulkSellPrice !== undefined &&
+          data.bulkSellPrice !== null &&
+          data.bulkSellPrice !== ''
+            ? Number(data.bulkSellPrice)
+            : null,
+        bulkLeasePrice:
+          data.bulkLeasePrice !== undefined &&
+          data.bulkLeasePrice !== null &&
+          data.bulkLeasePrice !== ''
+            ? Number(data.bulkLeasePrice)
+            : null,
         description: data.description || null,
         shortDescription: data.shortDescription || null,
         categoryId: data.categoryId || null,
@@ -477,39 +640,47 @@ export class AdminService {
         isFeatured: !!data.isFeatured,
         isNewArrival: !!data.isNewArrival,
         metadata: data.metadata || null,
-        ...(variants ? {
-          variants: {
-            create: variants.map(({ images, ...variant }) => ({
-              ...variant,
-              ...(images.length ? { images: { create: images } } : {}),
-            })),
-          },
-        } : {}),
+        ...(variants
+          ? {
+              variants: {
+                create: variants.map(({ images, ...variant }) => ({
+                  ...variant,
+                  ...(images.length ? { images: { create: images } } : {}),
+                })),
+              },
+            }
+          : {}),
         ...(Array.isArray(data.images) && data.images.length > 0
           ? {
               images: {
                 create: data.images.map((img, idx) => ({
                   url: typeof img === 'string' ? img : img.url,
                   altText: typeof img === 'object' && img.altText ? img.altText : data.name,
-                  isPrimary: typeof img === 'object' && img.isPrimary !== undefined ? !!img.isPrimary : idx === 0,
-                  sortOrder: typeof img === 'object' && img.sortOrder !== undefined ? Number(img.sortOrder) : idx,
+                  isPrimary:
+                    typeof img === 'object' && img.isPrimary !== undefined
+                      ? !!img.isPrimary
+                      : idx === 0,
+                  sortOrder:
+                    typeof img === 'object' && img.sortOrder !== undefined
+                      ? Number(img.sortOrder)
+                      : idx,
                 })),
               },
             }
           : data.imageUrl
-          ? {
-              images: {
-                create: [
-                  {
-                    url: data.imageUrl,
-                    altText: data.name,
-                    isPrimary: true,
-                    sortOrder: 0,
-                  },
-                ],
-              },
-            }
-          : {}),
+            ? {
+                images: {
+                  create: [
+                    {
+                      url: data.imageUrl,
+                      altText: data.name,
+                      isPrimary: true,
+                      sortOrder: 0,
+                    },
+                  ],
+                },
+              }
+            : {}),
       },
       include: {
         category: true,
@@ -533,25 +704,108 @@ export class AdminService {
     if (data.description !== undefined) updateData.description = data.description;
     if (data.shortDescription !== undefined) updateData.shortDescription = data.shortDescription;
     if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
-    if (data.metadata !== undefined) updateData.metadata = data.metadata;
+
+    let currentMetadata = (product.metadata as Record<string, any>) || {};
+    if (data.metadata !== undefined && typeof data.metadata === 'object' && data.metadata !== null) {
+      currentMetadata = { ...currentMetadata, ...data.metadata };
+    }
+    if (data.brand !== undefined) {
+      currentMetadata.brand = String(data.brand).trim();
+    }
+    if (data.warrantyMonths !== undefined) {
+      currentMetadata.warrantyMonths = Number(data.warrantyMonths) || 6;
+    }
+    if (data.specs !== undefined && typeof data.specs === 'object') {
+      currentMetadata.specs = data.specs;
+    }
+    updateData.metadata = currentMetadata;
+
     if (data.stock !== undefined) {
       const stock = Number(data.stock);
-      if (isNaN(stock) || stock < 0) throw new BadRequestException('Stock must be a positive integer');
+      if (isNaN(stock) || stock < 0)
+        throw new BadRequestException('Stock must be a positive integer');
       updateData.stock = stock;
     }
     if (data.price !== undefined) {
       const price = typeof data.price === 'string' ? parseFloat(data.price) : Number(data.price);
-      if (isNaN(price) || price < 0) throw new BadRequestException('Price must be a positive number');
+      if (isNaN(price) || price < 0)
+        throw new BadRequestException('Price must be a positive number');
       updateData.price = price;
     }
+    if (data.compareAtPrice !== undefined) {
+      if (data.compareAtPrice === null || data.compareAtPrice === '') {
+        updateData.compareAtPrice = null;
+      } else {
+        const compareAtPrice =
+          typeof data.compareAtPrice === 'string'
+            ? parseFloat(data.compareAtPrice)
+            : Number(data.compareAtPrice);
+        if (isNaN(compareAtPrice) || compareAtPrice < 0) {
+          throw new BadRequestException('MRP must be a positive number');
+        }
+        updateData.compareAtPrice = compareAtPrice;
+      }
+    }
+
+    const effectivePrice =
+      updateData.price !== undefined ? updateData.price : Number(product.price);
+    const effectiveCompareAt =
+      updateData.compareAtPrice !== undefined
+        ? updateData.compareAtPrice
+        : product.compareAtPrice
+          ? Number(product.compareAtPrice)
+          : null;
+    if (effectiveCompareAt !== null && effectiveCompareAt < effectivePrice) {
+      throw new BadRequestException(
+        'MRP (compare-at price) must be greater than or equal to selling price',
+      );
+    }
+
     if (data.leasePriceMonthly !== undefined) {
-      updateData.leasePriceMonthly = data.leasePriceMonthly !== null && data.leasePriceMonthly !== '' ? Number(data.leasePriceMonthly) : null;
+      updateData.leasePriceMonthly =
+        data.leasePriceMonthly !== null && data.leasePriceMonthly !== ''
+          ? Number(data.leasePriceMonthly)
+          : null;
     }
     if (data.bulkSellPrice !== undefined) {
-      updateData.bulkSellPrice = data.bulkSellPrice !== null && data.bulkSellPrice !== '' ? Number(data.bulkSellPrice) : null;
+      updateData.bulkSellPrice =
+        data.bulkSellPrice !== null && data.bulkSellPrice !== ''
+          ? Number(data.bulkSellPrice)
+          : null;
     }
     if (data.bulkLeasePrice !== undefined) {
-      updateData.bulkLeasePrice = data.bulkLeasePrice !== null && data.bulkLeasePrice !== '' ? Number(data.bulkLeasePrice) : null;
+      updateData.bulkLeasePrice =
+        data.bulkLeasePrice !== null && data.bulkLeasePrice !== ''
+          ? Number(data.bulkLeasePrice)
+          : null;
+    }
+
+    const priceChanged =
+      (updateData.price !== undefined && updateData.price !== Number(product.price)) ||
+      (updateData.compareAtPrice !== undefined &&
+        updateData.compareAtPrice !==
+          (product.compareAtPrice ? Number(product.compareAtPrice) : null));
+
+    if (priceChanged) {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            entityType: 'PRODUCT',
+            entityId: id,
+            action: 'UPDATE_PRODUCT_PRICE',
+            actorUserId: data.adminId || 'admin',
+            metadata: {
+              oldPrice: Number(product.price),
+              newPrice: effectivePrice,
+              oldCompareAtPrice: product.compareAtPrice ? Number(product.compareAtPrice) : null,
+              newCompareAtPrice: effectiveCompareAt,
+              reason: data.priceChangeReason || 'Catalog update',
+            },
+          },
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to record product price audit for ${id}: ${err}`);
+      }
     }
 
     if (data.images !== undefined && Array.isArray(data.images)) {
@@ -562,8 +816,10 @@ export class AdminService {
             productId: id,
             url: typeof img === 'string' ? img : img.url,
             altText: typeof img === 'object' && img.altText ? img.altText : product.name,
-            isPrimary: typeof img === 'object' && img.isPrimary !== undefined ? !!img.isPrimary : idx === 0,
-            sortOrder: typeof img === 'object' && img.sortOrder !== undefined ? Number(img.sortOrder) : idx,
+            isPrimary:
+              typeof img === 'object' && img.isPrimary !== undefined ? !!img.isPrimary : idx === 0,
+            sortOrder:
+              typeof img === 'object' && img.sortOrder !== undefined ? Number(img.sortOrder) : idx,
           })),
         });
       }
@@ -646,28 +902,597 @@ export class AdminService {
     });
   }
 
+  async getProductReferenceSummary(id: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true, name: true, status: true },
+    });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const totalOrders = await this.prisma.orderItem.count({ where: { productId: id } });
+    const activeOrders = await this.prisma.orderItem.count({
+      where: {
+        productId: id,
+        order: {
+          status: { in: ['PENDING', 'PAYMENT_PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPING'] },
+        },
+      },
+    });
+    const totalLeases = await this.prisma.leaseContract.count({ where: { productId: id } });
+    const activeLeases = await this.prisma.leaseContract.count({
+      where: {
+        productId: id,
+        status: { in: ['ACTIVE', 'PENDING'] },
+      },
+    });
+
+    return {
+      product,
+      totalOrders,
+      activeOrders,
+      totalLeases,
+      activeLeases,
+      canHardDelete: totalOrders === 0 && totalLeases === 0,
+    };
+  }
+
   async deleteProduct(id: string) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) {
       throw new NotFoundException('Product not found');
     }
 
-    // Check if referenced by order items
+    // Check if referenced by order items or lease contracts
     const orderItemsCount = await this.prisma.orderItem.count({ where: { productId: id } });
-    if (orderItemsCount > 0) {
-      // Soft-deactivate if order history references it
-      return this.prisma.product.update({
+    const leaseContractsCount = await this.prisma.leaseContract.count({ where: { productId: id } });
+
+    if (orderItemsCount > 0 || leaseContractsCount > 0) {
+      // Soft-archive if order history or lease history references it
+      const updated = await this.prisma.product.update({
         where: { id },
         data: { status: 'DISCONTINUED' },
       });
+      return {
+        ...updated,
+        archived: true,
+        message: `Product soft-archived (referenced by ${orderItemsCount} orders and ${leaseContractsCount} leases).`,
+      };
     }
 
     // Clean up dependent cart & wishlist items then delete product
     await this.prisma.cartItem.deleteMany({ where: { productId: id } });
     await this.prisma.wishlistItem.deleteMany({ where: { productId: id } });
+    await this.prisma.rentalPriceAudit.deleteMany({ where: { rentalPrice: { productId: id } } });
+    await this.prisma.rentalPrice.deleteMany({ where: { productId: id } });
     await this.prisma.productImage.deleteMany({ where: { productId: id } });
+    await this.prisma.productVariant.deleteMany({ where: { productId: id } });
 
-    return this.prisma.product.delete({ where: { id } });
+    const deleted = await this.prisma.product.delete({ where: { id } });
+    return {
+      ...deleted,
+      archived: false,
+      message: 'Product permanently deleted.',
+    };
+  }
+
+  async saveProductRentalPrices(
+    productId: string,
+    dto: {
+      enabled: boolean;
+      publishImmediately?: boolean;
+      prices?: { tenureMonths: number; monthlyPrice: number }[];
+      reason?: string;
+    },
+    adminId: string,
+  ) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        if (!dto.enabled) {
+          // Supersede all active rental prices for this product
+          await tx.rentalPrice.updateMany({
+            where: { productId, status: 'APPROVED' },
+            data: { status: 'SUPERSEDED' },
+          });
+          await tx.product.update({
+            where: { id: productId },
+            data: { leasePriceMonthly: null },
+          });
+          return { success: true, message: 'Rental pricing disabled for this product.' };
+        }
+
+        const validTenures = [1, 3, 6, 12, 24];
+        const inputPrices = dto.prices || [];
+        let lowest12MonthOrFirst: number | null = null;
+        const isPublish = dto.publishImmediately !== false;
+        const status = isPublish ? 'APPROVED' : 'DRAFT';
+        const now = new Date();
+
+        for (const tenure of validTenures) {
+          const match = inputPrices.find((p) => Number(p.tenureMonths) === tenure);
+          if (!match || isNaN(Number(match.monthlyPrice)) || Number(match.monthlyPrice) <= 0) {
+            continue;
+          }
+          const monthlyRate = Number(match.monthlyPrice);
+          if (tenure === 12 || lowest12MonthOrFirst === null) {
+            lowest12MonthOrFirst = monthlyRate;
+          }
+
+          if (isPublish) {
+            await tx.rentalPrice.updateMany({
+              where: {
+                productId,
+                variantId: null,
+                tenureMonths: tenure,
+                status: 'APPROVED',
+              },
+              data: { status: 'SUPERSEDED' },
+            });
+          }
+
+          // Check for existing manual draft
+          const existingDraft = await tx.rentalPrice.findFirst({
+            where: {
+              productId,
+              variantId: null,
+              tenureMonths: tenure,
+              status: 'DRAFT',
+              sourceType: 'MANUAL',
+            },
+          });
+
+          let rentalRecord;
+          if (existingDraft) {
+            rentalRecord = await tx.rentalPrice.update({
+              where: { id: existingDraft.id },
+              data: {
+                monthlyPrice: monthlyRate.toFixed(2),
+                status,
+                approvedBy: isPublish ? adminId : null,
+                approvedAt: isPublish ? now : null,
+                changeReason: dto.reason || 'Admin rental pricing update',
+              },
+            });
+          } else {
+            rentalRecord = await tx.rentalPrice.create({
+              data: {
+                productId,
+                variantId: null,
+                tenureMonths: tenure,
+                monthlyPrice: monthlyRate.toFixed(2),
+                securityDeposit: '0.00',
+                deliveryCharge: '0.00',
+                sellingPriceSnapshot: Number(product.price).toFixed(2),
+                percentage: '0.00',
+                status,
+                sourceType: 'MANUAL',
+                approvedBy: isPublish ? adminId : null,
+                approvedAt: isPublish ? now : null,
+                changeReason: dto.reason || 'Admin rental pricing update',
+              },
+            });
+          }
+
+          await tx.rentalPriceAudit.create({
+            data: {
+              rentalPriceId: rentalRecord.id,
+              action: isPublish ? 'APPROVED' : 'CREATED',
+              newMonthlyPrice: rentalRecord.monthlyPrice,
+              newDeposit: '0.00',
+              newDeliveryCharge: '0.00',
+              adminId,
+              reason: dto.reason || 'Admin rental pricing update',
+            },
+          });
+        }
+
+        if (lowest12MonthOrFirst !== null) {
+          await tx.product.update({
+            where: { id: productId },
+            data: { leasePriceMonthly: lowest12MonthOrFirst.toFixed(2) },
+          });
+        }
+
+        return {
+          success: true,
+          message: isPublish
+            ? 'Rental prices published successfully.'
+            : 'Rental prices saved as drafts.',
+          leasePriceMonthly: lowest12MonthOrFirst,
+        };
+      },
+      { isolationLevel: 'Serializable' },
+    );
+  }
+
+  async getProductPriceHistory(productId: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, name: true, sku: true, price: true, compareAtPrice: true, leasePriceMonthly: true },
+    });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const priceAudits = await this.prisma.auditLog.findMany({
+      where: { entityType: 'PRODUCT', entityId: productId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    const rentalPrices = await this.prisma.rentalPrice.findMany({
+      where: { productId },
+      include: {
+        auditHistory: {
+          include: { admin: { select: { id: true, name: true, email: true } } },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+      orderBy: { tenureMonths: 'asc' },
+    });
+
+    return {
+      product,
+      priceAudits,
+      rentalPrices,
+    };
+  }
+
+  async bulkUpdatePricing(
+    dto: {
+      productIds: string[];
+      type: 'PERCENTAGE' | 'FIXED';
+      value: number;
+      applyToCompareAtPrice?: boolean;
+      reason?: string;
+    },
+    adminId: string,
+    previewOnly = false,
+  ) {
+    if (!dto.productIds || dto.productIds.length === 0) {
+      throw new BadRequestException('Select at least one product to update pricing.');
+    }
+    const val = Number(dto.value);
+    if (isNaN(val)) {
+      throw new BadRequestException('Invalid price adjustment value.');
+    }
+
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: dto.productIds } },
+      select: { id: true, name: true, sku: true, price: true, compareAtPrice: true },
+    });
+
+    const results = products.map((prod) => {
+      const oldPrice = Number(prod.price);
+      const oldCompareAt = prod.compareAtPrice ? Number(prod.compareAtPrice) : null;
+      let newPrice: number;
+
+      if (dto.type === 'PERCENTAGE') {
+        newPrice = Math.round(oldPrice * (1 + val / 100));
+      } else {
+        newPrice = Math.round(oldPrice + val);
+      }
+      if (newPrice < 1) newPrice = 1;
+
+      let newCompareAt = oldCompareAt;
+      if (dto.applyToCompareAtPrice && oldCompareAt !== null) {
+        if (dto.type === 'PERCENTAGE') {
+          newCompareAt = Math.round(oldCompareAt * (1 + val / 100));
+        } else {
+          newCompareAt = Math.round(oldCompareAt + val);
+        }
+      }
+      if (newCompareAt !== null && newCompareAt < newPrice) {
+        newCompareAt = newPrice;
+      }
+
+      return {
+        id: prod.id,
+        name: prod.name,
+        sku: prod.sku,
+        oldPrice,
+        newPrice,
+        oldCompareAt,
+        newCompareAt,
+      };
+    });
+
+    if (previewOnly) {
+      return {
+        preview: true,
+        count: results.length,
+        items: results,
+      };
+    }
+
+    // Apply updates inside transaction
+    return this.prisma.$transaction(async (tx) => {
+      for (const item of results) {
+        await tx.product.update({
+          where: { id: item.id },
+          data: {
+            price: item.newPrice,
+            compareAtPrice: item.newCompareAt,
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            entityType: 'PRODUCT',
+            entityId: item.id,
+            action: 'UPDATE_PRODUCT_PRICE',
+            actorUserId: adminId || 'admin',
+            metadata: {
+              oldPrice: item.oldPrice,
+              newPrice: item.newPrice,
+              oldCompareAtPrice: item.oldCompareAt,
+              newCompareAtPrice: item.newCompareAt,
+              bulk: true,
+              adjustmentType: dto.type,
+              adjustmentValue: val,
+              reason: dto.reason || 'Bulk catalog price adjustment',
+            },
+          },
+        });
+      }
+
+      return {
+        success: true,
+        count: results.length,
+        items: results,
+      };
+    });
+  }
+
+  async exportProductsCsv(): Promise<string> {
+    const products = await this.prisma.product.findMany({
+      include: {
+        category: true,
+        rentalPrices: {
+          where: { status: 'APPROVED', sourceType: 'MANUAL' },
+          orderBy: { tenureMonths: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const headers = [
+      'SKU',
+      'Name',
+      'Brand',
+      'Category',
+      'Status',
+      'Stock',
+      'Price',
+      'MRP',
+      'Rent_1M',
+      'Rent_3M',
+      'Rent_6M',
+      'Rent_12M',
+      'Rent_24M',
+      'IsFeatured',
+      'IsNewArrival',
+    ];
+
+    const rows = products.map((prod) => {
+      const meta = (prod.metadata as Record<string, any>) || {};
+      const brand = meta.brand || '';
+      const cat = prod.category?.name || 'Uncategorized';
+      const rentPlans = prod.rentalPrices || [];
+      const getRent = (tenure: number) => {
+        const p = rentPlans.find((r) => r.tenureMonths === tenure);
+        return p ? Number(p.monthlyPrice).toFixed(2) : '';
+      };
+
+      const escapeField = (f: any) => {
+        const str = String(f ?? '');
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      return [
+        escapeField(prod.sku),
+        escapeField(prod.name),
+        escapeField(brand),
+        escapeField(cat),
+        escapeField(prod.status),
+        prod.stock,
+        Number(prod.price).toFixed(2),
+        prod.compareAtPrice ? Number(prod.compareAtPrice).toFixed(2) : '',
+        getRent(1),
+        getRent(3),
+        getRent(6),
+        getRent(12),
+        getRent(24),
+        prod.isFeatured ? 'YES' : 'NO',
+        prod.isNewArrival ? 'YES' : 'NO',
+      ].join(',');
+    });
+
+    return [headers.join(','), ...rows].join('\n');
+  }
+
+  async importProductsCsv(csvText: string, dryRun = true) {
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) {
+      throw new BadRequestException('CSV file is empty or missing headers.');
+    }
+
+    const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, '').toLowerCase());
+    const skuIdx = headers.indexOf('sku');
+    const nameIdx = headers.indexOf('name');
+    const priceIdx = headers.indexOf('price');
+    const mrpIdx = headers.indexOf('mrp');
+    const stockIdx = headers.indexOf('stock');
+    const brandIdx = headers.indexOf('brand');
+    const categoryIdx = headers.indexOf('category');
+    const statusIdx = headers.indexOf('status');
+
+    if (skuIdx === -1 || nameIdx === -1 || priceIdx === -1) {
+      throw new BadRequestException('CSV missing mandatory columns: SKU, Name, Price.');
+    }
+
+    const categories = await this.prisma.category.findMany();
+    const categoryMap = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
+
+    const parseCsvRow = (line: string): string[] => {
+      const res: string[] = [];
+      let inQuotes = false;
+      let cur = '';
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"' && (i === 0 || line[i - 1] !== '\\')) {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          res.push(cur.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+          cur = '';
+        } else {
+          cur += char;
+        }
+      }
+      res.push(cur.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+      return res;
+    };
+
+    const results: any[] = [];
+    const errors: { row: number; sku: string; error: string }[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const parts = parseCsvRow(lines[i]);
+      const rowNum = i + 1;
+      const sku = parts[skuIdx] || '';
+      const name = parts[nameIdx] || '';
+      const priceStr = parts[priceIdx] || '';
+      const mrpStr = mrpIdx !== -1 ? parts[mrpIdx] || '' : '';
+      const stockStr = stockIdx !== -1 ? parts[stockIdx] || '0' : '0';
+      const brand = brandIdx !== -1 ? parts[brandIdx] || '' : '';
+      const categoryName = categoryIdx !== -1 ? parts[categoryIdx] || '' : '';
+      const status = statusIdx !== -1 ? parts[statusIdx]?.toUpperCase() || 'ACTIVE' : 'ACTIVE';
+
+      if (!sku) {
+        errors.push({ row: rowNum, sku: '', error: 'Missing SKU' });
+        continue;
+      }
+      if (!name) {
+        errors.push({ row: rowNum, sku, error: 'Missing product Name' });
+        continue;
+      }
+      const price = parseFloat(priceStr);
+      if (isNaN(price) || price <= 0) {
+        errors.push({ row: rowNum, sku, error: `Invalid price "${priceStr}" (must be > 0)` });
+        continue;
+      }
+      let mrp: number | null = null;
+      if (mrpStr) {
+        mrp = parseFloat(mrpStr);
+        if (isNaN(mrp) || mrp < price) {
+          errors.push({ row: rowNum, sku, error: `MRP "${mrpStr}" must be >= price "${price}"` });
+          continue;
+        }
+      }
+      const stock = parseInt(stockStr, 10);
+      if (isNaN(stock) || stock < 0) {
+        errors.push({ row: rowNum, sku, error: `Invalid stock "${stockStr}"` });
+        continue;
+      }
+
+      const categoryId = categoryName ? categoryMap.get(categoryName.toLowerCase()) || null : null;
+
+      results.push({
+        row: rowNum,
+        sku,
+        name,
+        brand,
+        categoryId,
+        categoryName,
+        price,
+        compareAtPrice: mrp,
+        stock,
+        status: ['ACTIVE', 'INACTIVE', 'DISCONTINUED'].includes(status) ? status : 'ACTIVE',
+      });
+    }
+
+    if (dryRun) {
+      const existingProducts = await this.prisma.product.findMany({
+        where: { sku: { in: results.map((r) => r.sku) } },
+        select: { id: true, sku: true },
+      });
+      const existingSkuSet = new Set(existingProducts.map((p) => p.sku));
+
+      const toCreate = results.filter((r) => !existingSkuSet.has(r.sku)).length;
+      const toUpdate = results.filter((r) => existingSkuSet.has(r.sku)).length;
+
+      return {
+        dryRun: true,
+        totalRows: results.length,
+        toCreate,
+        toUpdate,
+        errors,
+        previewRows: results.slice(0, 10),
+      };
+    }
+
+    // Apply import in transaction
+    return this.prisma.$transaction(async (tx) => {
+      let createdCount = 0;
+      let updatedCount = 0;
+
+      for (const item of results) {
+        const existing = await tx.product.findUnique({ where: { sku: item.sku } });
+        const metadata: Record<string, any> = (existing?.metadata as Record<string, any>) || {};
+        if (item.brand) metadata.brand = item.brand;
+
+        if (existing) {
+          await tx.product.update({
+            where: { id: existing.id },
+            data: {
+              name: item.name,
+              price: item.price,
+              compareAtPrice: item.compareAtPrice,
+              stock: item.stock,
+              status: item.status,
+              ...(item.categoryId ? { categoryId: item.categoryId } : {}),
+              metadata,
+            },
+          });
+          updatedCount++;
+        } else {
+          const slug = `${item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${item.sku.toLowerCase()}`;
+          await tx.product.create({
+            data: {
+              sku: item.sku,
+              name: item.name,
+              slug,
+              price: item.price,
+              compareAtPrice: item.compareAtPrice,
+              stock: item.stock,
+              status: item.status,
+              categoryId: item.categoryId,
+              metadata,
+            },
+          });
+          createdCount++;
+        }
+      }
+
+      return {
+        dryRun: false,
+        totalRows: results.length,
+        createdCount,
+        updatedCount,
+        errors,
+      };
+    });
   }
 
   async getAllOrders(query?: AdminOrderQueryDto) {
@@ -847,7 +1672,7 @@ export class AdminService {
       throw new BadRequestException(
         `Cannot transition order from "${initialOrder.status}" to "${targetStatus}". Allowed transitions: ${
           allowedTransitions.length > 0 ? allowedTransitions.join(', ') : 'none (terminal status)'
-        }`
+        }`,
       );
     }
 
@@ -868,7 +1693,7 @@ export class AdminService {
         const validTransitionsInTx = ORDER_TRANSITION_MAP[currentOrder.status as OrderStatus] || [];
         if (!validTransitionsInTx.includes(targetStatus)) {
           throw new BadRequestException(
-            `Cannot transition order from "${currentOrder.status}" to "${targetStatus}"`
+            `Cannot transition order from "${currentOrder.status}" to "${targetStatus}"`,
           );
         }
 
@@ -924,16 +1749,6 @@ export class AdminService {
               },
             });
           }
-        } else if (trimmedCourier || trimmedTracking) {
-          if (existingDelivery) {
-            await tx.delivery.update({
-              where: { id: existingDelivery.id },
-              data: {
-                ...(trimmedCourier ? { carrier: trimmedCourier } : {}),
-                ...(trimmedTracking ? { trackingNumber: trimmedTracking } : {}),
-              },
-            });
-          }
         } else if (targetStatus === 'DELIVERED') {
           if (existingDelivery) {
             await tx.delivery.update({
@@ -941,6 +1756,8 @@ export class AdminService {
               data: {
                 status: 'DELIVERED',
                 deliveredAt: existingDelivery.deliveredAt || new Date(),
+                ...(trimmedCourier ? { carrier: trimmedCourier } : {}),
+                ...(trimmedTracking ? { trackingNumber: trimmedTracking } : {}),
               },
             });
           } else {
@@ -949,6 +1766,18 @@ export class AdminService {
                 orderId,
                 status: 'DELIVERED',
                 deliveredAt: new Date(),
+                ...(trimmedCourier ? { carrier: trimmedCourier } : {}),
+                ...(trimmedTracking ? { trackingNumber: trimmedTracking } : {}),
+              },
+            });
+          }
+        } else if (trimmedCourier || trimmedTracking) {
+          if (existingDelivery) {
+            await tx.delivery.update({
+              where: { id: existingDelivery.id },
+              data: {
+                ...(trimmedCourier ? { carrier: trimmedCourier } : {}),
+                ...(trimmedTracking ? { trackingNumber: trimmedTracking } : {}),
               },
             });
           }
@@ -992,7 +1821,7 @@ export class AdminService {
 
         // 5. Audit trail log
         this.logger.log(
-          `[AUDIT] Order status updated: adminId=${adminId || 'system'}, orderId=${orderId}, oldStatus=${currentOrder.status}, newStatus=${targetStatus}, oldPaymentStatus=${currentOrder.paymentStatus}, newPaymentStatus=${orderResult.paymentStatus}, timestamp=${new Date().toISOString()}`
+          `[AUDIT] Order status updated: adminId=${adminId || 'system'}, orderId=${orderId}, oldStatus=${currentOrder.status}, newStatus=${targetStatus}, oldPaymentStatus=${currentOrder.paymentStatus}, newPaymentStatus=${orderResult.paymentStatus}, timestamp=${new Date().toISOString()}`,
         );
 
         return orderResult;
@@ -1001,9 +1830,15 @@ export class AdminService {
       // 6. Trigger branded status email notification (non-blocking for DB consistency)
       if (['CONFIRMED', 'SHIPPING', 'DELIVERED', 'CANCELLED'].includes(targetStatus)) {
         try {
-          await this.notificationService?.dispatchOrderStatusEmail(updatedOrder, targetStatus, courierData);
+          await this.notificationService?.dispatchOrderStatusEmail(
+            updatedOrder,
+            targetStatus,
+            courierData,
+          );
         } catch (emailErr: any) {
-          this.logger.warn(`Failed to dispatch status email for order ${orderId}: ${emailErr?.message || emailErr}`);
+          this.logger.warn(
+            `Failed to dispatch status email for order ${orderId}: ${emailErr?.message || emailErr}`,
+          );
         }
       }
 
@@ -1017,6 +1852,165 @@ export class AdminService {
     }
   }
 
+  async cancelOrderItem(
+    orderId: string,
+    orderItemId: string,
+    adminId: string,
+    reason: string,
+  ) {
+    return this.prisma.$transaction(async (tx: any) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          items: true,
+          payments: true,
+        },
+      });
+
+      if (!order) throw new NotFoundException(`Order with id ${orderId} not found`);
+      if (!['PENDING', 'CONFIRMED'].includes(order.status)) {
+        throw new BadRequestException(
+          `Cannot cancel items while order is in status "${order.status}". Pre-dispatch cancellation only.`,
+        );
+      }
+
+      const item = order.items.find((it: any) => it.id === orderItemId);
+      if (!item) throw new NotFoundException(`Item ${orderItemId} not found in order ${orderId}`);
+      if (item.status === 'CANCELLED') {
+        return { order, cancelledItem: item, message: 'Item already cancelled' };
+      }
+
+      const activeItems = order.items.filter((it: any) => it.status !== 'CANCELLED');
+      const isLastActiveItem = activeItems.length <= 1;
+
+      const itemBasePrice = Number(item.price) * item.quantity;
+      const itemWarrantyPrice = item.hasWarranty ? Number(item.warrantyPrice || 0) * item.quantity : 0;
+      const itemGrossTotal = itemBasePrice + itemWarrantyPrice;
+
+      const totalActiveBase = activeItems.reduce(
+        (sum: number, it: any) => sum + Number(it.price) * it.quantity,
+        0,
+      );
+      const allocatedDiscount = totalActiveBase > 0
+        ? Math.round((itemBasePrice / totalActiveBase) * Number(order.discountAmount))
+        : 0;
+
+      const itemNetPayable = Math.max(0, itemGrossTotal - allocatedDiscount);
+      const wasPaid = order.paymentStatus === 'COMPLETED' || order.paymentStatus === 'PAID';
+      const refundAmount = wasPaid ? itemNetPayable : 0;
+      const refundStatus = wasPaid ? 'REFUND_PENDING' : 'NOT_APPLICABLE';
+
+      // Restock inventory
+      const inventoryWasHeld = ['RESERVED', 'CONSUMED'].includes(order.inventoryStatus);
+      if (inventoryWasHeld) {
+        const inventoryModel = item.variantId ? tx.productVariant : tx.product;
+        await inventoryModel.update({
+          where: { id: item.variantId || item.productId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+
+      // If lease item, terminate lease contract
+      if (tx.leaseContract) {
+        await tx.leaseContract.updateMany({
+          where: { orderItemId: item.id, status: 'ACTIVE' },
+          data: { status: 'TERMINATED' },
+        });
+      }
+      if (tx.leaseInstallment) {
+        await tx.leaseInstallment.updateMany({
+          where: { contract: { orderItemId: item.id }, status: 'PENDING' },
+          data: { status: 'WAIVED' },
+        });
+      }
+
+      // Update OrderItem
+      const updatedItem = await tx.orderItem.update({
+        where: { id: item.id },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelReason: reason || 'Staff cancelled item',
+          cancelledBy: adminId,
+          refundAmount: new Prisma.Decimal(refundAmount),
+          refundStatus,
+        },
+      });
+
+      // Record OrderItemCancellation
+      await tx.orderItemCancellation.create({
+        data: {
+          orderItemId: item.id,
+          orderId: order.id,
+          cancelledBy: adminId,
+          reason: reason || 'Staff cancelled item',
+          refundAmount: new Prisma.Decimal(refundAmount),
+          refundStatus,
+          restockedQuantity: item.quantity,
+        },
+      });
+
+      // AuditLog
+      await tx.auditLog.create({
+        data: {
+          actorUserId: adminId,
+          action: 'CANCEL_ORDER_ITEM',
+          entityType: 'ORDER_ITEM',
+          entityId: item.id,
+          metadata: {
+            orderId: order.id,
+            refundAmount,
+            reason,
+          },
+        },
+      });
+
+      this.logger.log(`[AUDIT] Order item cancelled: adminId=${adminId}, orderId=${order.id}, orderItemId=${item.id}, refundAmount=${refundAmount}`);
+
+      if (isLastActiveItem) {
+        const updatedOrder = await tx.order.update({
+          where: { id: order.id },
+          data: {
+            status: 'CANCELLED',
+            paymentStatus: wasPaid ? 'REFUND_PENDING' : order.paymentStatus,
+            inventoryStatus: inventoryWasHeld ? 'RELEASED' : order.inventoryStatus,
+            originalSubtotal: order.originalSubtotal ?? order.subtotal,
+            originalFinalAmount: order.originalFinalAmount ?? order.finalAmount,
+          },
+          include: { items: true, payments: true },
+        });
+        return { order: updatedOrder, cancelledItem: updatedItem, orderCancelled: true };
+      } else {
+        const remainingActive = activeItems.filter((it: any) => it.id !== item.id);
+        const newSubtotal = remainingActive.reduce(
+          (sum: number, it: any) =>
+            sum + Number(it.price) * it.quantity + (it.hasWarranty ? Number(it.warrantyPrice || 0) * it.quantity : 0),
+          0,
+        );
+        const newDiscountAmount = Math.max(0, Number(order.discountAmount) - allocatedDiscount);
+        const taxRate = Number(order.taxRate || 0);
+        const newTaxAmount = taxRate > 0
+          ? Math.round((newSubtotal - newDiscountAmount) * (taxRate / 100))
+          : 0;
+        const newFinalAmount = Math.max(0, newSubtotal - newDiscountAmount + newTaxAmount);
+
+        const updatedOrder = await tx.order.update({
+          where: { id: order.id },
+          data: {
+            subtotal: new Prisma.Decimal(newSubtotal),
+            discountAmount: new Prisma.Decimal(newDiscountAmount),
+            taxAmount: new Prisma.Decimal(newTaxAmount),
+            finalAmount: new Prisma.Decimal(newFinalAmount),
+            originalSubtotal: order.originalSubtotal ?? order.subtotal,
+            originalFinalAmount: order.originalFinalAmount ?? order.finalAmount,
+          },
+          include: { items: true, payments: true },
+        });
+
+        return { order: updatedOrder, cancelledItem: updatedItem, orderCancelled: false };
+      }
+    });
+  }
 
   async getDashboardStats() {
     const startOfToday = new Date();
@@ -1207,10 +2201,13 @@ export class AdminService {
 
     const pendingOrders = ordersInRange.filter((o) => o.status === 'PENDING').length;
     const deliveredOrders = ordersInRange.filter((o) => o.status === 'DELIVERED').length;
-    const cancelledOrders = ordersInRange.filter((o) => ['CANCELLED', 'REFUNDED'].includes(o.status)).length;
-    const conversionRate = ordersInRange.length > 0
-      ? Number(((deliveredOrders / ordersInRange.length) * 100).toFixed(1))
-      : 0;
+    const cancelledOrders = ordersInRange.filter((o) =>
+      ['CANCELLED', 'REFUNDED'].includes(o.status),
+    ).length;
+    const conversionRate =
+      ordersInRange.length > 0
+        ? Number(((deliveredOrders / ordersInRange.length) * 100).toFixed(1))
+        : 0;
 
     return {
       range,
@@ -1261,6 +2258,11 @@ export class AdminService {
       freeShippingThreshold: 999,
       standardDeliveryDays: '3-5',
       expressDeliveryDays: '1-2',
+      gstEnabled: false,
+      gstRate: 18,
+      gstAppliesToPurchases: false,
+      gstAppliesToRentals: false,
+      gstPriceInclusive: false,
     };
 
     try {
@@ -1270,17 +2272,246 @@ export class AdminService {
 
       const settings: Record<string, any> = { ...defaults };
       for (const row of rows) {
-        if (row.key === 'lowStockThreshold' || row.key === 'freeShippingThreshold') {
+        if (['lowStockThreshold', 'freeShippingThreshold', 'gstRate'].includes(row.key)) {
           settings[row.key] = Number(row.value);
+        } else if (
+          [
+            'gstEnabled',
+            'gstAppliesToPurchases',
+            'gstAppliesToRentals',
+            'gstPriceInclusive',
+          ].includes(row.key)
+        ) {
+          settings[row.key] = row.value === 'true';
         } else {
           settings[row.key] = row.value;
         }
       }
       return settings;
     } catch (err: any) {
-      this.logger.warn(`Failed to read system_settings, falling back to defaults: ${err?.message || err}`);
+      this.logger.warn(
+        `Failed to read system_settings, falling back to defaults: ${err?.message || err}`,
+      );
       return defaults;
     }
+  }
+
+  async getRentalPriceDrafts() {
+    return this.prisma.rentalPrice.findMany({
+      where: { status: 'DRAFT' },
+      include: {
+        product: { select: { id: true, name: true, sku: true } },
+        variant: { select: { id: true, name: true, sku: true } },
+        auditHistory: { select: { action: true } },
+      },
+      orderBy: [{ product: { name: 'asc' } }, { tenureMonths: 'asc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  async getRentalPrices() {
+    return this.prisma.rentalPrice.findMany({
+      include: {
+        product: { select: { id: true, name: true, sku: true } },
+        variant: { select: { id: true, name: true, sku: true } },
+        auditHistory: { select: { action: true } },
+      },
+      orderBy: [{ product: { name: 'asc' } }, { tenureMonths: 'asc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  async getRentalPricingCatalog() {
+    return this.prisma.product.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        price: true,
+        variants: {
+          where: { isActive: true },
+          select: { id: true, name: true, sku: true, price: true, attributes: true },
+          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async getRentalPriceHistory(id: string) {
+    const price = await this.prisma.rentalPrice.findUnique({ where: { id }, select: { id: true } });
+    if (!price) throw new NotFoundException('Rental price not found');
+    return this.prisma.rentalPriceAudit.findMany({
+      where: { rentalPriceId: id },
+      include: { admin: { select: { id: true, name: true, email: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createRentalPriceDraft(dto: CreateRentalPriceDto, adminId: string) {
+    if (!RENTAL_PRICE_TENURES.includes(dto.tenureMonths as (typeof RENTAL_PRICE_TENURES)[number])) {
+      throw new BadRequestException('Rental tenure is not supported');
+    }
+
+    return this.prisma.$transaction(
+      async (transaction) => {
+        const product = await transaction.product.findFirst({
+          where: { id: dto.productId, status: 'ACTIVE' },
+          include: { variants: { where: { isActive: true }, select: { id: true } } },
+        });
+        if (!product) throw new NotFoundException('Active product not found');
+
+        let variant: { id: string; productId: string; price: unknown } | null = null;
+        if (dto.variantId) {
+          variant = await transaction.productVariant.findFirst({
+            where: { id: dto.variantId, productId: product.id, isActive: true },
+            select: { id: true, productId: true, price: true },
+          });
+          if (!variant) throw new BadRequestException('Selected product variant is unavailable');
+        } else if (product.variants.length > 0) {
+          throw new BadRequestException('Select a variant for products with active configurations');
+        }
+
+        const sellingPrice = Number(variant?.price ?? product.price);
+        const existingDraft = await transaction.rentalPrice.findFirst({
+          where: {
+            productId: product.id,
+            variantId: variant?.id ?? null,
+            tenureMonths: dto.tenureMonths,
+            status: 'DRAFT',
+            sourceType: 'MANUAL',
+            changeReason: { not: null },
+          },
+        });
+        if (existingDraft)
+          throw new ConflictException('A manual draft already exists for this product and tenure');
+
+        const created = await transaction.rentalPrice.create({
+          data: {
+            productId: product.id,
+            variantId: variant?.id ?? null,
+            tenureMonths: dto.tenureMonths,
+            monthlyPrice: dto.monthlyPrice.toFixed(2),
+            securityDeposit: dto.securityDeposit.toFixed(2),
+            deliveryCharge: dto.deliveryCharge.toFixed(2),
+            sellingPriceSnapshot: sellingPrice.toFixed(2),
+            percentage: '0.00',
+            status: 'DRAFT',
+            sourceType: 'MANUAL',
+            changeReason: dto.reason.trim(),
+          },
+        });
+        await transaction.rentalPriceAudit.create({
+          data: {
+            rentalPriceId: created.id,
+            action: 'CREATED',
+            newMonthlyPrice: created.monthlyPrice,
+            newDeposit: created.securityDeposit,
+            newDeliveryCharge: created.deliveryCharge,
+            adminId,
+            reason: dto.reason.trim(),
+          },
+        });
+        return created;
+      },
+      { isolationLevel: 'Serializable' },
+    );
+  }
+
+  async updateRentalPriceDraft(id: string, dto: UpdateRentalPriceDto, adminId: string) {
+    return this.prisma.$transaction(async (transaction) => {
+      const draft = await transaction.rentalPrice.findUnique({ where: { id } });
+      if (!draft) throw new NotFoundException('Rental price draft not found');
+      if (draft.status !== 'DRAFT' || draft.sourceType !== 'MANUAL') {
+        throw new BadRequestException('Only manual rental price drafts can be edited');
+      }
+
+      const updated = await transaction.rentalPrice.update({
+        where: { id },
+        data: {
+          monthlyPrice: dto.monthlyPrice.toFixed(2),
+          securityDeposit: dto.securityDeposit.toFixed(2),
+          deliveryCharge: dto.deliveryCharge.toFixed(2),
+          changeReason: dto.reason.trim(),
+        },
+      });
+      await transaction.rentalPriceAudit.create({
+        data: {
+          rentalPriceId: id,
+          action: 'UPDATED',
+          previousMonthlyPrice: draft.monthlyPrice,
+          newMonthlyPrice: updated.monthlyPrice,
+          previousDeposit: draft.securityDeposit,
+          newDeposit: updated.securityDeposit,
+          previousDeliveryCharge: draft.deliveryCharge,
+          newDeliveryCharge: updated.deliveryCharge,
+          adminId,
+          reason: dto.reason.trim(),
+        },
+      });
+      return updated;
+    });
+  }
+
+  async approveRentalPrice(id: string, adminId: string) {
+    return this.prisma.$transaction(
+      async (transaction) => {
+        const draft = await transaction.rentalPrice.findUnique({ where: { id } });
+        if (!draft || draft.status !== 'DRAFT') {
+          throw new NotFoundException('Rental price draft not found');
+        }
+        if (draft.sourceType !== 'MANUAL') {
+          throw new BadRequestException(
+            'Illustrative estimates cannot be approved or used for customer pricing',
+          );
+        }
+        if (Number(draft.securityDeposit) !== 0 || Number(draft.deliveryCharge) !== 0) {
+          throw new BadRequestException(
+            'Deposits and delivery fees cannot be approved until checkout supports one-time rental charges',
+          );
+        }
+        const manualReview = await transaction.rentalPriceAudit.findFirst({
+          where: { rentalPriceId: id, action: { in: ['CREATED', 'UPDATED'] } },
+          select: { id: true },
+        });
+        if (!manualReview) {
+          throw new BadRequestException(
+            'Review and save this legacy draft with a reason before approving it',
+          );
+        }
+
+        await transaction.rentalPrice.updateMany({
+          where: {
+            productId: draft.productId,
+            variantId: draft.variantId,
+            tenureMonths: draft.tenureMonths,
+            status: 'APPROVED',
+            sourceType: 'MANUAL',
+          },
+          data: { status: 'SUPERSEDED' },
+        });
+
+        const approved = await transaction.rentalPrice.update({
+          where: { id },
+          data: { status: 'APPROVED', approvedBy: adminId, approvedAt: new Date() },
+        });
+        await transaction.rentalPriceAudit.create({
+          data: {
+            rentalPriceId: id,
+            action: 'APPROVED',
+            previousMonthlyPrice: draft.monthlyPrice,
+            newMonthlyPrice: draft.monthlyPrice,
+            previousDeposit: draft.securityDeposit,
+            newDeposit: draft.securityDeposit,
+            previousDeliveryCharge: draft.deliveryCharge,
+            newDeliveryCharge: draft.deliveryCharge,
+            adminId,
+            reason: draft.changeReason || 'Approved by administrator',
+          },
+        });
+        return approved;
+      },
+      { isolationLevel: 'Serializable' },
+    );
   }
 
   async updateSettings(dto: UpdateSettingsDto, adminId?: string) {
@@ -1353,7 +2584,13 @@ export class AdminService {
       where: { id },
       data: {
         status,
-        ...(adminNotes ? { notes: existing.notes ? `${existing.notes}\n[Admin]: ${adminNotes}` : `[Admin]: ${adminNotes}` } : {}),
+        ...(adminNotes
+          ? {
+              notes: existing.notes
+                ? `${existing.notes}\n[Admin]: ${adminNotes}`
+                : `[Admin]: ${adminNotes}`,
+            }
+          : {}),
       },
     });
 
@@ -1372,7 +2609,9 @@ export class AdminService {
         },
       });
     } catch (auditErr: any) {
-      this.logger.warn(`Failed to create audit log for inquiry update: ${auditErr?.message || auditErr}`);
+      this.logger.warn(
+        `Failed to create audit log for inquiry update: ${auditErr?.message || auditErr}`,
+      );
     }
 
     return updated;
@@ -1609,7 +2848,9 @@ export class AdminService {
         },
       });
     } catch (auditErr: any) {
-      this.logger.warn(`Could not create audit log for snapshot view: ${auditErr?.message || auditErr}`);
+      this.logger.warn(
+        `Could not create audit log for snapshot view: ${auditErr?.message || auditErr}`,
+      );
     }
 
     return {
@@ -1682,7 +2923,9 @@ export class AdminService {
     }
 
     if (status === 'REJECTED' && (!adminNotes || !adminNotes.trim())) {
-      throw new BadRequestException('Rejection notes (adminNotes) are mandatory when rejecting a withdrawal request');
+      throw new BadRequestException(
+        'Rejection notes (adminNotes) are mandatory when rejecting a withdrawal request',
+      );
     }
 
     return await this.prisma.$transaction(async (tx) => {
@@ -1702,7 +2945,7 @@ export class AdminService {
 
       if (withdrawal.status !== 'PENDING') {
         throw new ConflictException(
-          `Withdrawal request has already been processed with status "${withdrawal.status}"`
+          `Withdrawal request has already been processed with status "${withdrawal.status}"`,
         );
       }
 

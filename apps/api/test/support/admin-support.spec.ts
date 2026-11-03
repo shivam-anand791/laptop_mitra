@@ -164,6 +164,22 @@ describe('SupportService (Admin Support & Returns Workspace - Phase S5)', () => 
       expect(res.items[0].slaBreached).toBe(false);
     });
 
+    it('should order tickets by priority rank: URGENT > HIGH > MEDIUM > LOW', async () => {
+      const tLow = { ...mockTicket, id: 't-low', ticketNumber: 'LM-T-1', priority: 'LOW' };
+      const tMed = { ...mockTicket, id: 't-med', ticketNumber: 'LM-T-2', priority: 'MEDIUM' };
+      const tHigh = { ...mockTicket, id: 't-high', ticketNumber: 'LM-T-3', priority: 'HIGH' };
+      const tUrgent = { ...mockTicket, id: 't-urg', ticketNumber: 'LM-T-4', priority: 'URGENT' };
+
+      prisma.supportTicket.count
+        .mockResolvedValueOnce(4)
+        .mockResolvedValueOnce(4)
+        .mockResolvedValueOnce(0);
+      prisma.supportTicket.findMany.mockResolvedValueOnce([tLow, tMed, tHigh, tUrgent]);
+
+      const res = await service.getAdminTickets({ status: 'ALL', page: 1, pageSize: 20 });
+      expect(res.items.map((t: any) => t.priority)).toEqual(['URGENT', 'HIGH', 'MEDIUM', 'LOW']);
+    });
+
     it('should update ticket status to RESOLVED and set resolvedAt timestamp', async () => {
       prisma.supportTicket.findUnique.mockResolvedValueOnce(mockTicket);
       prisma.supportTicket.update.mockResolvedValueOnce({

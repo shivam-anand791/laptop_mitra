@@ -157,6 +157,7 @@ export default function AccountScreen() {
     {
       title: 'Rewards',
       items: [
+        { icon: 'pricetag-outline' as const, label: 'My Coupons & Offers', route: 'MyCoupons' as const },
         { icon: 'wallet-outline' as const, label: 'Mitra Affiliate Program', route: 'MitraDashboard' as const },
       ],
     },
