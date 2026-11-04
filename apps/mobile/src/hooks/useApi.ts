@@ -874,3 +874,92 @@ export function useDeclineRevisedBuyback() {
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Free General Service & Laptops Hub Hooks
+// ---------------------------------------------------------------------------
+
+export function useUserLaptops() {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['user-laptops'],
+    queryFn: () => getClient().getUserLaptops(),
+    enabled: isAuthenticated,
+  });
+}
+
+export function useLaptopDetails(unitId: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['laptop-details', unitId],
+    queryFn: () => getClient().getLaptopDetails(unitId),
+    enabled: isAuthenticated && !!unitId,
+  });
+}
+
+export function useBookService() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: ({ unitId, data }: { unitId: string; data: any }) =>
+      getClient().bookService(unitId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-laptops'] });
+      queryClient.invalidateQueries({ queryKey: ['user-service-jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['item-situation'] });
+    },
+  });
+}
+
+export function useUserServiceJobs() {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['user-service-jobs'],
+    queryFn: () => getClient().getUserServiceJobs(),
+    enabled: isAuthenticated,
+  });
+}
+
+export function useServiceJob(id: string) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['service-job', id],
+    queryFn: () => getClient().getServiceJobById(id),
+    enabled: isAuthenticated && !!id,
+  });
+}
+
+export function useRescheduleService() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { preferredDate: string; preferredSlot: string; reason?: string } }) =>
+      getClient().rescheduleService(id, data),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['service-job', vars.id] });
+      queryClient.invalidateQueries({ queryKey: ['user-service-jobs'] });
+    },
+  });
+}
+
+export function useCancelService() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { reason: string } }) =>
+      getClient().cancelService(id, data),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['service-job', vars.id] });
+      queryClient.invalidateQueries({ queryKey: ['user-service-jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['user-laptops'] });
+    },
+  });
+}
+
+export function useServiceSettings() {
+  const { getClient } = useAuth();
+  return useQuery({
+    queryKey: ['service-settings'],
+    queryFn: () => getClient().getServiceSettings(),
+  });
+}

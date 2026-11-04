@@ -1609,6 +1609,11 @@ export class AdminService {
                 category: true,
               },
             },
+            soldUnits: {
+              include: {
+                warrantyCoverage: true,
+              },
+            },
           },
         },
         deliveries: {
@@ -1637,7 +1642,12 @@ export class AdminService {
     orderId: string,
     status: string,
     adminId?: string,
-    courierData?: { courierName?: string; trackingNumber?: string },
+    courierData?: {
+      courierName?: string;
+      trackingNumber?: string;
+      serialAssignments?: Array<{ orderItemId: string; unitIndex: number; serialNumber: string }>;
+      overrideReason?: string;
+    },
   ) {
     if (!ORDER_STATUSES.includes(status as OrderStatus)) {
       throw new BadRequestException(`Status must be one of: ${ORDER_STATUSES.join(', ')}`);
@@ -1658,13 +1668,46 @@ export class AdminService {
     const initialOrder = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        items: true,
+        items: {
+          include: {
+            product: true,
+          },
+        },
         deliveries: true,
       },
     });
 
     if (!initialOrder) {
       throw new NotFoundException(`Order with id ${orderId} not found`);
+    }
+
+    if (targetStatus === 'SHIPPING' && (this.prisma as any).soldUnit) {
+      const overrideReason = courierData?.overrideReason?.trim();
+      if (!overrideReason) {
+        const assignments = courierData?.serialAssignments || [];
+        for (const item of initialOrder.items.filter((i) => i.status !== 'CANCELLED')) {
+          for (let u = 1; u <= item.quantity; u++) {
+            const match = assignments.find((a) => a.orderItemId === item.id && a.unitIndex === u);
+            if (!match || !match.serialNumber?.trim()) {
+              throw new BadRequestException(
+                `Serial number is required for "${item.product?.name || 'Item'}" (Unit ${u} of ${item.quantity}) before dispatch, or provide an administrative override reason.`,
+              );
+            }
+          }
+        }
+
+        const serials = assignments.map((a) => a.serialNumber?.trim()).filter(Boolean);
+        if (new Set(serials).size !== serials.length) {
+          throw new BadRequestException('Duplicate serial numbers submitted in dispatch payload.');
+        }
+      }
+    }
+
+    if (initialOrder.status === targetStatus) {
+      if (targetStatus === 'CANCELLED') {
+        throw new BadRequestException('Order is already CANCELLED (terminal status)');
+      }
+      return initialOrder;
     }
 
     const allowedTransitions = ORDER_TRANSITION_MAP[initialOrder.status as OrderStatus] || [];
@@ -1677,7 +1720,8 @@ export class AdminService {
     }
 
     try {
-      const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      const updatedOrder = await this.prisma.$transaction(
+        async (tx) => {
         const currentOrder = await tx.order.findUnique({
           where: { id: orderId },
           include: {
@@ -1792,7 +1836,214 @@ export class AdminService {
           }
         }
 
-        // 4. Update the Order record
+        // 4. Serial tracking & SoldUnit creation during dispatch (SHIPPING)
+        if (targetStatus === 'SHIPPING' && tx.soldUnit) {
+          const overrideReason = courierData?.overrideReason?.trim();
+          const assignments = courierData?.serialAssignments || [];
+
+          for (const item of currentOrder.items.filter((i) => i.status !== 'CANCELLED')) {
+              const product = tx.product?.findUnique
+                ? await tx.product.findUnique({ where: { id: item.productId } })
+                : null;
+            const brandSnapshot = (product?.metadata as any)?.brand || 'LaptopMitra';
+            const modelSnapshot = product?.name || 'Laptop';
+
+            for (let u = 1; u <= item.quantity; u++) {
+              const match = assignments.find((a) => a.orderItemId === item.id && a.unitIndex === u);
+              const serial = match?.serialNumber?.trim();
+
+              if (serial) {
+                const existingActive = await tx.soldUnit.findFirst({
+                  where: {
+                    serialNumber: serial,
+                    status: 'ACTIVE',
+                    NOT: {
+                      orderItemId: item.id,
+                      unitIndex: u,
+                    },
+                  },
+                });
+                if (existingActive) {
+                  throw new BadRequestException(
+                    `Serial number "${serial}" is already registered to another active unit.`,
+                  );
+                }
+              }
+
+              const existingUnit = await tx.soldUnit.findUnique({
+                where: {
+                  orderItemId_unitIndex: {
+                    orderItemId: item.id,
+                    unitIndex: u,
+                  },
+                },
+              });
+
+              if (existingUnit) {
+                const prevSerial = existingUnit.serialNumber;
+                await tx.soldUnit.update({
+                  where: { id: existingUnit.id },
+                  data: {
+                    serialNumber: serial || existingUnit.serialNumber,
+                    isDispatched: true,
+                    dispatchedAt: new Date(),
+                    dispatchedBy: adminId,
+                    overrideReason: overrideReason || existingUnit.overrideReason,
+                  },
+                });
+
+                if (serial && prevSerial !== serial) {
+                  await tx.soldUnitSerialHistory.create({
+                    data: {
+                      soldUnitId: existingUnit.id,
+                      previousSerial: prevSerial,
+                      newSerial: serial,
+                      changedBy: adminId || currentOrder.userId,
+                      reason: 'Order dispatch serial assignment',
+                    },
+                  });
+                }
+              } else {
+                const newUnit = await tx.soldUnit.create({
+                  data: {
+                    orderItemId: item.id,
+                    productId: item.productId,
+                    userId: currentOrder.userId,
+                    unitIndex: u,
+                    serialNumber: serial || null,
+                    brandSnapshot,
+                    modelSnapshot,
+                    status: 'ACTIVE',
+                    isDispatched: true,
+                    dispatchedAt: new Date(),
+                    dispatchedBy: adminId,
+                    overrideReason: overrideReason || null,
+                  },
+                });
+
+                if (serial) {
+                  await tx.soldUnitSerialHistory.create({
+                    data: {
+                      soldUnitId: newUnit.id,
+                      previousSerial: null,
+                      newSerial: serial,
+                      changedBy: adminId || currentOrder.userId,
+                      reason: 'Order dispatch serial assignment',
+                    },
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        // 5. WarrantyCoverage creation at delivery (DELIVERED)
+        if (targetStatus === 'DELIVERED' && tx.soldUnit) {
+          const delDate = existingDelivery?.deliveredAt || new Date();
+
+          for (const item of currentOrder.items.filter((i) => i.status !== 'CANCELLED')) {
+            const product = tx.product?.findUnique
+              ? await tx.product.findUnique({ where: { id: item.productId } })
+              : null;
+            const baseMonths = Number((product?.metadata as any)?.warrantyMonths) || 6;
+            const monthsSnapshot = item.hasWarranty ? baseMonths + 12 : baseMonths;
+            const endDate = new Date(delDate.getTime() + monthsSnapshot * 30 * 24 * 60 * 60 * 1000);
+
+            for (let u = 1; u <= item.quantity; u++) {
+              let unit = await tx.soldUnit.findUnique({
+                where: {
+                  orderItemId_unitIndex: {
+                    orderItemId: item.id,
+                    unitIndex: u,
+                  },
+                },
+              });
+
+              if (!unit) {
+                unit = await tx.soldUnit.create({
+                  data: {
+                    orderItemId: item.id,
+                    productId: item.productId,
+                    userId: currentOrder.userId,
+                    unitIndex: u,
+                    brandSnapshot: (product?.metadata as any)?.brand || 'LaptopMitra',
+                    modelSnapshot: product?.name || 'Laptop',
+                    status: 'ACTIVE',
+                    isDispatched: true,
+                    dispatchedAt: delDate,
+                  },
+                });
+              }
+
+              const existingCoverage = await tx.warrantyCoverage.findUnique({
+                where: { soldUnitId: unit.id },
+              });
+
+              if (!existingCoverage) {
+                await tx.warrantyCoverage.create({
+                  data: {
+                    soldUnitId: unit.id,
+                    source: item.hasWarranty ? 'EXTENDED' : 'BASE',
+                    monthsSnapshot,
+                    startDate: delDate,
+                    endDate,
+                    status: 'ACTIVE',
+                  },
+                });
+              }
+
+              // Create 1 free general service entitlement for outright purchases (6-month benefit)
+              if (item.purchaseMode !== 'rent' && item.purchaseMode !== 'lease') {
+                const existingEntitlement = await tx.serviceEntitlement.findFirst({
+                  where: {
+                    soldUnitId: unit.id,
+                    kind: 'OUTRIGHT_FREE',
+                  },
+                });
+
+                if (!existingEntitlement) {
+                  const serviceEnd = new Date(delDate.getTime() + 6 * 30 * 24 * 60 * 60 * 1000);
+                  await tx.serviceEntitlement.create({
+                    data: {
+                      soldUnitId: unit.id,
+                      userId: currentOrder.userId,
+                      kind: 'OUTRIGHT_FREE',
+                      periodStart: delDate,
+                      periodEnd: serviceEnd,
+                      status: 'AVAILABLE',
+                    },
+                  });
+                }
+              } else {
+                // Stage 7: Monthly Entitlement for Active Leases
+                const existingLeaseEntitlement = await tx.serviceEntitlement.findFirst({
+                  where: {
+                    soldUnitId: unit.id,
+                    kind: 'LEASE_MONTHLY',
+                    cycleMonth: 1,
+                  },
+                });
+
+                if (!existingLeaseEntitlement) {
+                  const monthEnd = new Date(delDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+                  await tx.serviceEntitlement.create({
+                    data: {
+                      soldUnitId: unit.id,
+                      userId: currentOrder.userId,
+                      kind: 'LEASE_MONTHLY',
+                      cycleMonth: 1,
+                      periodStart: delDate,
+                      periodEnd: monthEnd,
+                      status: 'AVAILABLE',
+                    },
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        // 6. Update the Order record
         const updateData: any = {
           status: targetStatus,
           ...(newPaymentStatus ? { paymentStatus: newPaymentStatus } : {}),
@@ -1825,7 +2076,7 @@ export class AdminService {
         );
 
         return orderResult;
-      });
+      }, { timeout: 15000, maxWait: 5000 });
 
       // 6. Trigger branded status email notification (non-blocking for DB consistency)
       if (['CONFIRMED', 'SHIPPING', 'DELIVERED', 'CANCELLED'].includes(targetStatus)) {
@@ -3005,6 +3256,213 @@ export class AdminService {
         processedAt: updated.processedAt,
         updatedAt: updated.updatedAt,
       };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Warranty Register & Serial Tracking (Stage 2)
+  // ---------------------------------------------------------------------------
+
+  async getWarrantyRegister(query: any) {
+    const page = Math.max(1, Number(query?.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query?.pageSize) || 20));
+    const skip = (page - 1) * pageSize;
+
+    const where: any = {};
+    if (query?.status) {
+      where.status = query.status;
+    }
+    if (query?.source) {
+      where.source = query.source;
+    }
+    if (query?.brand) {
+      where.soldUnit = {
+        brandSnapshot: { contains: query.brand, mode: 'insensitive' },
+      };
+    }
+    if (query?.search?.trim()) {
+      const s = query.search.trim();
+      where.OR = [
+        { soldUnit: { serialNumber: { contains: s, mode: 'insensitive' } } },
+        { soldUnit: { modelSnapshot: { contains: s, mode: 'insensitive' } } },
+        { soldUnit: { user: { name: { contains: s, mode: 'insensitive' } } } },
+        { soldUnit: { user: { email: { contains: s, mode: 'insensitive' } } } },
+        { soldUnit: { orderItem: { order: { orderNumber: { contains: s, mode: 'insensitive' } } } } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.warrantyCoverage.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { endDate: 'asc' },
+        include: {
+          soldUnit: {
+            include: {
+              user: { select: { id: true, name: true, email: true, phone: true } },
+              product: { select: { id: true, name: true, slug: true, images: true } },
+              orderItem: {
+                select: {
+                  id: true,
+                  orderId: true,
+                  price: true,
+                  quantity: true,
+                  order: { select: { id: true, orderNumber: true, createdAt: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.warrantyCoverage.count({ where }),
+    ]);
+
+    return { items, total, page, pageSize };
+  }
+
+  async getSoldUnits(query: any) {
+    const page = Math.max(1, Number(query?.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(query?.pageSize) || 20));
+    const skip = (page - 1) * pageSize;
+
+    const where: any = {};
+    if (query?.status) where.status = query.status;
+    if (query?.brand) where.brandSnapshot = { contains: query.brand, mode: 'insensitive' };
+    if (query?.search?.trim()) {
+      const s = query.search.trim();
+      where.OR = [
+        { serialNumber: { contains: s, mode: 'insensitive' } },
+        { modelSnapshot: { contains: s, mode: 'insensitive' } },
+        { user: { name: { contains: s, mode: 'insensitive' } } },
+        { user: { email: { contains: s, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.soldUnit.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          warrantyCoverage: true,
+          user: { select: { id: true, name: true, email: true, phone: true } },
+          product: { select: { id: true, name: true, slug: true, images: true } },
+          orderItem: {
+            select: {
+              id: true,
+              orderId: true,
+              price: true,
+              quantity: true,
+              order: { select: { id: true, orderNumber: true, createdAt: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.soldUnit.count({ where }),
+    ]);
+
+    return { items, total, page, pageSize };
+  }
+
+  async getUnitBySerial(serial: string) {
+    const trimmed = serial.trim();
+    const unit = await this.prisma.soldUnit.findFirst({
+      where: {
+        OR: [
+          { serialNumber: trimmed },
+          { id: trimmed },
+        ],
+      },
+      include: {
+        warrantyCoverage: true,
+        user: { select: { id: true, name: true, email: true, phone: true } },
+        product: { select: { id: true, name: true, slug: true, images: true } },
+        orderItem: {
+          include: {
+            order: {
+              include: {
+                deliveries: true,
+                payments: true,
+              },
+            },
+          },
+        },
+        serialHistory: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: { select: { id: true, name: true, email: true, role: true } },
+          },
+        },
+        serviceJobs: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            technician: { select: { id: true, name: true, phone: true } },
+          },
+        },
+        entitlements: true,
+      },
+    });
+
+    if (!unit) {
+      throw new NotFoundException(`Unit with serial number "${serial}" not found`);
+    }
+
+    return unit;
+  }
+
+  async updateUnitSerial(unitId: string, dto: { serialNumber: string; reason: string }, adminId?: string) {
+    const newSerial = dto.serialNumber?.trim();
+    const reason = dto.reason?.trim();
+
+    if (!newSerial) {
+      throw new BadRequestException('Serial number cannot be empty.');
+    }
+    if (!reason) {
+      throw new BadRequestException('A reason is required when modifying a unit serial number.');
+    }
+
+    const unit = await this.prisma.soldUnit.findUnique({
+      where: { id: unitId },
+    });
+    if (!unit) {
+      throw new NotFoundException(`SoldUnit with id "${unitId}" not found`);
+    }
+
+    if (unit.serialNumber === newSerial) {
+      return unit;
+    }
+
+    const existingActive = await this.prisma.soldUnit.findFirst({
+      where: {
+        serialNumber: newSerial,
+        status: 'ACTIVE',
+        NOT: { id: unitId },
+      },
+    });
+    if (existingActive) {
+      throw new BadRequestException(`Serial number "${newSerial}" is already assigned to another active unit.`);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const prevSerial = unit.serialNumber;
+      const updatedUnit = await tx.soldUnit.update({
+        where: { id: unitId },
+        data: { serialNumber: newSerial },
+      });
+
+      await tx.soldUnitSerialHistory.create({
+        data: {
+          soldUnitId: unit.id,
+          previousSerial: prevSerial,
+          newSerial,
+          changedBy: adminId || unit.userId,
+          reason,
+        },
+      });
+
+      return updatedUnit;
     });
   }
 }

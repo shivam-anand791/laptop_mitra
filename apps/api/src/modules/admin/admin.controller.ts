@@ -16,6 +16,8 @@ import { AdminProductQueryDto } from './dto/admin-product-query.dto';
 import { AdminAnalyticsQueryDto } from './dto/admin-analytics-query.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { CreateRentalPriceDto, UpdateRentalPriceDto } from './dto/save-rental-price.dto';
+import { WarrantyRegisterQueryDto } from './dto/warranty-register-query.dto';
+import { UpdateUnitSerialDto } from './dto/update-unit-serial.dto';
 
 @UseGuards(RolesGuard)
 @Roles('ADMIN')
@@ -255,8 +257,13 @@ export class AdminController {
     @Body() dto: UpdateOrderStatusDto,
   ) {
     const courierData =
-      dto.courierName || dto.trackingNumber
-        ? { courierName: dto.courierName, trackingNumber: dto.trackingNumber }
+      dto.courierName || dto.trackingNumber || dto.serialAssignments || dto.overrideReason
+        ? {
+            courierName: dto.courierName,
+            trackingNumber: dto.trackingNumber,
+            serialAssignments: dto.serialAssignments,
+            overrideReason: dto.overrideReason,
+          }
         : undefined;
     if (courierData) {
       return this.adminService.updateOrderStatus(id, dto.status, admin?.id, courierData);
@@ -392,5 +399,43 @@ export class AdminController {
     @Body('adminNotes') adminNotes?: string,
   ) {
     return this.adminService.updateWithdrawalStatus(id, status, admin?.id, adminNotes);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Warranty Register & Serial Tracking (Stage 2)
+  // ---------------------------------------------------------------------------
+
+  @Get('service/warranty')
+  @ApiOperation({ summary: 'Paginated warranty register with serial and brand filters' })
+  async getWarrantyRegister(
+    @Query() query: WarrantyRegisterQueryDto,
+  ) {
+    return this.adminService.getWarrantyRegister(query);
+  }
+
+  @Get('service/units')
+  @ApiOperation({ summary: 'Paginated sold units list' })
+  async getSoldUnits(
+    @Query() query: any,
+  ) {
+    return this.adminService.getSoldUnits(query);
+  }
+
+  @Get('service/units/:serial')
+  @ApiOperation({ summary: 'Unit 360 history by serial or unit ID' })
+  async getUnitBySerial(
+    @Param('serial') serial: string,
+  ) {
+    return this.adminService.getUnitBySerial(serial);
+  }
+
+  @Post('service/units/:id/serial')
+  @ApiOperation({ summary: 'Audited serial number correction for a sold unit' })
+  async updateUnitSerial(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateUnitSerialDto,
+  ) {
+    return this.adminService.updateUnitSerial(id, dto, admin?.id);
   }
 }

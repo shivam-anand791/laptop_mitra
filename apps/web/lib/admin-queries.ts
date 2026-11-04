@@ -35,6 +35,9 @@ export const adminQueryKeys = {
   rentalPricingCatalog: () => [...adminQueryKeys.all, 'rental-pricing-catalog'] as const,
   rentalPriceHistory: (id: string) => [...adminQueryKeys.all, 'rental-price-history', id] as const,
   rentalTerminationRequests: () => [...adminQueryKeys.all, 'rental-termination-requests'] as const,
+  warrantyRegister: () => [...adminQueryKeys.all, 'warranty-register'] as const,
+  soldUnits: () => [...adminQueryKeys.all, 'sold-units'] as const,
+  soldUnit: (serial: string) => [...adminQueryKeys.soldUnits(), serial] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -143,12 +146,22 @@ export function useUpdateOrderStatus() {
       status,
       courierName,
       trackingNumber,
+      serialAssignments,
+      overrideReason,
     }: {
       id: string;
       status: OrderStatus | string;
       courierName?: string;
       trackingNumber?: string;
-    }) => adminApi.updateOrderStatus(id, status, { courierName, trackingNumber }),
+      serialAssignments?: Array<{ orderItemId: string; unitIndex: number; serialNumber: string }>;
+      overrideReason?: string;
+    }) =>
+      adminApi.updateOrderStatus(id, status, {
+        courierName,
+        trackingNumber,
+        serialAssignments,
+        overrideReason,
+      }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.orders() });
       if (variables?.id) {
@@ -156,6 +169,7 @@ export function useUpdateOrderStatus() {
       }
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.stats() });
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.products() });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'service'] });
     },
   });
 }
@@ -314,3 +328,54 @@ export function useUpdateInquiryStatus() {
     },
   });
 }
+
+export function useWarrantyRegister(params?: {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+  source?: string;
+  brand?: string;
+  search?: string;
+}) {
+  return useQuery<{ items: any[]; total: number; page: number; pageSize: number }, Error>({
+    queryKey: [...adminQueryKeys.warrantyRegister(), params],
+    queryFn: () => adminApi.getWarrantyRegister(params),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useSoldUnits(params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+}) {
+  return useQuery<{ items: any[]; total: number; page: number; pageSize: number }, Error>({
+    queryKey: [...adminQueryKeys.soldUnits(), params],
+    queryFn: () => adminApi.getSoldUnits(params),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useSoldUnitBySerial(serial: string) {
+  return useQuery<{ unit: any; serialHistory: any[] }, Error>({
+    queryKey: adminQueryKeys.soldUnit(serial),
+    queryFn: () => adminApi.getUnitBySerial(serial),
+    enabled: !!serial,
+  });
+}
+
+export function useUpdateUnitSerial() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, serialNumber, reason }: { id: string; serialNumber: string; reason: string }) =>
+      adminApi.updateUnitSerial(id, { serialNumber, reason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.soldUnits() });
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.warrantyRegister() });
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.orders() });
+    },
+  });
+}
+

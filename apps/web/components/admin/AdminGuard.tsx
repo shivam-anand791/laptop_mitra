@@ -36,8 +36,12 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
         const profile = await api.getProfile();
         if (!active) return;
 
-        if ((profile?.role === 'ADMIN' || profile?.role === 'SUPPORT') && profile?.status === 'ACTIVE') {
+        if ((profile?.role === 'ADMIN' || profile?.role === 'SUPPORT' || profile?.role === 'TECHNICIAN') && profile?.status === 'ACTIVE') {
           setVerifiedRole(profile.role);
+          if (profile.role === 'TECHNICIAN' && !pathname.startsWith('/admin/service/jobs')) {
+            router.replace('/admin/service/jobs');
+            return;
+          }
           setIsForbidden(false);
         } else {
           setVerifiedRole(profile?.role || 'CUSTOMER');

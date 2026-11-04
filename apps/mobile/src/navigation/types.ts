@@ -45,6 +45,8 @@ export type MainStackParamList = {
   TicketList: undefined;
   TicketDetail: { ticketId: string; isNew?: boolean };
   ReturnDetail: { returnId: string; isNew?: boolean };
+  MyLaptops: undefined;
+  ServiceJobDetail: { jobId: string };
 };
 
 export type RootNavigationProp = NativeStackNavigationProp<RootStackParamList>;

@@ -263,6 +263,9 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     let order: any;
     try {
       order = await this.runSerializable(async (transaction) => {
+        let itemsSource: any[] = [];
+        let sourceCartId: string | null = null;
+
         const cart = await transaction.cart.findFirst({
           where: { userId },
           include: {
@@ -276,9 +279,40 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
             },
           },
         });
-        if (!cart?.items?.length) throw new BadRequestException('Cart is empty');
 
-        const purchaseModes = new Set(cart.items.map((item: any) => item.purchaseMode === 'lease' ? 'lease' : 'sell'));
+        if (cart?.items?.length) {
+          itemsSource = cart.items;
+          sourceCartId = cart.id;
+        } else if (cartItems && Array.isArray(cartItems) && cartItems.length > 0) {
+          itemsSource = await Promise.all(cartItems.map(async (ci: any) => {
+            const product = await transaction.product.findUnique({
+              where: { id: ci.productId },
+              include: { variants: { where: { isActive: true, isDefault: true }, take: 1 } },
+            });
+            let variant = null;
+            if (ci.variantId) {
+              variant = await transaction.productVariant.findUnique({
+                where: { id: ci.variantId },
+              });
+            }
+            return {
+              id: ci.id || `ci-virtual-${ci.productId}`,
+              productId: ci.productId,
+              variantId: ci.variantId || null,
+              quantity: ci.quantity || 1,
+              purchaseMode: ci.purchaseMode || 'sell',
+              tenureMonths: ci.tenureMonths || null,
+              configuration: ci.configuration || 'default',
+              hasWarranty: !!ci.hasWarranty,
+              product,
+              variant,
+            };
+          }));
+        }
+
+        if (!itemsSource.length) throw new BadRequestException('Cart is empty');
+
+        const purchaseModes = new Set(itemsSource.map((item: any) => item.purchaseMode === 'lease' ? 'lease' : 'sell'));
         if (purchaseModes.size !== 1) {
           throw new BadRequestException('Buy and rent items must be checked out separately. Your cart was not changed.');
         }
@@ -291,7 +325,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
           throw new BadRequestException('Discounts and referral codes are not available for rental subscriptions.');
         }
 
-        const rentalItems = cart.items.filter((item: any) => item.purchaseMode === 'lease');
+        const rentalItems = itemsSource.filter((item: any) => item.purchaseMode === 'lease');
         if (rentalItems.some((item: any) => ![1, 3, 6, 12, 24].includes(Number(item.tenureMonths)))) {
           throw new BadRequestException('Every rental item must have a supported tenure selected.');
         }
@@ -301,7 +335,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
         }
 
         let subtotalPaise = 0;
-        const pricedItems = await Promise.all(cart.items.map(async (item: any) => {
+        const pricedItems = await Promise.all(itemsSource.map(async (item: any) => {
           const quantity = Number(item.quantity);
           if (!Number.isSafeInteger(quantity) || quantity <= 0) {
             throw new BadRequestException('Cart contains an invalid quantity');
@@ -504,6 +538,11 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
               taxAmountPaise: tax.taxAmountPaise,
               taxInclusive: tax.taxInclusive,
               totalAmountPaise: finalPaise,
+              lineAllocations: pricedItems.map((item: any) => ({
+                productId: item.productId,
+                variantId: item.variant?.id || null,
+                allocatedDiscountPaise: lineAllocationMap.get(item.variant?.id || item.productId) || 0,
+              })),
             },
             shippingAddress: shippingAddress
               ? { ...shippingAddress, ...(idempotencyKey ? { _idempotencyKey: idempotencyKey.trim() } : {}) }
@@ -517,9 +556,6 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
             reservationExpiresAt,
             items: {
               create: pricedItems.map((item: any) => {
-                const itemAllocatedPaise = lineAllocationMap.get(item.variant?.id || item.productId) || 0;
-                const itemAllocatedRupees = itemAllocatedPaise / 100;
-                const unitNetRupees = Math.max(0, (item.unitPricePaise / 100) - (itemAllocatedRupees / (item.quantity || 1)));
                 return {
                   productId: item.productId,
                   ...(item.variant ? {
@@ -530,8 +566,6 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
                   } : {}),
                   quantity: item.quantity,
                   price: (item.unitPricePaise / 100).toFixed(2),
-                  allocatedDiscount: itemAllocatedRupees.toFixed(2),
-                  netPrice: unitNetRupees.toFixed(2),
                   purchaseMode: item.purchaseMode,
                   tenureMonths: item.tenureMonths,
                   configuration: item.configuration,
@@ -590,8 +624,8 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
 
         // COD is complete at order creation. Keep prepaid carts until payment
         // verification succeeds so a dismissed or failed payment remains retryable.
-        if (paymentMethod === 'cod') {
-          await transaction.cartItem.deleteMany({ where: { cartId: cart.id } });
+        if (paymentMethod === 'cod' && sourceCartId) {
+          await transaction.cartItem.deleteMany({ where: { cartId: sourceCartId } });
         }
         return created;
       });

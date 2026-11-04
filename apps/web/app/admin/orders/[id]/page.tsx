@@ -74,6 +74,9 @@ export default function AdminOrderDetailPage() {
   const [courierName, setCourierName] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
   const [shippingError, setShippingError] = useState('');
+  const [serialInputs, setSerialInputs] = useState<Record<string, string>>({});
+  const [overrideDispatch, setOverrideDispatch] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
 
   // Legal transitions according to authoritative transition map
   const currentStatus = (order?.status as OrderStatus) || 'PENDING';
@@ -82,7 +85,12 @@ export default function AdminOrderDetailPage() {
   // Execute status update with error boundary
   const executeStatusUpdate = async (
     targetStatus: string,
-    trackingInfo?: { courierName?: string; trackingNumber?: string },
+    trackingInfo?: {
+      courierName?: string;
+      trackingNumber?: string;
+      serialAssignments?: Array<{ orderItemId: string; unitIndex: number; serialNumber: string }>;
+      overrideReason?: string;
+    },
   ) => {
     try {
       await updateStatusMutation.mutateAsync({
@@ -90,6 +98,8 @@ export default function AdminOrderDetailPage() {
         status: targetStatus,
         courierName: trackingInfo?.courierName,
         trackingNumber: trackingInfo?.trackingNumber,
+        serialAssignments: trackingInfo?.serialAssignments,
+        overrideReason: trackingInfo?.overrideReason,
       });
       addToast('success', `Order #${order?.orderNumber || id.slice(-8)} transitioned to ${targetStatus}`);
       setModalTransition(null);
@@ -115,6 +125,8 @@ export default function AdminOrderDetailPage() {
       setCourierName(order?.deliveries?.[0]?.carrier || order?.carrier || 'BlueDart');
       setTrackingNumber(order?.deliveries?.[0]?.trackingNumber || order?.trackingNumber || '');
       setShippingError('');
+      setOverrideDispatch(false);
+      setOverrideReason('');
       setShippingModalOpen(true);
       return;
     }
@@ -130,13 +142,45 @@ export default function AdminOrderDetailPage() {
   const handleShippingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!courierName.trim() || !trackingNumber.trim()) {
-      setShippingError('Both courier name and tracking number are required to dispatch this shipment.');
+      setShippingError('Both courier partner and tracking number are required to dispatch this shipment.');
       return;
     }
+
+    const activeItems = order?.items?.filter((i: any) => i.status !== 'CANCELLED') || [];
+    let serialAssignments: Array<{ orderItemId: string; unitIndex: number; serialNumber: string }> | undefined = undefined;
+
+    if (!overrideDispatch) {
+      const assignments: Array<{ orderItemId: string; unitIndex: number; serialNumber: string }> = [];
+      for (const item of activeItems) {
+        for (let u = 1; u <= (item.quantity || 1); u++) {
+          const val = serialInputs[`${item.id}-${u}`]?.trim();
+          if (!val) {
+            setShippingError(`Serial number is required for "${item.product?.name || 'Item'}" (Unit ${u} of ${item.quantity}). Or check "Emergency Admin Override".`);
+            return;
+          }
+          assignments.push({ orderItemId: item.id, unitIndex: u, serialNumber: val });
+        }
+      }
+
+      const serials = assignments.map((a) => a.serialNumber.toLowerCase());
+      if (new Set(serials).size !== serials.length) {
+        setShippingError('Duplicate serial numbers entered. Each physical unit must have a unique serial number.');
+        return;
+      }
+      serialAssignments = assignments;
+    } else {
+      if (!overrideReason.trim()) {
+        setShippingError('An explanation reason is mandatory when overriding serial number tracking.');
+        return;
+      }
+    }
+
     setShippingError('');
     executeStatusUpdate('SHIPPING', {
       courierName: courierName.trim(),
       trackingNumber: trackingNumber.trim(),
+      serialAssignments,
+      overrideReason: overrideDispatch ? overrideReason.trim() : undefined,
     });
   };
 
@@ -270,6 +314,34 @@ export default function AdminOrderDetailPage() {
                                 <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-400">
                                   {Object.entries(item.variantAttributes).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}
                                 </p>
+                              )}
+                              {((item as any).soldUnits || []).length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {((item as any).soldUnits || []).map((unit: any) => (
+                                    <div key={unit.id} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-[11px]">
+                                      <span className="text-gray-500">Unit {unit.unitIndex}:</span>
+                                      {unit.serialNumber ? (
+                                        <Link
+                                          href={`/admin/service/units/${encodeURIComponent(unit.serialNumber)}`}
+                                          className="font-mono font-semibold text-primary hover:underline"
+                                        >
+                                          {unit.serialNumber}
+                                        </Link>
+                                      ) : (
+                                        <span className="font-mono text-amber-600 dark:text-amber-400">No serial (override)</span>
+                                      )}
+                                      {unit.warrantyCoverage && (
+                                        <span className={`text-[10px] px-1 rounded font-medium ${
+                                          unit.warrantyCoverage.status === 'ACTIVE'
+                                            ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
+                                            : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                                        }`}>
+                                          {unit.warrantyCoverage.status}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -581,8 +653,8 @@ export default function AdminOrderDetailPage() {
         open={shippingModalOpen}
         onClose={() => setShippingModalOpen(false)}
         title="Dispatch Order & Assign Courier Tracking"
-        description="Enter the shipping carrier and AWB tracking number. Moving to SHIPPING will immediately trigger a branded dispatch email with the tracking ID to the customer."
-        size="md"
+        description="Enter the shipping carrier, AWB tracking number, and physical unit serial numbers. Moving to SHIPPING will immediately trigger a branded dispatch email with tracking to the customer."
+        size="lg"
       >
         <form onSubmit={handleShippingSubmit} className="space-y-4">
           {shippingError && (
@@ -591,32 +663,117 @@ export default function AdminOrderDetailPage() {
             </div>
           )}
 
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
-              Courier Partner / Carrier <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={courierName}
-              onChange={(e) => setCourierName(e.target.value)}
-              placeholder="e.g. BlueDart, Delhivery, DTDC, FedEx"
-              className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                Courier Partner / Carrier <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={courierName}
+                onChange={(e) => setCourierName(e.target.value)}
+                placeholder="e.g. BlueDart, Delhivery, DTDC, FedEx"
+                className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
+                Tracking Number / AWB <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={trackingNumber}
+                onChange={(e) => setTrackingNumber(e.target.value)}
+                placeholder="e.g. BD123456789, DEL987654321"
+                className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              />
+            </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
-              Tracking Number / AWB <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={trackingNumber}
-              onChange={(e) => setTrackingNumber(e.target.value)}
-              placeholder="e.g. BD123456789, DEL987654321"
-              className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-            />
+          {/* Unit Serial Number Tracking */}
+          <div className="border-t border-gray-100 dark:border-gray-800 pt-3 space-y-3">
+            <div>
+              <h4 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                Mandatory Physical Unit Serials
+              </h4>
+              <p className="text-[11px] text-gray-500">
+                Each unit requires its physical chassis serial number for warranty and service registration.
+              </p>
+            </div>
+
+            {!overrideDispatch ? (
+              <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                {order?.items
+                  ?.filter((i: any) => i.status !== 'CANCELLED')
+                  .map((item: any) => {
+                    const qty = item.quantity || 1;
+                    return (
+                      <div key={item.id} className="p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl space-y-2">
+                        <div className="text-xs font-semibold text-gray-900 dark:text-white flex justify-between">
+                          <span>{item.product?.name || `Product #${item.productId}`}</span>
+                          <span className="font-normal text-gray-500 text-[11px]">
+                            {qty} {qty === 1 ? 'unit' : 'units'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {Array.from({ length: qty }, (_, idx) => {
+                            const u = idx + 1;
+                            const key = `${item.id}-${u}`;
+                            return (
+                              <div key={key} className="space-y-1">
+                                <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-400">
+                                  Unit {u} Serial <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  value={serialInputs[key] || ''}
+                                  onChange={(e) =>
+                                    setSerialInputs((prev) => ({
+                                      ...prev,
+                                      [key]: e.target.value.toUpperCase(),
+                                    }))
+                                  }
+                                  placeholder={`SN-UNIT-${u}`}
+                                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 font-mono text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            ) : (
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl space-y-2">
+                <label className="block text-xs font-semibold text-amber-900 dark:text-amber-200">
+                  Override Reason (Mandatory & Audited) <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  placeholder="Explain why this order is dispatched without serial numbers recorded..."
+                  rows={2}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                id="emergency-override"
+                type="checkbox"
+                checked={overrideDispatch}
+                onChange={(e) => setOverrideDispatch(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              <label htmlFor="emergency-override" className="text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
+                Emergency Admin Override (dispatch without serial numbers)
+              </label>
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-800">

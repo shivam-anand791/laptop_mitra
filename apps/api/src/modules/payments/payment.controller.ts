@@ -27,7 +27,7 @@ export class PaymentController {
 
   @Post('razorpay/order')
   @UseGuards(RolesGuard)
-  @Roles('CUSTOMER', 'ADMIN')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Create Razorpay order for checkout (server-validated amount and ownership)' })
@@ -53,7 +53,7 @@ export class PaymentController {
 
   @Post('razorpay/subscription')
   @UseGuards(RolesGuard)
-  @Roles('CUSTOMER', 'ADMIN')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Create a Razorpay subscription for an owned rental order' })
@@ -64,7 +64,7 @@ export class PaymentController {
 
   @Post('razorpay/subscription/verify')
   @UseGuards(RolesGuard)
-  @Roles('CUSTOMER', 'ADMIN')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify Razorpay rental mandate and first payment' })
@@ -97,7 +97,7 @@ export class PaymentController {
 
   @Post('rental/:subscriptionId/termination-request')
   @UseGuards(RolesGuard)
-  @Roles('CUSTOMER', 'ADMIN')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request admin review for ending a rental subscription' })

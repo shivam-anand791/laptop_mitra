@@ -344,7 +344,7 @@ export interface PaymentRecord {
 // ---------------------------------------------------------------------------
 
 export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'DELETED';
-export type UserRole = 'CUSTOMER' | 'ADMIN' | 'MODERATOR' | 'SUPPORT' | 'GUEST';
+export type UserRole = 'CUSTOMER' | 'ADMIN' | 'MODERATOR' | 'SUPPORT' | 'TECHNICIAN' | 'GUEST';
 export type OrderStatus =
   'PENDING' | 'CONFIRMED' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED' | 'REFUNDED';
 export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';

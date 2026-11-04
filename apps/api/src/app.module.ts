@@ -24,6 +24,7 @@ import { PaymentEncryptionModule } from './common/encryption/payment-encryption.
 import { QrStorageModule } from './common/storage/qr-storage.module';
 import { MailModule } from './modules/mail/mail.module';
 import { ShippingModule } from './modules/shipping/shipping.module';
+import { ServiceModule } from './modules/service/service.module';
 
 const apiPackageRoot = resolve(__dirname, '..');
 const repoRoot = resolve(__dirname, '..', '..', '..');
@@ -63,6 +64,7 @@ const repoRoot = resolve(__dirname, '..', '..', '..');
     QrStorageModule,
     MailModule,
     ShippingModule,
+    ServiceModule,
   ],
   controllers: [AppController],
   providers: [

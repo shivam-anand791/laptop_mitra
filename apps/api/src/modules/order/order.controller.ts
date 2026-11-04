@@ -10,7 +10,7 @@ import { UpdateOrderStatusDto } from '../admin/dto/update-order-status.dto';
 @Controller('orders')
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
-@Roles('CUSTOMER', 'ADMIN')
+@Roles('CUSTOMER', 'ADMIN', 'GUEST')
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
 

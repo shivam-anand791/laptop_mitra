@@ -10,10 +10,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { useItemSituation } from '../hooks/useApi';
 import { formatIndianRupees } from '../utils/account-helpers';
+import { MainStackNavigationProp } from '../navigation/types';
 import ChangeRequestModal from './ChangeRequestModal';
 import BuybackClaimModal from './BuybackClaimModal';
 
@@ -67,8 +69,11 @@ export default function ItemSituationHelpModal({
 
   const returnAction = findAction('REQUEST_RETURN', 'RETURN');
   const warrantyAction = findAction('CLAIM_WARRANTY', 'WARRANTY');
+  const bookServiceAction = findAction('BOOK_FREE_SERVICE');
+  const trackServiceAction = findAction('TRACK_SERVICE_JOB');
   const buybackAction = findAction('REQUEST_BUYBACK', 'BUYBACK');
   const changeAddressAction = findAction('REQUEST_ADDRESS_CHANGE', 'CHANGE_ADDRESS');
+  const navigation = useNavigation<MainStackNavigationProp>();
 
   return (
     <>
@@ -234,6 +239,44 @@ export default function ItemSituationHelpModal({
                   color={warrantyAction?.allowed ? colors.textSecondary : colors.textMuted}
                 />
               </TouchableOpacity>
+
+              {/* 2b. Free General Service (4-point maintenance) */}
+              {(bookServiceAction || trackServiceAction) && (
+                <TouchableOpacity
+                  style={[
+                    styles.actionCard,
+                    !(bookServiceAction?.allowed || trackServiceAction?.allowed) && styles.actionCardDisabled,
+                  ]}
+                  disabled={!(bookServiceAction?.allowed || trackServiceAction?.allowed)}
+                  onPress={() => {
+                    onClose();
+                    navigation.navigate('MyLaptops');
+                  }}
+                >
+                  <View style={styles.actionIconBox}>
+                    <Ionicons
+                      name="construct-outline"
+                      size={20}
+                      color={(bookServiceAction?.allowed || trackServiceAction?.allowed) ? '#0284c7' : colors.textMuted}
+                    />
+                  </View>
+                  <View style={styles.actionInfo}>
+                    <Text style={[styles.actionTitle, !(bookServiceAction?.allowed || trackServiceAction?.allowed) && styles.actionTitleDisabled]}>
+                      {trackServiceAction?.allowed ? 'Track Free Service Job' : 'Book Free General Service'}
+                    </Text>
+                    <Text style={styles.actionDesc}>
+                      {(bookServiceAction?.allowed || trackServiceAction?.allowed)
+                        ? 'Internal cleaning, thermal paste refresh, diagnostics & battery test'
+                        : (bookServiceAction?.disabledReason || trackServiceAction?.disabledReason || 'Free service benefit not eligible')}
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color={(bookServiceAction?.allowed || trackServiceAction?.allowed) ? colors.textSecondary : colors.textMuted}
+                  />
+                </TouchableOpacity>
+              )}
 
               {/* 3. Assured Buyback */}
               <TouchableOpacity

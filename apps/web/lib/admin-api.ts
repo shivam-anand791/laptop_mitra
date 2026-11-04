@@ -225,7 +225,12 @@ export const adminApi = {
   async updateOrderStatus(
     id: string,
     status: OrderStatus | string,
-    trackingInfo?: { courierName?: string; trackingNumber?: string },
+    trackingInfo?: {
+      courierName?: string;
+      trackingNumber?: string;
+      serialAssignments?: Array<{ orderItemId: string; unitIndex: number; serialNumber: string }>;
+      overrideReason?: string;
+    },
   ): Promise<AdminOrder> {
     return await request<AdminOrder>(`/admin/orders/${id}/status`, {
       method: 'PUT',
@@ -233,6 +238,8 @@ export const adminApi = {
         status,
         ...(trackingInfo?.courierName ? { courierName: trackingInfo.courierName } : {}),
         ...(trackingInfo?.trackingNumber ? { trackingNumber: trackingInfo.trackingNumber } : {}),
+        ...(trackingInfo?.serialAssignments ? { serialAssignments: trackingInfo.serialAssignments } : {}),
+        ...(trackingInfo?.overrideReason ? { overrideReason: trackingInfo.overrideReason } : {}),
       }),
     });
   },
@@ -893,6 +900,40 @@ export const adminApi = {
     return await request<any>(`/admin/lease/contracts/${id}/terminate`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
+    });
+  },
+
+  async getWarrantyRegister(params?: { page?: number; pageSize?: number; status?: string; source?: string; brand?: string; search?: string }): Promise<{ items: any[]; total: number; page: number; pageSize: number }> {
+    const query = new URLSearchParams();
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.pageSize) query.set('pageSize', String(params.pageSize));
+    if (params?.status) query.set('status', params.status);
+    if (params?.source) query.set('source', params.source);
+    if (params?.brand) query.set('brand', params.brand);
+    if (params?.search) query.set('search', params.search);
+    const qStr = query.toString();
+    return await request(`/admin/service/warranty${qStr ? `?${qStr}` : ''}`);
+  },
+
+  async getSoldUnits(params?: { page?: number; pageSize?: number; status?: string; brand?: string; search?: string }): Promise<{ items: any[]; total: number; page: number; pageSize: number }> {
+    const query = new URLSearchParams();
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.pageSize) query.set('pageSize', String(params.pageSize));
+    if (params?.status) query.set('status', params.status);
+    if (params?.brand) query.set('brand', params.brand);
+    if (params?.search) query.set('search', params.search);
+    const qStr = query.toString();
+    return await request(`/admin/service/units${qStr ? `?${qStr}` : ''}`);
+  },
+
+  async getUnitBySerial(serial: string): Promise<any> {
+    return await request(`/admin/service/units/${encodeURIComponent(serial)}`);
+  },
+
+  async updateUnitSerial(id: string, data: { serialNumber: string; reason: string }): Promise<any> {
+    return await request(`/admin/service/units/${id}/serial`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 };

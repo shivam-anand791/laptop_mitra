@@ -22,5 +22,19 @@ describe('AppController (/health)', () => {
 
     expect(result.capabilities).toContain('email-verification');
   });
-});
 
+  it('returns ready status and database connected for /health/ready', async () => {
+    const configService = {
+      get: jest.fn(() => undefined),
+    };
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([{ 1: 1 }]),
+    };
+    const controller = new AppController(configService as any, prisma as any);
+    const result = await controller.getReadiness();
+
+    expect(result.status).toBe('ready');
+    expect(result.database).toBe('connected');
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+  });
+});

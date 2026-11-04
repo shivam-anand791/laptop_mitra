@@ -20,5 +20,13 @@ export class UpdateOrderStatusDto {
   @IsOptional()
   @IsString()
   trackingNumber?: string;
-}
 
+  @ApiPropertyOptional({ description: 'Serial number assignments per unit' })
+  @IsOptional()
+  serialAssignments?: Array<{ orderItemId: string; unitIndex: number; serialNumber: string }>;
+
+  @ApiPropertyOptional({ description: 'Administrative override reason if dispatched without serial numbers' })
+  @IsOptional()
+  @IsString()
+  overrideReason?: string;
+}

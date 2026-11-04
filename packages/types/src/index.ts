@@ -217,7 +217,7 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 export const USER_STATUSES = ['ACTIVE', 'SUSPENDED', 'DELETED'] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];
 
-export const USER_ROLES = ['CUSTOMER', 'ADMIN', 'MODERATOR', 'SUPPORT', 'GUEST'] as const;
+export const USER_ROLES = ['CUSTOMER', 'ADMIN', 'MODERATOR', 'SUPPORT', 'TECHNICIAN', 'GUEST'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const ORDER_TRANSITION_MAP: Record<OrderStatus, readonly OrderStatus[]> = {
@@ -1019,6 +1019,7 @@ export type ItemSituationKey =
 export type ActionCategory =
   | 'RETURN'
   | 'WARRANTY'
+  | 'SERVICE'
   | 'BUYBACK'
   | 'ORDER_CHANGE'
   | 'LEASE'
@@ -1035,6 +1036,8 @@ export const ACTION_HANDLERS_WEB = [
   'REQUEST_PHONE_CHANGE',
   'REQUEST_RETURN',
   'CLAIM_WARRANTY',
+  'BOOK_FREE_SERVICE',
+  'TRACK_SERVICE_JOB',
   'REQUEST_BUYBACK',
   'DOWNLOAD_INVOICE',
   'TRACK_SHIPMENT',
@@ -1053,6 +1056,8 @@ export const ACTION_HANDLERS_MOBILE = [
   'REQUEST_PHONE_CHANGE',
   'REQUEST_RETURN',
   'CLAIM_WARRANTY',
+  'BOOK_FREE_SERVICE',
+  'TRACK_SERVICE_JOB',
   'REQUEST_BUYBACK',
   'REQUEST_CALLBACK',
   'CREATE_TICKET',
@@ -1163,3 +1168,50 @@ export const PHP_BUYBACK_TIERS = [
   { fromMonths: 24, toMonths: 30, percentage: 30 },
   { fromMonths: 30, toMonths: 36, percentage: 20 },
 ] as const;
+
+export interface WarrantyCoverageDto {
+  id: string;
+  soldUnitId: string;
+  source: 'BASE' | 'EXTENDED';
+  monthsSnapshot: number;
+  startDate: string;
+  endDate: string;
+  status: 'ACTIVE' | 'EXPIRED' | 'VOIDED';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SerialHistoryDto {
+  id: string;
+  soldUnitId: string;
+  previousSerial?: string | null;
+  newSerial: string;
+  changedBy: string;
+  changerName?: string | null;
+  reason: string;
+  createdAt: string;
+}
+
+export interface SoldUnitDto {
+  id: string;
+  orderItemId: string;
+  productId: string;
+  userId: string;
+  unitIndex: number;
+  serialNumber?: string | null;
+  brandSnapshot: string;
+  modelSnapshot: string;
+  status: string;
+  isDispatched: boolean;
+  dispatchedAt?: string | null;
+  dispatchedBy?: string | null;
+  overrideReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  warrantyCoverage?: WarrantyCoverageDto | null;
+  user?: { id: string; name?: string | null; email?: string | null; phone?: string | null };
+  product?: { id: string; name: string; slug: string; images?: any[] };
+  orderItem?: { id: string; orderId: string; price: number; quantity: number };
+  serialHistory?: SerialHistoryDto[];
+}
+

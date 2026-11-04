@@ -266,6 +266,14 @@ export class SupportService {
         leaseContract: {
           include: { installments: true },
         },
+        soldUnits: {
+          include: {
+            entitlements: true,
+            serviceJobs: {
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+        },
       },
     });
 
@@ -552,6 +560,47 @@ export class SupportService {
       actionType: 'TICKET',
       targetUrl: `/help/guided-flow?orderId=${order.id}&itemId=${item.id}&category=WARRANTY_CLAIMS`,
     });
+
+    // 4b. Free General Service (6-Month Benefit for Outright Purchases)
+    const primaryUnit = (item as any).soldUnits?.[0] || null;
+    const freeEntitlement = primaryUnit?.entitlements?.find((e: any) => e.kind === 'OUTRIGHT_FREE') || null;
+    const activeServiceJob = primaryUnit?.serviceJobs?.find(
+      (j: any) => !['COMPLETED', 'CANCELLED', 'REJECTED'].includes(j.status),
+    ) || null;
+
+    if (!isLease && order.status === 'DELIVERED') {
+      if (activeServiceJob) {
+        actions.push({
+          id: 'TRACK_SERVICE_JOB',
+          label: `Track Free Service (${activeServiceJob.jobNumber})`,
+          category: 'SERVICE',
+          enabled: true,
+          actionType: 'LINK',
+          targetUrl: `/account/service-jobs/${activeServiceJob.id}`,
+        });
+      } else {
+        const isEntitlementAvailable = Boolean(
+          freeEntitlement &&
+          freeEntitlement.status === 'AVAILABLE' &&
+          new Date(freeEntitlement.periodEnd) > now,
+        );
+
+        actions.push({
+          id: 'BOOK_FREE_SERVICE',
+          label: 'Book Free General Service (6-Month Benefit)',
+          category: 'SERVICE',
+          enabled: isEntitlementAvailable,
+          disabledReason: isEntitlementAvailable ? undefined : (
+            !freeEntitlement ? 'Free service entitlement has not been issued for this item.' :
+            freeEntitlement.status === 'USED' ? 'The complimentary general service has already been completed for this device.' :
+            freeEntitlement.status === 'BOOKED' ? 'A service appointment is already booked for this device.' :
+            'The 6-month free service eligibility window has expired.'
+          ),
+          actionType: 'LINK',
+          targetUrl: primaryUnit ? `/account/laptops/${primaryUnit.id}/book-service` : `/account/laptops`,
+        });
+      }
+    }
 
     // 5. Buyback Guarantee
     actions.push({

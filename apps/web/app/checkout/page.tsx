@@ -24,7 +24,7 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { data: supportConfig } = useSupportConfig();
   const { items, subtotal, itemCount, clearCart, isSyncing: cartSyncing, syncError: cartSyncError } = useCart();
-  const { user, firebaseUser, isVerificationRequired, isLoading: authLoading } = useAuth();
+  const { user, firebaseUser, isVerificationRequired, isLoading: authLoading, guestLogin } = useAuth();
 
   // Form State
   const [formData, setFormData] = useState({
@@ -382,6 +382,14 @@ export default function CheckoutPage() {
     setIsSubmitting(true);
 
     try {
+      let activeUser = user;
+      if (!activeUser && typeof guestLogin === 'function') {
+        try {
+          activeUser = await guestLogin();
+        } catch (guestErr) {
+          console.warn('[checkout] Guest login fallback notice:', guestErr);
+        }
+      }
       let orderAddressId = savedAddressesOwnerId === user?.id ? selectedSavedAddressId : null;
       if (!orderAddressId && saveAddressToAccount && canUseSavedAddresses && user) {
         const savedAddress = await api.createAddress({
@@ -425,6 +433,15 @@ export default function CheckoutPage() {
         },
         phone: formData.phone,
         notes: formData.gstin ? `GSTIN: ${formData.gstin} | Company: ${formData.companyName} | ${formData.notes}` : formData.notes,
+        cartItems: items.map((it) => ({
+          productId: it.productId,
+          variantId: it.variantId || undefined,
+          quantity: it.quantity,
+          purchaseMode: (it.purchaseMode || 'sell') as 'sell' | 'lease',
+          configuration: it.configuration || 'default',
+          hasWarranty: !!it.hasWarranty,
+          tenureMonths: it.tenureMonths || undefined,
+        })),
       };
 
       const order = await api.createOrder(orderPayload);

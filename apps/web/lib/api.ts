@@ -359,6 +359,7 @@ export const api = {
     paymentMethod?: 'razorpay' | 'cod';
     idempotencyKey?: string;
     addressId?: string;
+    cartItems?: any[];
   }): Promise<Order> {
     const headers: Record<string, string> = {};
     if (payload.idempotencyKey) {
@@ -955,6 +956,100 @@ export const api = {
     return await request<any>(`/lease/contracts/${id}/buyout-request`, {
       method: 'POST',
       body: JSON.stringify({ notes }),
+    });
+  },
+
+  // Free General Service & Laptops Hub
+  async getUserLaptops(): Promise<any[]> {
+    return await request<any[]>('/account/laptops');
+  },
+
+  async getLaptopDetails(unitId: string): Promise<any> {
+    return await request<any>(`/account/laptops/${unitId}`);
+  },
+
+  async bookService(unitId: string, data: any): Promise<any> {
+    return await request<any>(`/account/laptops/${unitId}/service-bookings`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getUserServiceJobs(): Promise<any[]> {
+    return await request<any[]>('/account/service-jobs');
+  },
+
+  async getServiceJobById(id: string): Promise<any> {
+    return await request<any>(`/account/service-jobs/${id}`);
+  },
+
+  async rescheduleService(id: string, data: { preferredDate: string; preferredSlot: string; reason?: string }): Promise<any> {
+    return await request<any>(`/account/service-jobs/${id}/reschedule`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async cancelService(id: string, data: { reason: string }): Promise<any> {
+    return await request<any>(`/account/service-jobs/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getServiceSettings(): Promise<any> {
+    return await request<any>('/service/settings');
+  },
+
+  // Service Administration
+  async getAdminServiceJobs(params?: {
+    status?: string;
+    technicianId?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ items: any[]; total: number; page: number; pageSize: number; totalPages: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.technicianId) searchParams.set('technicianId', params.technicianId);
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.pageSize) searchParams.set('pageSize', params.pageSize.toString());
+    const query = searchParams.toString();
+    return await request<{ items: any[]; total: number; page: number; pageSize: number; totalPages: number }>(
+      `/admin/service/jobs${query ? `?${query}` : ''}`
+    );
+  },
+
+  async getAdminServiceJob(id: string): Promise<any> {
+    return await request<any>(`/admin/service/jobs/${id}`);
+  },
+
+  async updateAdminServiceJob(id: string, data: any): Promise<any> {
+    return await request<any>(`/admin/service/jobs/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getTechnicians(): Promise<any[]> {
+    return await request<any[]>('/admin/service/technicians');
+  },
+
+  async getAdminServiceSettings(): Promise<any> {
+    return await request<any>('/admin/service/settings');
+  },
+
+  async updateAdminServiceSettings(data: any): Promise<any> {
+    return await request<any>('/admin/service/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async triggerServiceReminders(): Promise<any> {
+    return await request<any>('/admin/service/reminders/trigger', {
+      method: 'POST',
     });
   },
 };

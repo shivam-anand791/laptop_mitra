@@ -151,6 +151,7 @@ export default function AccountScreen() {
       title: 'Orders',
       items: [
         { icon: 'receipt-outline' as const, label: 'My Orders', route: 'OrderHistory' as const },
+        { icon: 'laptop-outline' as const, label: 'My Laptops & Service', route: 'MyLaptops' as const },
         { icon: 'location-outline' as const, label: 'Saved Addresses', route: 'AddressBook' as const },
       ],
     },

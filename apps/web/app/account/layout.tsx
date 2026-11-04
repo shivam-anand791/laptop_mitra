@@ -24,6 +24,8 @@ import {
   Menu,
   X,
   Tag,
+  Laptop,
+  Wrench,
 } from 'lucide-react';
 
 interface NavGroup {
@@ -83,9 +85,10 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
 
   const navGroups: NavGroup[] = [
     {
-      title: 'Orders',
+      title: 'Orders & Hardware',
       items: [
         { href: '/account/orders', label: 'My Orders', icon: Package },
+        { href: '/account/laptops', label: 'My Laptops & Service', icon: Laptop },
       ],
     },
     {

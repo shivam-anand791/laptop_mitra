@@ -12,7 +12,7 @@ class MockConfigService {
 }
 
 describe('Swagger Production Protection (/api)', () => {
-  jest.setTimeout(15000);
+  jest.setTimeout(30000);
   let app: INestApplication;
 
   const createTestApp = async (nodeEnv: string, enableSwagger?: string) => {

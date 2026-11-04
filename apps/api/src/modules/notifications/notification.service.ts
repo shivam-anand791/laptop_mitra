@@ -441,4 +441,105 @@ export class NotificationService {
       htmlPreview: html,
     };
   }
+
+  /**
+   * Service Lifecycle and Reminder Notifications
+   */
+  async sendServiceNotification(params: {
+    userId: string;
+    type: 'BOOKED' | 'RESCHEDULED' | 'CANCELLED' | 'COMPLETED' | 'REMINDER';
+    job?: any;
+    entitlement?: any;
+    leadDays?: number;
+    unit?: any;
+  }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: params.userId },
+      select: { id: true, name: true, email: true, phone: true },
+    });
+
+    if (!user) return { sent: 0, reason: 'User not found' };
+
+    let subject = '';
+    let headline = '';
+    let bodyText = '';
+    let headerColor = '#2563eb';
+
+    switch (params.type) {
+      case 'BOOKED':
+        subject = `[LaptopMitra] Doorstep Service Appointment Confirmed — ${params.job?.jobNumber}`;
+        headline = 'Doorstep Service Confirmed';
+        headerColor = '#2563eb';
+        bodyText = `Your doorstep 4-point general service appointment has been scheduled for ${params.job?.preferredDate} (${params.job?.preferredSlot?.replace(/_/g, ' ')}). Please ensure your data is backed up before device pickup.`;
+        break;
+      case 'RESCHEDULED':
+        subject = `[LaptopMitra] Service Appointment Rescheduled — ${params.job?.jobNumber}`;
+        headline = 'Appointment Rescheduled';
+        headerColor = '#0284c7';
+        bodyText = `Your service appointment has been updated to ${params.job?.preferredDate} (${params.job?.preferredSlot?.replace(/_/g, ' ')}).`;
+        break;
+      case 'CANCELLED':
+        subject = `[LaptopMitra] Service Appointment Cancelled — ${params.job?.jobNumber}`;
+        headline = 'Appointment Cancelled';
+        headerColor = '#dc2626';
+        bodyText = `Your service appointment ${params.job?.jobNumber} was cancelled. Your free service benefit has been restored to your account.`;
+        break;
+      case 'COMPLETED':
+        subject = `[LaptopMitra] Certified Service Completed — Receipt #${params.job?.receiptNumber || 'RCP'}`;
+        headline = 'Service Completed & Certified';
+        headerColor = '#16a34a';
+        bodyText = `Your laptop general service is complete! All 4 checklist inspection points (Internal Cleaning, Thermal Compound Repaste, Hardware Diagnostics, Battery Health Check) passed certification.`;
+        break;
+      case 'REMINDER':
+        subject = `[LaptopMitra] Action Required: ${params.leadDays} Days Left to Claim Your Free Laptop Service`;
+        headline = `Free Service Expiry (${params.leadDays} Days Left)`;
+        headerColor = '#ea580c';
+        bodyText = `Your 6-month free general laptop servicing window expires in ${params.leadDays} days. Schedule your appointment before the benefit expires.`;
+        break;
+    }
+
+    const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; padding: 30px 0;">
+      <div style="max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
+        <div style="background-color: ${headerColor}; color: #ffffff; padding: 18px; text-align: center; font-weight: bold; font-size: 18px;">
+          ${headline}
+        </div>
+        <div style="padding: 25px; color: #1e293b; font-size: 14px; line-height: 1.6;">
+          <p>Hi ${user.name || 'Customer'},</p>
+          <p>${bodyText}</p>
+          ${params.job ? `
+          <div style="background: #f1f5f9; padding: 14px; border-radius: 6px; margin: 18px 0; font-size: 13px;">
+            <strong>Job Number:</strong> <span style="font-family: monospace;">${params.job.jobNumber}</span><br>
+            ${params.job.receiptNumber ? `<strong>Receipt Number:</strong> <span style="font-family: monospace;">${params.job.receiptNumber}</span><br>` : ''}
+            ${params.job.batteryHealthPercent ? `<strong>Battery Health:</strong> ${params.job.batteryHealthPercent}%<br>` : ''}
+            ${params.job.preferredDate ? `<strong>Date & Slot:</strong> ${params.job.preferredDate} (${params.job.preferredSlot?.replace(/_/g, ' ')})<br>` : ''}
+          </div>` : ''}
+          <p style="font-size: 12px; color: #64748b; margin-top: 25px; border-top: 1px solid #f1f5f9; padding-top: 12px;">
+            Laptop Mitra Customer Care | questions? Call +91 7701993300
+          </p>
+        </div>
+      </div>
+    </div>`;
+
+    if (this.mailService && user.email) {
+      await this.mailService.sendMail({
+        to: user.email,
+        subject,
+        text: `Hi ${user.name || 'Customer'},\n\n${bodyText}\n\nLaptopMitra Support Team`,
+        html,
+      });
+    }
+
+    // Push notification to user devices
+    await this.dispatchNotification(user.id, {
+      title: headline,
+      body: bodyText,
+      data: {
+        type: params.type,
+        jobId: params.job?.id,
+      },
+    });
+
+    return { sent: 1, recipient: user.email };
+  }
 }

@@ -69,6 +69,13 @@ model User {
   clientNotes             ClientNote[]
   buybackRequests         BuybackRequest[]
   leaseContracts          LeaseContract[]
+  soldUnits               SoldUnit[]
+  soldUnitSerialHistory   SoldUnitSerialHistory[]
+  serviceEntitlements     ServiceEntitlement[]
+  customerServiceJobs     ServiceJob[]              @relation("ServiceCustomer")
+  assignedServiceJobs     ServiceJob[]              @relation("AssignedTechnician")
+  serviceEvents           ServiceEvent[]
+  serviceSettingsUpdates  ServiceSettings[]
 
   // Support & Returns relations
   customerTickets   SupportTicket[]    @relation("CustomerTickets")
@@ -162,6 +169,7 @@ model Product {
   wishlistItems WishlistItem[]
   rentalPrices  RentalPrice[]
   leaseContracts LeaseContract[]
+  soldUnits     SoldUnit[]
 
   @@index([status])
   @@index([stock])
@@ -374,6 +382,7 @@ model OrderItem {
   buybackRequests     BuybackRequest[]
   cancellationRecords OrderItemCancellation[]
   leaseContract       LeaseContract?
+  soldUnits           SoldUnit[]
 
   @@index([orderId])
   @@index([variantId])
@@ -1239,4 +1248,186 @@ model LeaseEvent {
   contract        LeaseContract @relation(fields: [leaseContractId], references: [id], onDelete: Restrict)
 
   @@index([leaseContractId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Free Service, Serial Tracking & Warranty Register Models (Stage 1 Approved)
+// ---------------------------------------------------------------------------
+
+model SoldUnit {
+  id              String    @id @default(uuid())
+  orderItemId     String
+  productId       String
+  userId          String
+  unitIndex       Int       @default(1)
+  serialNumber    String?
+  brandSnapshot   String
+  modelSnapshot   String
+  status          String    @default("ACTIVE") // ACTIVE | RETURNED | REFUNDED | BOUGHT_BACK | REPLACED
+  isDispatched    Boolean   @default(false)
+  dispatchedAt    DateTime?
+  dispatchedBy    String?
+  overrideReason  String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  orderItem        OrderItem               @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  product          Product                 @relation(fields: [productId], references: [id], onDelete: Restrict)
+  user             User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  serialHistory    SoldUnitSerialHistory[]
+  warrantyCoverage WarrantyCoverage?
+  entitlements     ServiceEntitlement[]
+  serviceJobs      ServiceJob[]
+
+  @@unique([orderItemId, unitIndex])
+  @@index([serialNumber])
+  @@index([userId, status])
+  @@index([productId])
+}
+
+model SoldUnitSerialHistory {
+  id             String   @id @default(uuid())
+  soldUnitId     String
+  previousSerial String?
+  newSerial      String
+  changedBy      String
+  reason         String
+  createdAt      DateTime @default(now())
+
+  soldUnit SoldUnit @relation(fields: [soldUnitId], references: [id], onDelete: Restrict)
+  user     User     @relation(fields: [changedBy], references: [id], onDelete: Restrict)
+
+  @@index([soldUnitId, createdAt])
+}
+
+model WarrantyCoverage {
+  id             String   @id @default(uuid())
+  soldUnitId     String   @unique
+  source         String   @default("BASE") // BASE | EXTENDED
+  monthsSnapshot Int      @default(6)
+  startDate      DateTime
+  endDate        DateTime
+  status         String   @default("ACTIVE") // ACTIVE | EXPIRED | VOIDED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  soldUnit SoldUnit @relation(fields: [soldUnitId], references: [id], onDelete: Restrict)
+
+  @@index([endDate, status])
+}
+
+model ServiceEntitlement {
+  id          String    @id @default(uuid())
+  soldUnitId  String
+  userId      String
+  kind        String    @default("OUTRIGHT_FREE") // OUTRIGHT_FREE | LEASE_MONTHLY
+  periodStart DateTime
+  periodEnd   DateTime
+  status      String    @default("AVAILABLE") // AVAILABLE | BOOKED | USED | EXPIRED | CANCELLED
+  cycleMonth  Int?
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  soldUnit   SoldUnit    @relation(fields: [soldUnitId], references: [id], onDelete: Restrict)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  serviceJob ServiceJob?
+
+  @@index([soldUnitId, status])
+  @@index([userId, status])
+  @@index([periodEnd, status])
+}
+
+model ServiceJob {
+  id                    String    @id @default(uuid())
+  jobNumber             String    @unique
+  soldUnitId            String
+  entitlementId         String    @unique
+  userId                String
+  technicianId          String?
+  status                String    @default("REQUESTED")
+  pickupAddress         Json
+  pickupPincode         String
+  preferredSlot         String
+  scheduledPickupAt     DateTime?
+  actualPickedUpAt      DateTime?
+  scheduledDropAt       DateTime?
+  actualDeliveredAt     DateTime?
+  checklistCleaning     Boolean   @default(false)
+  checklistThermalPaste Boolean   @default(false)
+  checklistSoftware     Boolean   @default(false)
+  checklistBattery      Boolean   @default(false)
+  batteryHealthPercent  Int?
+  partsReplaced         String?
+  internalNotes         String?
+  customerNotes         String?
+  internalPhotos        Json?
+  backupAcknowledged    Boolean   @default(true)
+  receiptNumber         String?   @unique
+  receiptPdfKey         String?
+  cancellationReason    String?
+  cancelledBy           String?
+  rescheduledCount      Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  soldUnit    SoldUnit           @relation(fields: [soldUnitId], references: [id], onDelete: Restrict)
+  entitlement ServiceEntitlement @relation(fields: [entitlementId], references: [id], onDelete: Restrict)
+  customer    User               @relation("ServiceCustomer", fields: [userId], references: [id], onDelete: Restrict)
+  technician  User?              @relation("AssignedTechnician", fields: [technicianId], references: [id], onDelete: Restrict)
+  events      ServiceEvent[]
+
+  @@index([status, createdAt])
+  @@index([technicianId, status])
+  @@index([userId, status])
+  @@index([soldUnitId])
+}
+
+model ServiceEvent {
+  id        String   @id @default(uuid())
+  jobId     String
+  actorId   String
+  actorRole String
+  eventType String
+  oldStatus String?
+  newStatus String?
+  notes     String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  job   ServiceJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  actor User       @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([jobId, createdAt])
+}
+
+model ServiceSettings {
+  id                        String   @id @default("default")
+  includedWork              Json
+  windowMonthsOutright      Int      @default(6)
+  leaseCadenceMonths        Int      @default(1)
+  serviceAreaPincodes       Json
+  slotWindows               Json
+  serviceTermsText          String   @db.Text
+  dataBackupDisclaimerText  String   @db.Text
+  reminderLeadDays          Json
+  warrantyReminderLeadDays  Int      @default(30)
+  freeServiceEnabledDefault Boolean  @default(true)
+  updatedById               String?
+  updatedAt                 DateTime @updatedAt
+
+  updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: Restrict)
+}
+
+model NotificationDedupeLog {
+  id          String   @id @default(uuid())
+  channel     String
+  recipient   String
+  templateKey String
+  dedupeKey   String
+  sentAt      DateTime @default(now())
+  metadata    Json?
+
+  @@unique([templateKey, dedupeKey])
+  @@index([sentAt])
 }

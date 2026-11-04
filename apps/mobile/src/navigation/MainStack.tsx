@@ -22,6 +22,8 @@ import TicketListScreen from '../screens/main/TicketListScreen';
 import TicketDetailScreen from '../screens/main/TicketDetailScreen';
 import ReturnDetailScreen from '../screens/main/ReturnDetailScreen';
 import MyCouponsScreen from '../screens/main/MyCouponsScreen';
+import MyLaptopsScreen from '../screens/main/MyLaptopsScreen';
+import ServiceJobDetailScreen from '../screens/main/ServiceJobDetailScreen';
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
@@ -150,6 +152,16 @@ export default function MainStack() {
         name="ReturnDetail"
         component={ReturnDetailScreen}
         options={{ headerShown: true, title: 'Return & Inspection Tracker', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="MyLaptops"
+        component={MyLaptopsScreen}
+        options={{ headerShown: true, title: 'My Laptops & Service', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="ServiceJobDetail"
+        component={ServiceJobDetailScreen}
+        options={{ headerShown: true, title: 'Service Tracking', headerTintColor: '#2563eb' }}
       />
     </Stack.Navigator>
   );
