@@ -260,9 +260,12 @@ function LoginForm() {
               <label className="font-bold text-slate-700">
                 Password
               </label>
-              <span className="text-[11px] font-semibold text-[#1D6FF2] hover:underline cursor-pointer">
+              <Link
+                href="/forgot-password"
+                className="text-[11px] font-semibold text-[#1D6FF2] hover:underline cursor-pointer"
+              >
                 Forgot password?
-              </span>
+              </Link>
             </div>
             <div className="relative">
               <input

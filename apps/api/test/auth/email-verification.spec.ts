@@ -6,7 +6,10 @@ describe('EmailVerificationService', () => {
     getUserRecord: jest.fn(),
     generateEmailVerificationLink: jest.fn(),
   };
-  const mailService = { sendSmtpMail: jest.fn() };
+  const mailService = {
+    sendMail: jest.fn(),
+    sendSmtpMail: jest.fn(),
+  };
   const configService = {
     get: jest.fn((key: string) => ({
       APP_PUBLIC_URL: 'http://localhost:3000',
@@ -30,7 +33,7 @@ describe('EmailVerificationService', () => {
     firebaseService.generateEmailVerificationLink.mockResolvedValue(
       'https://project.firebaseapp.com/__/auth/action?mode=verifyEmail&oobCode=one-time-code&apiKey=public-key',
     );
-    mailService.sendSmtpMail.mockResolvedValue({ provider: 'smtp', success: true, messageId: 'message-1' });
+    mailService.sendMail.mockResolvedValue({ provider: 'resend', success: true, messageId: 'message-1' });
   });
 
   it('uses the Firebase account email and wraps its action code in the configured app URL', async () => {
@@ -40,11 +43,30 @@ describe('EmailVerificationService', () => {
       'verified-target@example.com',
       { url: 'http://localhost:3000/verify-email' },
     );
-    expect(mailService.sendSmtpMail).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mailService.sendMail).toHaveBeenCalledWith(expect.objectContaining({
       to: 'verified-target@example.com',
       subject: 'Verify your Laptop Mitra email address',
+      templateName: 'email-verification',
       text: expect.stringContaining('http://localhost:3000/verify-email?mode=verifyEmail&oobCode=one-time-code'),
       html: expect.stringContaining('Verify Email'),
+    }));
+  });
+
+  it('builds verification links using config-driven HTTPS base URL in production', async () => {
+    configService.get.mockImplementation((key: string) => ({
+      APP_PUBLIC_URL: 'https://laptop-mitra.vercel.app',
+      NODE_ENV: 'production',
+      ENABLE_EMAIL_VERIFICATION: 'true',
+      SUPPORT_EMAIL: 'help@laptopmitra.in',
+    })[key]);
+
+    await expect(service.send('firebase-user-1')).resolves.toEqual({ sent: true, alreadyVerified: false });
+    expect(firebaseService.generateEmailVerificationLink).toHaveBeenCalledWith(
+      'verified-target@example.com',
+      { url: 'https://laptop-mitra.vercel.app/verify-email' },
+    );
+    expect(mailService.sendMail).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining('https://laptop-mitra.vercel.app/verify-email?mode=verifyEmail&oobCode=one-time-code'),
     }));
   });
 
@@ -55,24 +77,37 @@ describe('EmailVerificationService', () => {
       disabled: false,
     });
     await expect(service.send('firebase-user-1')).resolves.toEqual({ sent: false, alreadyVerified: true });
-    expect(mailService.sendSmtpMail).not.toHaveBeenCalled();
+    expect(mailService.sendMail).not.toHaveBeenCalled();
   });
 
-  it('fails closed when SMTP delivery fails', async () => {
-    mailService.sendSmtpMail.mockResolvedValueOnce({ provider: 'smtp', success: false, error: 'offline' });
-    await expect(service.send('firebase-user-1')).rejects.toMatchObject({ status: 503 });
+  it('fails closed and reports reason code when mail delivery fails', async () => {
+    mailService.sendMail.mockResolvedValueOnce({
+      provider: 'resend',
+      success: false,
+      errorCode: 'MAIL_DOMAIN_NOT_VERIFIED',
+      error: 'Domain not verified',
+      userMessage: 'The sending domain is not verified.',
+    });
+    await expect(service.send('firebase-user-1')).rejects.toMatchObject({
+      status: 503,
+      response: expect.objectContaining({
+        error: 'MAIL_DOMAIN_NOT_VERIFIED',
+        message: 'The sending domain is not verified.',
+      }),
+    });
   });
 
   it('applies a per-user cooldown after a successful send', async () => {
     await service.send('firebase-user-1');
     await expect(service.send('firebase-user-1')).rejects.toMatchObject({ status: 429 });
-    expect(mailService.sendSmtpMail).toHaveBeenCalledTimes(1);
+    expect(mailService.sendMail).toHaveBeenCalledTimes(1);
   });
 
   it('rejects production app URLs unless they use HTTPS', async () => {
     configService.get.mockImplementation((key: string) => ({
       APP_PUBLIC_URL: 'http://laptopmitra.example',
       NODE_ENV: 'production',
+      ENABLE_EMAIL_VERIFICATION: 'true',
     })[key]);
     await expect(service.send('firebase-user-1')).rejects.toMatchObject({ status: 503 });
   });

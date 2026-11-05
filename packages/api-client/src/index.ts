@@ -123,6 +123,59 @@ export class LaptopMitraApiClient {
     });
   }
 
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async confirmPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/auth/reset-password/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  // OTP Verification & Password Reset (Option A)
+  async requestEmailVerificationOtp(): Promise<{ success: boolean; message: string; cooldownSeconds: number }> {
+    return this.request<{ success: boolean; message: string; cooldownSeconds: number }>('/auth/otp/send-verification', {
+      method: 'POST',
+    });
+  }
+
+  async verifyEmailOtp(code: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/auth/otp/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async requestPasswordResetOtp(email: string): Promise<{ success: boolean; message: string; cooldownSeconds: number }> {
+    return this.request<{ success: boolean; message: string; cooldownSeconds: number }>('/auth/otp/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async verifyPasswordResetOtp(email: string, code: string): Promise<{ success: boolean; grantToken: string }> {
+    return this.request<{ success: boolean; grantToken: string }>('/auth/otp/verify-reset-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    });
+  }
+
+  async resetPasswordWithGrant(
+    email: string,
+    grantToken: string,
+    newPassword: string,
+  ): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/auth/otp/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, grantToken, newPassword }),
+    });
+  }
+
   async getProfile(): Promise<User> {
     return this.request<User>('/auth/profile');
   }

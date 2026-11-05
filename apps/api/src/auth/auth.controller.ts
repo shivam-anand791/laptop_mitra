@@ -7,6 +7,8 @@ import { Public } from '../decorators/public.decorator';
 import { SyncUserDto } from './dto/sync-user.dto';
 import { CheckFirebaseRevocation } from '../decorators/check-firebase-revocation.decorator';
 import { EmailVerificationService } from './email-verification.service';
+import { PasswordResetService } from './password-reset.service';
+import { OtpService } from './otp.service';
 
 @ApiTags('Authentication')
 @ApiBearerAuth()
@@ -15,7 +17,9 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly emailVerificationService: EmailVerificationService,
-  ) {}
+    private readonly passwordResetService: PasswordResetService,
+    private readonly otpService: OtpService,
+  ) { }
 
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60000 } })
@@ -82,6 +86,79 @@ export class AuthController {
   @ApiResponse({ status: 429, description: 'Verification email resend cooldown is active' })
   async sendEmailVerification(@Req() req: any) {
     return this.emailVerificationService.send(req.firebaseIdentity.uid);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Request a password reset link (generic anti-enumeration response)' })
+  @ApiResponse({ status: 200, description: 'Reset request received' })
+  @ApiResponse({ status: 429, description: 'Cooldown active' })
+  async forgotPassword(@Body() body: { email: string }) {
+    return this.passwordResetService.sendResetLink(body?.email);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('reset-password/confirm')
+  @ApiOperation({ summary: 'Confirm password reset post-hook to revoke sessions and send security alert' })
+  @ApiResponse({ status: 200, description: 'Sessions revoked and security alert dispatched' })
+  async confirmPasswordReset(@Body() body: { email: string }) {
+    return this.passwordResetService.confirmReset(body?.email);
+  }
+
+  // ---------------------------------------------------------------------------
+  // OTP Verification & Password Reset Endpoints (Option A)
+  // ---------------------------------------------------------------------------
+
+  @Post('otp/send-verification')
+  @Throttle({ default: { limit: 3, ttl: 300000 } })
+  @ApiOperation({ summary: 'Request 6-digit email verification OTP code' })
+  @ApiResponse({ status: 200, description: 'OTP code sent' })
+  @ApiResponse({ status: 429, description: 'Cooldown active' })
+  async requestEmailVerificationOtp(@Req() req: any) {
+    return this.otpService.requestEmailVerificationOtp(req.user.id, req.firebaseIdentity.uid);
+  }
+
+  @Post('otp/verify-email')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @ApiOperation({ summary: 'Verify 6-digit email verification OTP code' })
+  @ApiResponse({ status: 200, description: 'Email verified' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
+  async verifyEmailOtp(@Req() req: any, @Body() body: { code: string }) {
+    return this.otpService.verifyEmailOtp(req.user.id, req.firebaseIdentity.uid, body?.code);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('otp/forgot-password')
+  @ApiOperation({ summary: 'Request 6-digit password reset OTP (generic anti-enumeration response)' })
+  @ApiResponse({ status: 200, description: 'Reset code requested' })
+  @ApiResponse({ status: 429, description: 'Cooldown active' })
+  async requestPasswordResetOtp(@Body() body: { email: string }) {
+    return this.otpService.requestPasswordResetOtp(body?.email);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('otp/verify-reset-code')
+  @ApiOperation({ summary: 'Verify 6-digit password reset OTP and obtain short-lived single-use grant token' })
+  @ApiResponse({ status: 200, description: 'Code valid; grant token issued' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
+  async verifyPasswordResetOtp(@Body() body: { email: string; code: string }) {
+    return this.otpService.verifyPasswordResetOtp(body?.email, body?.code);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('otp/reset-password')
+  @ApiOperation({ summary: 'Reset password using single-use grant token and revoke active sessions' })
+  @ApiResponse({ status: 200, description: 'Password reset successful; sessions revoked' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired grant token' })
+  async resetPasswordWithGrant(
+    @Body() body: { email: string; grantToken: string; newPassword: string },
+  ) {
+    return this.otpService.resetPasswordWithGrant(body?.email, body?.grantToken, body?.newPassword);
   }
 
   @Get('profile')

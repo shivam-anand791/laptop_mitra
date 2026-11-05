@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from './decorators/public.decorator';
 import { PrismaService } from './prisma/prisma.service';
+import { MailService } from './modules/mail/mail.service';
 
 @ApiTags('health')
 @Controller()
@@ -10,6 +11,7 @@ export class AppController {
   constructor(
     @Optional() private readonly configService?: ConfigService,
     @Optional() private readonly prisma?: PrismaService,
+    @Optional() private readonly mailService?: MailService,
   ) {}
 
   @Public()
@@ -50,6 +52,8 @@ export class AppController {
       capabilities.push('email-verification');
     }
 
+    const mailStatus = this.mailService ? this.mailService.getHealthStatus() : 'not configured';
+
     try {
       if (this.prisma) {
         await this.prisma.$queryRaw`SELECT 1`;
@@ -57,6 +61,8 @@ export class AppController {
       return {
         status: 'ready',
         database: 'connected',
+        mail: mailStatus,
+        mailMetrics: this.mailService?.getDailyMetrics ? this.mailService.getDailyMetrics() : undefined,
         timestamp: new Date().toISOString(),
         service: 'laptopmitra-api',
         version: '1.0.0',
@@ -66,6 +72,7 @@ export class AppController {
       throw new ServiceUnavailableException({
         status: 'unready',
         database: 'disconnected',
+        mail: mailStatus,
         message: error?.message || 'Database unreachable',
       });
     }

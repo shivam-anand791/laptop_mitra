@@ -56,7 +56,7 @@ const webRequiredFirebaseVars = [
   'NEXT_PUBLIC_FIREBASE_APP_ID',
 ];
 
-console.log('[1/4] Web Client Configuration:');
+console.log('[1/5] Web Client Configuration:');
 const missingWebVarsiables = [];
 for (const varName of webRequiredFirebaseVars) {
   if (!webEnv[varName]) {
@@ -85,7 +85,7 @@ const mobileRequiredFirebaseVars = [
   'EXPO_PUBLIC_FIREBASE_APP_ID',
 ];
 
-console.log('\n[2/4] Mobile Client Configuration:');
+console.log('\n[2/5] Mobile Client Configuration:');
 const missingMobileVariables = [];
 for (const varName of mobileRequiredFirebaseVars) {
   if (!mobileEnv[varName]) {
@@ -106,7 +106,7 @@ const apiEnvPath = path.join(rootDir, 'apps', 'api', '.env');
 const apiEnvDevPath = path.join(rootDir, 'apps', 'api', '.env.development');
 const apiEnv = { ...parseEnvFile(apiEnvPath), ...parseEnvFile(apiEnvDevPath) };
 
-console.log('\n[3/4] API Firebase Admin Configuration:');
+console.log('\n[3/5] API Firebase Admin Configuration:');
 let apiProjectId = apiEnv['FIREBASE_PROJECT_ID'];
 
 // Check service account file if path provided
@@ -141,8 +141,48 @@ if (apiProjectId) {
 const hasEnvCredentials = !!apiEnv['FIREBASE_CLIENT_EMAIL'] && !!apiEnv['FIREBASE_PRIVATE_KEY'];
 console.log(`  [+] API Direct Env Credentials: ${hasEnvCredentials ? 'SET (EMAIL & PRIVATE_KEY)' : 'NOT SET'}`);
 
-// 4. Alignment & Project Mismatch Checks
-console.log('\n[4/4] Environment Project ID Consistency Matrix:');
+// 4. Inspect Outbound Email Configuration (Names & Formats Only)
+console.log('\n[4/5] Outbound Email Transport Configuration (Names & Formats Only):');
+const resendApiKey = apiEnv['RESEND_API_KEY'];
+const mailDriver = (apiEnv['MAIL_DRIVER'] || 'stdout').toLowerCase();
+const mailFrom = apiEnv['MAIL_FROM'] || apiEnv['EMAIL_FROM'] || apiEnv['SMTP_FROM'];
+const enableVerification = apiEnv['ENABLE_EMAIL_VERIFICATION'];
+const isRender = !!process.env.RENDER;
+
+// RESEND_API_KEY check (format: re_[A-Za-z0-9_]+)
+if (resendApiKey) {
+  const isValidFormat = /^re_[A-Za-z0-9_]+$/.test(resendApiKey);
+  console.log(`  [+] RESEND_API_KEY: SET (Format: ${isValidFormat ? 'VALID' : 'INVALID'}, ${mask(resendApiKey)})`);
+} else {
+  console.log('  [-] RESEND_API_KEY: UNSET (Required for Resend HTTP API)');
+}
+
+// MAIL_FROM & Domain Check
+const freeMailDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'live.com', 'icloud.com', 'aol.com', 'zoho.com', 'proton.me'];
+if (mailFrom) {
+  const domainMatch = mailFrom.match(/@([A-Za-z0-9.-]+)/);
+  const senderDomain = domainMatch ? domainMatch[1].toLowerCase() : '<unknown>';
+  const isFree = freeMailDomains.includes(senderDomain);
+  if (isFree) {
+    console.log(`  [WARN] MAIL_FROM: SET to free-mail domain "@${senderDomain}". Fails DMARC/SPF outside test mode.`);
+  } else {
+    console.log(`  [+] MAIL_FROM: SET (Domain: "@${senderDomain}")`);
+  }
+} else {
+  console.log('  [-] MAIL_FROM: UNSET (Defaults to noreply@laptopmitra.com)');
+}
+
+// MAIL_DRIVER check
+console.log(`  [+] MAIL_DRIVER: "${mailDriver}"`);
+if (mailDriver === 'smtp' && isRender) {
+  console.log('  [WARN] MAIL_DRIVER is set to "smtp" on Render. Render blocks outbound SMTP ports 25, 465, 587.');
+}
+
+// ENABLE_EMAIL_VERIFICATION check
+console.log(`  [+] ENABLE_EMAIL_VERIFICATION: ${enableVerification === 'true' ? 'ENABLED (true)' : 'DISABLED (' + (enableVerification || 'unset') + ')'}`);
+
+// 5. Alignment & Project Mismatch Checks
+console.log('\n[5/5] Environment Project ID Consistency Matrix:');
 const webProjectId = webEnv['NEXT_PUBLIC_FIREBASE_PROJECT_ID'];
 const mobileProjectId = mobileEnv['EXPO_PUBLIC_FIREBASE_PROJECT_ID'];
 

@@ -4,8 +4,9 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useState } from 'react';
-import { confirmPasswordReset } from 'firebase/auth';
+import { confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth';
 import { getFirebaseAuth } from '../../firebase/firebase';
+import { apiClient } from '../../api/client';
 import { AuthStackParamList, AuthNavigationProp } from '../../navigation/types';
 
 const resetPasswordSchema = z.object({
@@ -48,16 +49,34 @@ export default function ResetPasswordScreen() {
   const onSubmit = async (data: ResetPasswordFormData) => {
     setIsPending(true);
     try {
-      await confirmPasswordReset(getFirebaseAuth(), token, data.newPassword);
+      if (route.params.email && token.length === 64) {
+        // OTP single-use grant token reset
+        await apiClient.resetPasswordWithGrant(route.params.email, token, data.newPassword);
+      } else {
+        // Firebase action code link reset
+        let email: string | undefined;
+        try {
+          email = await verifyPasswordResetCode(getFirebaseAuth(), token);
+        } catch {
+          // Proceed with reset even if pre-lookup fails
+        }
+
+        await confirmPasswordReset(getFirebaseAuth(), token, data.newPassword);
+
+        if (email) {
+          apiClient.confirmPasswordReset(email).catch(() => undefined);
+        }
+      }
+
       setIsSuccess(true);
       Alert.alert(
         'Password Reset Successful',
-        'Your password has been updated. You can now login with your new password.',
+        'Your password has been updated. All other active sessions have been signed out. You can now login with your new password.',
         [{ text: 'Go to Login', onPress: () => navigation.navigate('Login') }],
         { cancelable: false },
       );
     } catch {
-      Alert.alert('Error', 'Failed to reset password. The link may have expired.');
+      Alert.alert('Error', 'Failed to reset password. The link or grant session may have expired.');
     } finally {
       setIsPending(false);
     }

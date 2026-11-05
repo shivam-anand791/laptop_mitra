@@ -9,6 +9,9 @@ import {
   signOut,
   onIdTokenChanged,
   sendEmailVerification,
+  sendPasswordResetEmail,
+  verifyPasswordResetCode,
+  confirmPasswordReset,
   User as FirebaseUser,
 } from 'firebase/auth';
 
@@ -56,5 +59,8 @@ export {
   signOut,
   onIdTokenChanged,
   sendEmailVerification,
+  sendPasswordResetEmail,
+  verifyPasswordResetCode,
+  confirmPasswordReset,
 };
 export type { FirebaseUser };

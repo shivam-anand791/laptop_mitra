@@ -317,22 +317,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { sent: false, alreadyVerified: true };
     }
 
-    // Primary path: Firebase client-side sendEmailVerification (requires NO backend endpoint, NO Resend)
+    const continueOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://laptop-mitra.vercel.app';
+
+    // 1. Primary path: Authoritative branded backend MailService (Resend HTTP API)
+    if (apiCapabilities.includes('email-verification')) {
+      try {
+        return await api.sendVerificationEmail();
+      } catch (apiErr: any) {
+        // If API returns rate limit (429), honor it and do not bypass via client SDK
+        if (apiErr?.status === 429) {
+          throw apiErr;
+        }
+        // If API endpoint is missing (404), fall through to client SDK fallback
+        if (apiErr?.status !== 404) {
+          throw apiErr;
+        }
+      }
+    }
+
+    // 2. Graceful fallback: Firebase client SDK if API capability is not yet advertised or 404
     try {
-      const continueOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://laptop-mitra.vercel.app';
       await firebaseSendEmailVerification(current, {
         url: `${continueOrigin}/verify-email`,
       });
       return { sent: true, alreadyVerified: false };
     } catch (fbErr: any) {
-      // If client-side fails (e.g. rate limit, auth domain) and backend advertises capability, try API fallback
-      if (apiCapabilities.includes('email-verification')) {
-        try {
-          return await api.sendVerificationEmail();
-        } catch {
-          // fall through
-        }
-      }
       const msg = fbErr?.message || "We couldn't send the email right now. Try again in a few minutes.";
       throw new Error(msg);
     }

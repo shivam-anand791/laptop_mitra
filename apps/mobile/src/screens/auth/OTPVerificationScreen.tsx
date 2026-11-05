@@ -1,19 +1,12 @@
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AuthStackParamList } from '../../navigation/types';
+import { AuthStackParamList, AuthNavigationProp } from '../../navigation/types';
+import { apiClient } from '../../api/client';
 
-/**
- * OTP Verification Screen
- *
- * NOTE: The current API uses email/password authentication only (JWT).
- * No OTP flow is implemented in the backend. This screen is kept as a
- * stretch goal for future enhancement (e.g., if 2FA or phone-based auth is added).
- *
- * To use: Add OTP endpoints to API, then implement verification logic here.
- */
 const otpSchema = z.object({
   otp: z.string().length(6, 'OTP must be 6 digits'),
 });
@@ -24,8 +17,10 @@ type OTPVerificationRouteProp = RouteProp<AuthStackParamList, 'OTPVerification'>
 
 export default function OTPVerificationScreen() {
   const route = useRoute<OTPVerificationRouteProp>();
-  const navigation = useNavigation();
+  const navigation = useNavigation<AuthNavigationProp>();
   const { email, mode } = route.params;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResending, setIsResending] = useState(false);
 
   const {
     control,
@@ -38,17 +33,41 @@ export default function OTPVerificationScreen() {
     },
   });
 
-  const onSubmit = async () => {
-    // TODO: Implement when API adds OTP endpoints
-    Alert.alert(
-      'Not Implemented',
-      'OTP verification is not yet supported by the API. This is a placeholder for future 2FA/phone auth.',
-      [{ text: 'OK' }]
-    );
+  const onSubmit = async (data: OTPFormData) => {
+    setIsSubmitting(true);
+    try {
+      if (mode === 'reset') {
+        const res = await apiClient.verifyPasswordResetOtp(email, data.otp);
+        navigation.navigate('ResetPassword', { token: res.grantToken, email });
+      } else {
+        await apiClient.verifyEmailOtp(data.otp);
+        Alert.alert(
+          'Email Verified',
+          'Your email address has been verified successfully.',
+          [{ text: 'Continue', onPress: () => navigation.navigate('Login') }],
+        );
+      }
+    } catch (err: any) {
+      Alert.alert('Verification Failed', err?.message || 'Invalid or expired code. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const resendOTP = () => {
-    Alert.alert('Not Implemented', 'Resend OTP will be available when API supports it.');
+  const resendOTP = async () => {
+    setIsResending(true);
+    try {
+      if (mode === 'reset') {
+        await apiClient.requestPasswordResetOtp(email);
+      } else {
+        await apiClient.requestEmailVerificationOtp();
+      }
+      Alert.alert('Code Dispatched', 'A new 6-digit code has been sent to your email.');
+    } catch (err: any) {
+      Alert.alert('Unable to Resend', err?.message || 'Please wait before requesting another code.');
+    } finally {
+      setIsResending(false);
+    }
   };
 
   const goBack = () => navigation.goBack();
@@ -99,19 +118,29 @@ export default function OTPVerificationScreen() {
             {errors.otp && <Text style={styles.errorText}>{errors.otp.message}</Text>}
           </View>
 
-          <TouchableOpacity style={styles.button} onPress={handleSubmit(onSubmit)} activeOpacity={0.8}>
-            <Text style={styles.buttonText}>Verify</Text>
+          <TouchableOpacity
+            style={[styles.button, isSubmitting && styles.buttonDisabled]}
+            onPress={handleSubmit(onSubmit)}
+            disabled={isSubmitting}
+            activeOpacity={0.8}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.buttonText}>Verify</Text>
+            )}
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={resendOTP} style={styles.resendContainer}>
+          <TouchableOpacity onPress={resendOTP} disabled={isResending} style={styles.resendContainer}>
             <Text style={styles.resendText}>Didn&apos;t receive the code? </Text>
-            <Text style={styles.resendLink}>Resend OTP</Text>
+            <Text style={[styles.resendLink, isResending && { opacity: 0.5 }]}>
+              {isResending ? 'Resending...' : 'Resend OTP'}
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.note}>
             <Text style={styles.noteText}>
-              ⚠ This is a placeholder. The current API uses email/password authentication only.
-              OTP flow will be implemented when backend support is added.
+              Codes are valid for 10 minutes. If you do not see the message, please check your spam or junk folder.
             </Text>
           </View>
         </View>
@@ -215,6 +244,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   buttonText: {
     fontSize: 16,

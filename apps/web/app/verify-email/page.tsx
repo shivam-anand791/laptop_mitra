@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ActionCodeOperation, applyActionCode, checkActionCode } from 'firebase/auth';
 import CustomerLayout from '../../components/CustomerLayout';
 import { useAuth } from '../../lib/auth-context';
+import { api } from '../../lib/api';
 import { auth } from '../../lib/firebase';
 import { getDefaultRoleDestination } from '../../lib/redirect';
 
@@ -70,6 +71,8 @@ function VerifyEmailForm() {
   const [isError, setIsError] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [otpInput, setOtpInput] = useState('');
+  const [isSubmittingOtp, setIsSubmittingOtp] = useState(false);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -317,6 +320,9 @@ function VerifyEmailForm() {
               A verification link was sent to <strong className="text-slate-800">{email}</strong>.
               Click the link in the email to verify your address.
             </p>
+            <p className="mt-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+              💡 Tip: If you don&apos;t see the message within 1-2 minutes, please check your spam, junk, or promotions folder.
+            </p>
 
             <div className="mt-6 space-y-3">
               <button
@@ -336,6 +342,45 @@ function VerifyEmailForm() {
               >
                 {cooldown > 0 ? `Resend available in ${cooldown}s` : 'Resend email'}
               </button>
+            </div>
+
+            <div className="mt-6 pt-5 border-t border-slate-200 text-left">
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Or enter 6-digit verification code:
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={otpInput}
+                  onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                  placeholder="123456"
+                  className="h-11 flex-1 text-center font-mono text-base font-bold tracking-[4px] bg-[#F8FAFC] border border-[#E4E9F2] rounded-xl outline-none focus:border-[#1D6FF2]"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (otpInput.length !== 6) return;
+                    setIsSubmittingOtp(true);
+                    setMessage(null);
+                    setIsError(false);
+                    try {
+                      await api.verifyEmailOtp(otpInput.trim());
+                      await refreshAuthenticatedUser().catch(() => undefined);
+                      setStage('verified');
+                    } catch (err: any) {
+                      setIsError(true);
+                      setMessage(err?.message || 'Invalid or expired verification code.');
+                    } finally {
+                      setIsSubmittingOtp(false);
+                    }
+                  }}
+                  disabled={otpInput.length !== 6 || isSubmittingOtp}
+                  className="h-11 px-4 bg-[#1D6FF2] hover:bg-[#1558C0] disabled:bg-slate-300 text-white font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  {isSubmittingOtp ? '...' : 'Verify Code'}
+                </button>
+              </div>
             </div>
           </>
         )}

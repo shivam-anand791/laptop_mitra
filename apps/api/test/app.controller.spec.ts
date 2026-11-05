@@ -23,7 +23,42 @@ describe('AppController (/health)', () => {
     expect(result.capabilities).toContain('email-verification');
   });
 
-  it('returns ready status and database connected for /health/ready', async () => {
+  it('returns ready status, database connected, and mail status for /health/ready', async () => {
+    const configService = {
+      get: jest.fn(() => undefined),
+    };
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([{ 1: 1 }]),
+    };
+    const mailService = {
+      getHealthStatus: jest.fn().mockReturnValue('ok'),
+    };
+    const controller = new AppController(configService as any, prisma as any, mailService as any);
+    const result = await controller.getReadiness();
+
+    expect(result.status).toBe('ready');
+    expect(result.database).toBe('connected');
+    expect(result.mail).toBe('ok');
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+  });
+
+  it('reports mail status as degraded when mail provider is degraded', async () => {
+    const configService = {
+      get: jest.fn(() => undefined),
+    };
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([{ 1: 1 }]),
+    };
+    const mailService = {
+      getHealthStatus: jest.fn().mockReturnValue('degraded'),
+    };
+    const controller = new AppController(configService as any, prisma as any, mailService as any);
+    const result = await controller.getReadiness();
+
+    expect(result.mail).toBe('degraded');
+  });
+
+  it('reports mail status as not configured when mailService is absent', async () => {
     const configService = {
       get: jest.fn(() => undefined),
     };
@@ -33,8 +68,6 @@ describe('AppController (/health)', () => {
     const controller = new AppController(configService as any, prisma as any);
     const result = await controller.getReadiness();
 
-    expect(result.status).toBe('ready');
-    expect(result.database).toBe('connected');
-    expect(prisma.$queryRaw).toHaveBeenCalled();
+    expect(result.mail).toBe('not configured');
   });
 });

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { useState } from 'react';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { getFirebaseAuth } from '../../firebase/firebase';
+import { apiClient } from '../../api/client';
 import { useNavigation } from '@react-navigation/native';
 import { AuthNavigationProp } from '../../navigation/types';
 
@@ -32,19 +33,25 @@ export default function ForgotPasswordScreen() {
 
   const onSubmit = async (data: ForgotPasswordFormData) => {
     setIsPending(true);
+    const cleanEmail = data.email.trim();
     try {
-      await sendPasswordResetEmail(getFirebaseAuth(), data.email.trim());
+      try {
+        await apiClient.forgotPassword(cleanEmail);
+      } catch {
+        // Fallback to Firebase Client SDK if API is unavailable
+        await sendPasswordResetEmail(getFirebaseAuth(), cleanEmail);
+      }
       setIsSuccess(true);
       Alert.alert(
         'Reset Email Sent',
-        'If an account with that email exists, you\'ll receive a password reset link shortly.',
+        "If an account with that email exists, you'll receive a password reset link shortly.",
         [{ text: 'Back to Login', onPress: () => navigation.navigate('Login') }],
         { cancelable: false },
       );
     } catch (error: any) {
       if (error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-email') {
         setIsSuccess(true);
-        Alert.alert('Reset Email Sent', 'If an account with that email exists, you\'ll receive a password reset link shortly.');
+        Alert.alert('Reset Email Sent', "If an account with that email exists, you'll receive a password reset link shortly.");
       } else {
         Alert.alert('Error', 'Failed to send reset email. Please try again.');
       }
@@ -107,6 +114,25 @@ export default function ForgotPasswordScreen() {
             ) : (
               <Text style={styles.buttonText}>Send Reset Link</Text>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#1D6FF2', marginTop: 10 }]}
+            onPress={handleSubmit(async (data) => {
+              setIsPending(true);
+              try {
+                await apiClient.requestPasswordResetOtp(data.email.trim());
+                navigation.navigate('OTPVerification', { email: data.email.trim(), mode: 'reset' });
+              } catch (err: any) {
+                Alert.alert('Error', err?.message || 'Unable to send verification code.');
+              } finally {
+                setIsPending(false);
+              }
+            })}
+            disabled={isPending}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.buttonText, { color: '#1D6FF2' }]}>Send 6-Digit Reset Code</Text>
           </TouchableOpacity>
 
           {isSuccess && (

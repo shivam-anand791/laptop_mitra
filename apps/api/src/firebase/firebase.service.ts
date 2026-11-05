@@ -103,6 +103,18 @@ export class FirebaseService {
     return this.auth.generateEmailVerificationLink(email, settings);
   }
 
+  generatePasswordResetLink(email: string, settings?: ActionCodeSettings): Promise<string> {
+    return this.auth.generatePasswordResetLink(email, settings);
+  }
+
+  getUserByEmail(email: string): Promise<UserRecord> {
+    return this.auth.getUserByEmail(email);
+  }
+
+  updateUser(uid: string, properties: object): Promise<UserRecord> {
+    return this.auth.updateUser(uid, properties);
+  }
+
   createCustomToken(uid: string, developerClaims?: object): Promise<string> {
     if (!this.auth || typeof this.auth.createCustomToken !== 'function') {
       throw new Error('Firebase Auth is not initialized');

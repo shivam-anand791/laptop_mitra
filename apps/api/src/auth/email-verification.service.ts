@@ -79,28 +79,39 @@ export class EmailVerificationService {
         supportPhone: this.configService.get<string>('SUPPORT_PHONE') || '+91 7701993300',
       });
 
-      let result = await this.mailService.sendSmtpMail({
+      const result = await this.mailService.sendMail({
         to: firebaseUser.email,
         subject: content.subject,
         text: content.text,
         html: content.html,
+        templateName: 'email-verification',
       });
 
-      if (!result.success && this.mailService.getActiveProvider?.() === 'resend') {
-        result = await this.mailService.sendMail({
-          to: firebaseUser.email,
-          subject: content.subject,
-          text: content.text,
-          html: content.html,
-        });
-      }
-
       if (!result.success) {
-        throw new Error(result.error || 'Email delivery failed.');
+        this.logger.error(
+          `Verification email could not be sent to user ${uid}: [${result.errorCode || 'UNKNOWN'}] ${result.error || 'Delivery failed'}`,
+        );
+        throw new HttpException(
+          {
+            statusCode:
+              result.errorCode === 'MAIL_RATE_LIMITED'
+                ? HttpStatus.TOO_MANY_REQUESTS
+                : HttpStatus.SERVICE_UNAVAILABLE,
+            error: result.errorCode || 'MAIL_PROVIDER_UNAVAILABLE',
+            message: result.userMessage || 'Verification email could not be sent. Please try again shortly.',
+            code: result.errorCode || 'MAIL_DELIVERY_FAILED',
+          },
+          result.errorCode === 'MAIL_RATE_LIMITED'
+            ? HttpStatus.TOO_MANY_REQUESTS
+            : HttpStatus.SERVICE_UNAVAILABLE,
+        );
       }
 
       return { sent: true, alreadyVerified: false };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       this.logger.error(`Verification email could not be sent: ${error instanceof Error ? error.message : 'unknown error'}`);
       throw new ServiceUnavailableException('Verification email could not be sent. Please try again shortly.');
     }

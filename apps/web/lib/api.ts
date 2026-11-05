@@ -226,6 +226,59 @@ export const api = {
     }
   },
 
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+    return await request('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async confirmPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+    return await request('/auth/reset-password/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  // OTP Verification & Password Reset (Option A)
+  async requestEmailVerificationOtp(): Promise<{ success: boolean; message: string; cooldownSeconds: number }> {
+    return await request('/auth/otp/send-verification', {
+      method: 'POST',
+    });
+  },
+
+  async verifyEmailOtp(code: string): Promise<{ success: boolean; message: string }> {
+    return await request('/auth/otp/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  },
+
+  async requestPasswordResetOtp(email: string): Promise<{ success: boolean; message: string; cooldownSeconds: number }> {
+    return await request('/auth/otp/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async verifyPasswordResetOtp(email: string, code: string): Promise<{ success: boolean; grantToken: string }> {
+    return await request('/auth/otp/verify-reset-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    });
+  },
+
+  async resetPasswordWithGrant(
+    email: string,
+    grantToken: string,
+    newPassword: string,
+  ): Promise<{ success: boolean; message: string }> {
+    return await request('/auth/otp/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, grantToken, newPassword }),
+    });
+  },
+
   async getProfile(): Promise<User> {
     const res = await request<User>('/auth/profile');
     return res;
