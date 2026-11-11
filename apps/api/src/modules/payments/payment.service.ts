@@ -6,6 +6,7 @@ import {
   ForbiddenException,
   ConflictException,
   ServiceUnavailableException,
+  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -41,14 +42,24 @@ export class PaymentService {
     const keySecret = this.configService.get<string>('RAZORPAY_KEY_SECRET')?.trim();
     const webhookSecret = this.configService.get<string>('RAZORPAY_WEBHOOK_SECRET')?.trim();
     const nodeEnv = this.configService.get<string>('NODE_ENV');
+    const allowLiveKeys =
+      String(this.configService.get<string>('ALLOW_LIVE_PAYMENT_KEYS') ?? '')
+        .trim()
+        .toLowerCase() === 'true';
 
     if (!keyId || !keySecret || !webhookSecret) {
       throw new UnauthorizedException('Razorpay credentials and webhook secret must be configured');
     }
 
     if (nodeEnv === 'production') {
-      if (!keyId.startsWith('rzp_live_')) {
-        throw new UnauthorizedException('Live Razorpay key (rzp_live_*) is required in production');
+      if (allowLiveKeys) {
+        if (!keyId.startsWith('rzp_live_')) {
+          throw new UnauthorizedException('Live Razorpay key (rzp_live_*) is required when ALLOW_LIVE_PAYMENT_KEYS=true');
+        }
+      } else if (!keyId.startsWith('rzp_test_')) {
+        throw new UnauthorizedException(
+          'Live Razorpay keys require NODE_ENV=production AND ALLOW_LIVE_PAYMENT_KEYS=true (or use rzp_test_* for onboarding/staging)',
+        );
       }
     } else {
       if (keyId.startsWith('rzp_live_')) {
@@ -544,8 +555,8 @@ export class PaymentService {
       : parseFloat(order.finalAmount?.toString() || '0');
     const amountInPaise = Math.round(amountNum * 100);
 
-    if (amountInPaise <= 0) {
-      throw new BadRequestException('Invalid order total amount');
+    if (amountInPaise < 100) {
+      throw new BadRequestException('Minimum Razorpay payment amount is ₹1.00 (100 paise)');
     }
 
     // Idempotency: reuse existing valid Razorpay order if already created
@@ -571,12 +582,24 @@ export class PaymentService {
       }
     }
 
-    const rzpOrder = await this.razorpay.orders.create({
-      amount: amountInPaise,
-      currency: 'INR',
-      receipt: order.id,
-      payment_capture: 1, // Auto-capture
-    });
+    let rzpOrder: any;
+    try {
+      rzpOrder = await this.razorpay.orders.create({
+        amount: amountInPaise,
+        currency: 'INR',
+        receipt: order.id,
+        payment_capture: 1, // Auto-capture
+      });
+    } catch (error: any) {
+      if (Number(error?.statusCode) === 401) {
+        this.logger.error(`Razorpay authentication failed while creating order for ${order.id}`);
+        throw new UnauthorizedException('Payment gateway authentication failed');
+      }
+      this.logger.error(
+        `Razorpay order creation failed for ${order.id}: ${error?.error?.description || error?.message || 'Unknown error'}`,
+      );
+      throw new InternalServerErrorException('Failed to create payment order with gateway');
+    }
 
     // Persist razorpayOrderId on order and create payment record atomically
     await this.prisma.$transaction([

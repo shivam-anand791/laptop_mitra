@@ -44,7 +44,13 @@ jest.mock('razorpay', () => {
 import { PaymentService } from '../../src/modules/payments/payment.service';
 import { PaymentController } from '../../src/modules/payments/payment.controller';
 import { ConfigService } from '@nestjs/config';
-import { ForbiddenException, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+  UnauthorizedException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import * as crypto from 'crypto';
 import { createNoTaxService } from '../helpers/no-tax-service';
 
@@ -1295,17 +1301,69 @@ describe('PaymentService (Security & Integrity Tests)', () => {
       expect(validVerify.orderId).toBe('ord-1');
     });
 
-    it('enforces Razorpay boot config rules: requires webhook secret, requires rzp_live_ in prod and rzp_test_ in non-prod', () => {
+    it('enforces Razorpay boot config rules: requires webhook secret, gates rzp_live_ behind ALLOW_LIVE_PAYMENT_KEYS in prod, and requires rzp_test_ otherwise', () => {
       const makeCfg = (envMap: Record<string, string | undefined>) => ({
         get: (k: string) => envMap[k],
       }) as unknown as ConfigService;
 
+      // Test keys are allowed in production when ALLOW_LIVE_PAYMENT_KEYS is false/unset (for onboarding/staging)
       expect(
         () =>
           new PaymentService(
             makeCfg({
               NODE_ENV: 'production',
+              ALLOW_LIVE_PAYMENT_KEYS: 'false',
               RAZORPAY_KEY_ID: 'rzp_test_123',
+              RAZORPAY_KEY_SECRET: 'sec',
+              RAZORPAY_WEBHOOK_SECRET: 'whsec',
+            }),
+            prisma,
+            notificationService,
+            createNoTaxService(),
+          ),
+      ).not.toThrow();
+
+      // Test keys are rejected once ALLOW_LIVE_PAYMENT_KEYS=true in production
+      expect(
+        () =>
+          new PaymentService(
+            makeCfg({
+              NODE_ENV: 'production',
+              ALLOW_LIVE_PAYMENT_KEYS: 'true',
+              RAZORPAY_KEY_ID: 'rzp_test_123',
+              RAZORPAY_KEY_SECRET: 'sec',
+              RAZORPAY_WEBHOOK_SECRET: 'whsec',
+            }),
+            prisma,
+            notificationService,
+            createNoTaxService(),
+          ),
+      ).toThrow(UnauthorizedException);
+
+      // Live keys are rejected in production unless ALLOW_LIVE_PAYMENT_KEYS=true
+      expect(
+        () =>
+          new PaymentService(
+            makeCfg({
+              NODE_ENV: 'production',
+              RAZORPAY_KEY_ID: 'rzp_live_valid123',
+              RAZORPAY_KEY_SECRET: 'sec',
+              RAZORPAY_WEBHOOK_SECRET: 'whsec',
+            }),
+            prisma,
+            notificationService,
+            createNoTaxService(),
+          ),
+      ).toThrow(UnauthorizedException);
+
+      // Live keys are never allowed outside production even with ALLOW_LIVE_PAYMENT_KEYS=true
+      expect(
+        () =>
+          new PaymentService(
+            makeCfg({
+              NODE_ENV: 'development',
+              ALLOW_LIVE_PAYMENT_KEYS: 'true',
+              RAZORPAY_KEY_ID: 'rzp_live_valid123',
               RAZORPAY_KEY_SECRET: 'sec',
               RAZORPAY_WEBHOOK_SECRET: 'whsec',
             }),
@@ -1335,6 +1393,7 @@ describe('PaymentService (Security & Integrity Tests)', () => {
           new PaymentService(
             makeCfg({
               NODE_ENV: 'production',
+              ALLOW_LIVE_PAYMENT_KEYS: 'true',
               RAZORPAY_KEY_ID: 'rzp_live_valid123',
               RAZORPAY_KEY_SECRET: 'sec',
               RAZORPAY_WEBHOOK_SECRET: 'whsec',
@@ -1344,6 +1403,51 @@ describe('PaymentService (Security & Integrity Tests)', () => {
             createNoTaxService(),
           ),
       ).not.toThrow();
+    });
+
+    it('enforces >= 100 paise minimum amount and maps Razorpay 401/500 errors safely in createOrderForUser', async () => {
+      prisma.order.findUnique.mockResolvedValueOnce({
+        id: 'order-sub-100',
+        userId: 'user-1',
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        paymentMethod: 'razorpay',
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 60_000),
+        finalAmount: 0.5,
+        items: [{ purchaseMode: 'buy' }],
+        payments: [],
+      });
+
+      await expect(paymentService.createOrderForUser('order-sub-100', 'user-1', 'CUSTOMER')).rejects.toThrow(
+        BadRequestException,
+      );
+
+      const baseOrder = {
+        id: 'order-err-1',
+        userId: 'user-1',
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        paymentMethod: 'razorpay',
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 60_000),
+        finalAmount: 500,
+        items: [{ purchaseMode: 'buy' }],
+        payments: [],
+      };
+      const rzpCreateSpy = (paymentService as any).razorpay.orders.create as jest.Mock;
+
+      prisma.order.findUnique.mockResolvedValueOnce(baseOrder);
+      rzpCreateSpy.mockRejectedValueOnce({ statusCode: 401, error: { description: 'Authentication failed' } });
+      await expect(paymentService.createOrderForUser('order-err-1', 'user-1', 'CUSTOMER')).rejects.toThrow(
+        UnauthorizedException,
+      );
+
+      prisma.order.findUnique.mockResolvedValueOnce(baseOrder);
+      rzpCreateSpy.mockRejectedValueOnce({ statusCode: 502, error: { description: 'Gateway timeout' } });
+      await expect(paymentService.createOrderForUser('order-err-1', 'user-1', 'CUSTOMER')).rejects.toThrow(
+        InternalServerErrorException,
+      );
     });
   });
 });
