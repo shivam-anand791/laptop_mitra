@@ -11,7 +11,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useWishlist, useRemoveWishlistItem, useClearWishlist, useAddToCart } from '../../hooks/useApi';
+import { useWishlist, useRemoveWishlistItem, useClearWishlist, useAddToCart, useCartSyncState, MOBILE_CART_ERROR_MESSAGE } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { WishlistItem } from '@laptopmitra/types';
 import { MainStackNavigationProp } from '../../navigation/types';
@@ -27,6 +27,7 @@ export default function WishlistScreen() {
   const removeItem = useRemoveWishlistItem();
   const clearWishlist = useClearWishlist();
   const addToCart = useAddToCart();
+  const { retryCartSync } = useCartSyncState();
 
   const formatPrice = (price: number | string) => {
     const num = typeof price === 'string' ? parseFloat(price) : price;
@@ -57,7 +58,11 @@ export default function WishlistScreen() {
           removeItem.mutate(item.id);
           Alert.alert('Added to Cart', 'Item moved from wishlist to cart');
         },
-        onError: (err) => Alert.alert('Error', err.message),
+        onError: () =>
+          Alert.alert('Cart Update', MOBILE_CART_ERROR_MESSAGE, [
+            { text: 'Dismiss', style: 'cancel' },
+            { text: 'Retry', onPress: () => void retryCartSync() },
+          ]),
       },
     );
   };

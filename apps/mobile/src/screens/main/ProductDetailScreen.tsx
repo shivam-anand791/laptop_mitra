@@ -22,6 +22,8 @@ import {
   useWishlist,
   useRemoveWishlistItem,
   useSupportConfig,
+  useCartSyncState,
+  MOBILE_CART_ERROR_MESSAGE,
 } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
@@ -45,6 +47,7 @@ export default function ProductDetailScreen() {
   const { data: product, isLoading, error } = useProduct(productId);
   const { data: supportConfig } = useSupportConfig();
   const addToCart = useAddToCart();
+  const { retryCartSync } = useCartSyncState();
   const addToWishlist = useAddToWishlist();
   const removeFromWishlist = useRemoveWishlistItem();
   const { data: wishlist } = useWishlist();
@@ -125,7 +128,11 @@ export default function ProductDetailScreen() {
             );
           }
         },
-        onError: (err: any) => Alert.alert('Error', err.message),
+        onError: () =>
+          Alert.alert('Cart Update', MOBILE_CART_ERROR_MESSAGE, [
+            { text: 'Dismiss', style: 'cancel' },
+            { text: 'Retry', onPress: () => void retryCartSync() },
+          ]),
       },
     );
   };

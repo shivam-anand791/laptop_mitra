@@ -4,6 +4,8 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from './decorators/public.decorator';
 import { PrismaService } from './prisma/prisma.service';
 import { MailService } from './modules/mail/mail.service';
+import { SchemaCompatibilityService } from './prisma/schema-compatibility.service';
+import { getFallbackMetrics } from './common/fallback';
 
 @ApiTags('health')
 @Controller()
@@ -12,6 +14,7 @@ export class AppController {
     @Optional() private readonly configService?: ConfigService,
     @Optional() private readonly prisma?: PrismaService,
     @Optional() private readonly mailService?: MailService,
+    @Optional() private readonly schemaCompatibility?: SchemaCompatibilityService,
   ) {}
 
   @Public()
@@ -58,17 +61,48 @@ export class AppController {
       if (this.prisma) {
         await this.prisma.$queryRaw`SELECT 1`;
       }
+
+      const schemaStatus = this.schemaCompatibility
+        ? await this.schemaCompatibility.refresh()
+        : { status: 'up-to-date' as const, pendingMigrations: [], missingFeatures: [] };
+
+      if (schemaStatus.status === 'MIGRATIONS_PENDING') {
+        const pendingNames =
+          schemaStatus.pendingMigrations.length > 0
+            ? schemaStatus.pendingMigrations
+            : schemaStatus.missingFeatures.map((feature) => `schema_drift:${feature}`);
+
+        throw new ServiceUnavailableException({
+          status: 'unready',
+          database: 'connected',
+          code: 'MIGRATIONS_PENDING',
+          pendingMigrations: pendingNames,
+          mail: mailStatus,
+          fallbackMetrics: getFallbackMetrics(),
+          timestamp: new Date().toISOString(),
+          service: 'laptopmitra-api',
+          version: '1.0.0',
+          capabilities,
+        });
+      }
+
       return {
         status: 'ready',
         database: 'connected',
+        schema: schemaStatus.status,
+        pendingMigrations: schemaStatus.pendingMigrations,
         mail: mailStatus,
         mailMetrics: this.mailService?.getDailyMetrics ? this.mailService.getDailyMetrics() : undefined,
+        fallbackMetrics: getFallbackMetrics(),
         timestamp: new Date().toISOString(),
         service: 'laptopmitra-api',
         version: '1.0.0',
         capabilities,
       };
     } catch (error: any) {
+      if (error instanceof ServiceUnavailableException) {
+        throw error;
+      }
       throw new ServiceUnavailableException({
         status: 'unready',
         database: 'disconnected',

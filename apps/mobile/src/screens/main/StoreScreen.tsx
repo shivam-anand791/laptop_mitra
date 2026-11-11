@@ -13,7 +13,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useProducts, useAddToCart, useProductFilters } from '../../hooks/useApi';
+import { useProducts, useAddToCart, useProductFilters, useCartSyncState, MOBILE_CART_ERROR_MESSAGE } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 
 import { Product } from '@laptopmitra/types';
@@ -97,6 +97,7 @@ export default function StoreScreen() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
   const addToCart = useAddToCart();
+  const { retryCartSync } = useCartSyncState();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
@@ -233,7 +234,11 @@ export default function StoreScreen() {
       { productId: product.id, quantity: 1 },
       {
         onSuccess: () => Alert.alert('Added to Cart', `${product.name} added to your cart.`),
-        onError: (err) => Alert.alert('Error', err.message),
+        onError: () =>
+          Alert.alert('Cart Update', MOBILE_CART_ERROR_MESSAGE, [
+            { text: 'Dismiss', style: 'cancel' },
+            { text: 'Retry', onPress: () => void retryCartSync() },
+          ]),
       },
     );
   };

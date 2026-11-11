@@ -1,6 +1,11 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Product, ProductListResponse, ProductFilterFacets } from '../../types';
+import {
+  isCatalogFallbackAllowed,
+  markFallbackResponse,
+  recordFallbackUsage,
+} from '../../common/fallback';
 
 
 
@@ -522,13 +527,21 @@ export class ProductService {
           total,
         };
       }
-      if (process.env.NODE_ENV === 'development') {
-        this.logger.warn('Product database query returned no products; using the canonical catalog fallback.');
+      if (!isCatalogFallbackAllowed()) {
+        return {
+          products: [],
+          total,
+        };
       }
-    } catch {
-      if (process.env.NODE_ENV === 'development') {
-        this.logger.warn('Product database query failed; using the canonical catalog fallback.');
+      this.logger.warn('Product database query returned no products; using the canonical catalog fallback.');
+      recordFallbackUsage('product.findAll');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Product database query failed: ${reason}`);
+      if (!isCatalogFallbackAllowed()) {
+        throw error;
       }
+      recordFallbackUsage('product.findAll');
     }
 
     // Canonical catalog fallback
@@ -569,10 +582,10 @@ export class ProductService {
       normalizedFilters.offset + normalizedFilters.limit,
     );
 
-    return {
+    return markFallbackResponse({
       products: paginated.map((p) => this.normalizeProduct(p)),
       total,
-    };
+    });
   }
 
   async findOne(id: string, _includeRelations: string[] = []): Promise<Product> {
@@ -612,20 +625,25 @@ export class ProductService {
       if (dbProduct) {
         return this.normalizeProduct(dbProduct);
       }
-    } catch {
-      if (process.env.NODE_ENV === 'development') {
-        this.logger.warn('Product database lookup failed; using the canonical catalog fallback.');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Product database lookup failed for "${id}": ${reason}`);
+      if (!isCatalogFallbackAllowed()) {
+        throw error;
       }
+    }
+
+    if (!isCatalogFallbackAllowed()) {
+      throw new NotFoundException(`Product with id ${id} not found`);
     }
 
     const item = CANONICAL_CATALOG.find((p) => p.id === id || p.slug === id);
     if (!item) {
       throw new NotFoundException(`Product with id ${id} not found`);
     }
-    if (process.env.NODE_ENV === 'development') {
-      this.logger.warn(`Product "${id}" is not in the database; using the canonical catalog fallback.`);
-    }
-    return this.normalizeProduct(item);
+    this.logger.warn(`Product "${id}" is not in the database; using the canonical catalog fallback.`);
+    recordFallbackUsage('product.findOne');
+    return markFallbackResponse(this.normalizeProduct(item));
   }
 
   async create(data: any) {
@@ -656,10 +674,23 @@ export class ProductService {
         include: { category: true },
       });
 
-      const productsToProcess = activeProducts.length > 0 ? activeProducts : CANONICAL_CATALOG;
-      return this.extractFacetsFromProducts(productsToProcess);
-    } catch {
-      return this.extractFacetsFromProducts(CANONICAL_CATALOG);
+      if (activeProducts.length > 0) {
+        return this.extractFacetsFromProducts(activeProducts);
+      }
+      if (!isCatalogFallbackAllowed()) {
+        return this.extractFacetsFromProducts([]);
+      }
+      this.logger.warn('Product database query returned no active products for facets; using the canonical catalog fallback.');
+      recordFallbackUsage('product.getFilterFacets');
+      return markFallbackResponse(this.extractFacetsFromProducts(CANONICAL_CATALOG));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Product filter facets query failed: ${reason}`);
+      if (!isCatalogFallbackAllowed()) {
+        throw error;
+      }
+      recordFallbackUsage('product.getFilterFacets');
+      return markFallbackResponse(this.extractFacetsFromProducts(CANONICAL_CATALOG));
     }
   }
 

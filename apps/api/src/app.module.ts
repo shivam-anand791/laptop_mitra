@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { resolve } from 'node:path';
 import { AppController } from './app.controller';
@@ -25,6 +25,8 @@ import { QrStorageModule } from './common/storage/qr-storage.module';
 import { MailModule } from './modules/mail/mail.module';
 import { ShippingModule } from './modules/shipping/shipping.module';
 import { ServiceModule } from './modules/service/service.module';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { SchemaGateGuard } from './common/guards/schema-gate.guard';
 
 const apiPackageRoot = resolve(__dirname, '..');
 const repoRoot = resolve(__dirname, '..', '..', '..');
@@ -69,12 +71,20 @@ const repoRoot = resolve(__dirname, '..', '..', '..');
   controllers: [AppController],
   providers: [
     {
+      provide: APP_FILTER,
+      useClass: GlobalExceptionFilter,
+    },
+    {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
     {
       provide: APP_GUARD,
       useClass: FirebaseAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: SchemaGateGuard,
     },
   ],
 })

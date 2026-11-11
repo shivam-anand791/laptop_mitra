@@ -9,6 +9,7 @@ import { CheckFirebaseRevocation } from '../decorators/check-firebase-revocation
 import { EmailVerificationService } from './email-verification.service';
 import { PasswordResetService } from './password-reset.service';
 import { OtpService } from './otp.service';
+import { RequiresSchema } from '../common/guards/schema-gate.guard';
 
 @ApiTags('Authentication')
 @ApiBearerAuth()
@@ -112,6 +113,7 @@ export class AuthController {
   // ---------------------------------------------------------------------------
 
   @Post('otp/send-verification')
+  @RequiresSchema('otp')
   @Throttle({ default: { limit: 3, ttl: 300000 } })
   @ApiOperation({ summary: 'Request 6-digit email verification OTP code' })
   @ApiResponse({ status: 200, description: 'OTP code sent' })
@@ -121,6 +123,7 @@ export class AuthController {
   }
 
   @Post('otp/verify-email')
+  @RequiresSchema('otp')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Verify 6-digit email verification OTP code' })
   @ApiResponse({ status: 200, description: 'Email verified' })
@@ -130,6 +133,7 @@ export class AuthController {
   }
 
   @Public()
+  @RequiresSchema('otp')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('otp/forgot-password')
   @ApiOperation({ summary: 'Request 6-digit password reset OTP (generic anti-enumeration response)' })
@@ -140,6 +144,7 @@ export class AuthController {
   }
 
   @Public()
+  @RequiresSchema('otp')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('otp/verify-reset-code')
   @ApiOperation({ summary: 'Verify 6-digit password reset OTP and obtain short-lived single-use grant token' })
@@ -150,6 +155,7 @@ export class AuthController {
   }
 
   @Public()
+  @RequiresSchema('otp')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('otp/reset-password')
   @ApiOperation({ summary: 'Reset password using single-use grant token and revoke active sessions' })
@@ -207,4 +213,3 @@ export class AuthController {
     return this.authService.linkGuestAccount(req.user.id, body);
   }
 }
-

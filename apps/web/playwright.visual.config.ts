@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: ['verify-email.spec.ts', 'theme-visual.spec.ts', 'orders-need-help.spec.ts', 'admin-products-pricing.spec.ts'],
+  testMatch: ['verify-email.spec.ts', 'theme-visual.spec.ts', 'orders-need-help.spec.ts', 'admin-products-pricing.spec.ts', 'cart-resilience.spec.ts'],
   workers: 1,
   reporter: 'list',
   webServer: {

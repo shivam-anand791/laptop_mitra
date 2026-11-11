@@ -12,7 +12,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useProducts, useCategories, useAddToCart } from '../../hooks/useApi';
+import { useProducts, useCategories, useAddToCart, useCartSyncState, MOBILE_CART_ERROR_MESSAGE } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 import { Product, Category } from '@laptopmitra/types';
 import { MainStackNavigationProp } from '../../navigation/types';
@@ -29,6 +29,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
   const addToCart = useAddToCart();
+  const { retryCartSync } = useCartSyncState();
   const [corporateModalVisible, setCorporateModalVisible] = useState(false);
 
   const {
@@ -68,7 +69,11 @@ export default function HomeScreen() {
       { productId: product.id, quantity: 1 },
       {
         onSuccess: () => Alert.alert('Added to Cart', `${product.name} added to your cart.`),
-        onError: (err) => Alert.alert('Error', err.message),
+        onError: () =>
+          Alert.alert('Cart Update', MOBILE_CART_ERROR_MESSAGE, [
+            { text: 'Dismiss', style: 'cancel' },
+            { text: 'Retry', onPress: () => void retryCartSync() },
+          ]),
       },
     );
   };

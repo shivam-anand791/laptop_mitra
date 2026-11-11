@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import CustomerLayout from '../../components/CustomerLayout';
@@ -32,6 +32,7 @@ function ProductsContent() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [productFilters, setProductFilters] = useState<ProductFilterFacets | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [usingMockProducts, setUsingMockProducts] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [sortBy, setSortBy] = useState<string>('featured');
@@ -49,27 +50,29 @@ function ProductsContent() {
     stockOnly: false,
   });
 
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      try {
-        const [catRes, prodRes, filterRes] = await Promise.all([
-          api.getCategories(),
-          api.getProducts(),
-          api.getProductFilters().catch(() => null),
-        ]);
-        setCategories(catRes);
-        setProducts(prodRes.products);
-        setUsingMockProducts(prodRes.isMockFallback === true);
-        if (filterRes) setProductFilters(filterRes);
-      } catch {
-        // Handled by api fallback
-      } finally {
-        setLoading(false);
-      }
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [catRes, prodRes, filterRes] = await Promise.all([
+        api.getCategories().catch(() => []),
+        api.getProducts(),
+        api.getProductFilters().catch(() => null),
+      ]);
+      setCategories(catRes);
+      setProducts(prodRes.products);
+      setUsingMockProducts(prodRes.isMockFallback === true);
+      if (filterRes) setProductFilters(filterRes);
+    } catch {
+      setLoadError("We couldn't load our laptop catalog right now. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    loadData();
   }, []);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
 
   useEffect(() => {
@@ -448,7 +451,18 @@ function ProductsContent() {
           </div>
 
           {/* Product Grid */}
-          {loading ? (
+          {loadError ? (
+            <div role="alert" className="p-8 rounded-2xl bg-white border border-rose-200 text-center space-y-4">
+              <p className="text-sm font-semibold text-[#0B1F4B]">{loadError}</p>
+              <button
+                type="button"
+                onClick={() => void loadData()}
+                className="px-5 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold transition-all cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          ) : loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {[1, 2, 3, 4, 5, 6].map((n) => (
                 <ProductCardSkeleton key={n} />

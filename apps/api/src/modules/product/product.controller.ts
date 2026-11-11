@@ -1,11 +1,13 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ProductService } from './product.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { Public } from '../../decorators/public.decorator';
 import { RolesGuard } from '../../guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
+import { DataSourceHeaderInterceptor } from '../../common/interceptors/data-source-header.interceptor';
 
 @ApiTags('products')
+@UseInterceptors(DataSourceHeaderInterceptor)
 @Controller('products')
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
@@ -36,10 +38,8 @@ export class ProductController {
   }
 
   @Get(':id')
-
   @Public()
   @ApiOperation({ summary: 'Get product by ID' })
-
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
   findOne(@Param('id') id: string, @Query('include') include: string = 'category,images') {

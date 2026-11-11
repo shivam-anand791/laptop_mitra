@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Header, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Post, Put, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { SupportService } from './support.service';
+import { DataSourceHeaderInterceptor } from '../../common/interceptors/data-source-header.interceptor';
 import { GetUser } from '../../decorators/get-user.decorator';
 import { RolesGuard } from '../../guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
@@ -41,6 +42,7 @@ import {
 
 @ApiTags('support')
 @Controller('support')
+@UseInterceptors(DataSourceHeaderInterceptor)
 export class SupportController {
   constructor(private readonly supportService: SupportService) {}
 

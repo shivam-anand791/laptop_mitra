@@ -22,8 +22,10 @@ import {
   CreateCouponDto,
   UpdateCouponDto,
 } from '../discount/dto/coupon.dto';
+import { RequiresSchema } from '../../common/guards/schema-gate.guard';
 
 @ApiTags('admin-coupons')
+@RequiresSchema('coupons')
 @Controller('admin/coupons')
 @UseGuards(RolesGuard)
 @ApiBearerAuth()

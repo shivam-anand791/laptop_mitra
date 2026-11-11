@@ -25,12 +25,16 @@ import { MOCK_PRODUCTS, MOCK_CATEGORIES } from './mock-data';
 
 const API_BASE_URL = NEXT_PUBLIC_API_URL;
 
-function mockProductsFallback(reason: 'request failed' | 'no products') {
-  if (process.env.NODE_ENV === 'development') {
-    console.warn(`[dev] Product API ${reason}; using mock products.`);
-    return { products: MOCK_PRODUCTS, total: MOCK_PRODUCTS.length, isMockFallback: true };
+function isMockCatalogAllowed(): boolean {
+  if (process.env.NODE_ENV === 'production') {
+    return process.env.NEXT_PUBLIC_ALLOW_MOCK_FALLBACK === 'true';
   }
-  return { products: MOCK_PRODUCTS, total: MOCK_PRODUCTS.length };
+  return process.env.NEXT_PUBLIC_ALLOW_MOCK_FALLBACK !== 'false';
+}
+
+function mockProductsFallback(reason: 'request failed' | 'no products') {
+  console.warn(`[web] Product API ${reason}; using mock products fallback.`);
+  return { products: MOCK_PRODUCTS, total: MOCK_PRODUCTS.length, isMockFallback: true };
 }
 
 export class ApiError extends Error {
@@ -97,9 +101,9 @@ export async function request<T>(
           ? 'Session expired or unauthenticated. Please sign in again.'
           : res.status === 403
             ? 'Access forbidden.'
-            : res.status === 500
-              ? 'Backend service error. Please try again later.'
-              : `Request failed with status ${res.status}`);
+            : res.status >= 500
+              ? 'We are having trouble reaching our servers right now. Please try again.'
+              : 'Request could not be completed. Please try again.');
 
       // Global 403 handling: inform AdminGuard to render 403 screen
       if (res.status === 403 && typeof window !== 'undefined') {
@@ -172,22 +176,34 @@ export const api = {
 
       const query = searchParams.toString();
       const res = await request<{ products: Product[]; total: number }>(`/products${query ? `?${query}` : ''}`);
-      if (res?.products && res.products.length > 0) {
+      if (res?.products && (res.products.length > 0 || !isMockCatalogAllowed())) {
         return res;
       }
       return mockProductsFallback('no products');
-    } catch {
-      return mockProductsFallback('request failed');
+    } catch (err) {
+      if (isMockCatalogAllowed()) {
+        return mockProductsFallback('request failed');
+      }
+      throw err;
     }
   },
 
   async getProduct(id: string): Promise<Product> {
     try {
       return await request<Product>(`/products/${id}`);
-    } catch {
-      const found = MOCK_PRODUCTS.find((p) => p.id === id || p.slug === id);
-      if (found) return found;
-      throw new ApiError(404, 'Product not found');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404 && !isMockCatalogAllowed()) {
+        throw err;
+      }
+      if (isMockCatalogAllowed()) {
+        const found = MOCK_PRODUCTS.find((p) => p.id === id || p.slug === id);
+        if (found) {
+          console.warn(`[web] Product "${id}" API lookup failed; using mock product fallback.`);
+          return found;
+        }
+        throw new ApiError(404, 'Product not found');
+      }
+      throw err;
     }
   },
 
@@ -198,10 +214,15 @@ export const api = {
   async getCategories(): Promise<Category[]> {
     try {
       const res = await request<Category[]>('/categories');
-      if (Array.isArray(res) && res.length > 0) return res;
+      if (Array.isArray(res) && (res.length > 0 || !isMockCatalogAllowed())) return res;
+      console.warn('[web] Categories API returned empty list; using mock categories fallback.');
       return MOCK_CATEGORIES;
-    } catch {
-      return MOCK_CATEGORIES;
+    } catch (err) {
+      if (isMockCatalogAllowed()) {
+        console.warn('[web] Categories API request failed; using mock categories fallback.');
+        return MOCK_CATEGORIES;
+      }
+      throw err;
     }
   },
 

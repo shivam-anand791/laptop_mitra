@@ -6,6 +6,11 @@ export class ConfigService {
 
 export class ConfigModule {
   static forRoot() {
-    return { module: ConfigModule };
+    return {
+      global: true,
+      module: ConfigModule,
+      providers: [ConfigService],
+      exports: [ConfigService],
+    };
   }
 }

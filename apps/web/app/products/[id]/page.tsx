@@ -8,7 +8,7 @@ import CustomerLayout from '../../../components/CustomerLayout';
 import ProductCard from '../../../components/ProductCard';
 import Badge from '../../../components/ui/Badge';
 import { Product, ProductVariant } from '../../../lib/types';
-import { api } from '../../../lib/api';
+import { api, ApiError } from '../../../lib/api';
 import { useCart } from '../../../lib/cart-context';
 import { useWishlist } from '../../../lib/wishlist-context';
 import { useAuth } from '../../../lib/auth-context';
@@ -104,6 +104,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [selectedVariantId, setSelectedVariantId] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [added, setAdded] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'specs' | 'inspection' | 'box' | 'warranty' | 'faq'>(
     'specs',
@@ -119,48 +120,55 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const buybackTriggerRef = useRef<HTMLButtonElement>(null);
   const wasBuybackModalOpen = useRef<boolean>(false);
 
-  useEffect(() => {
-    async function loadProduct() {
+  const loadProduct = React.useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const prod = await api.getProduct(resolvedParams.id);
+      const rawVariants = prod.variants?.filter((variant) => variant.isActive) || [];
+      prod.variants = rawVariants;
+      setProduct(prod);
+      const defaultVariant =
+        rawVariants.find(
+          (variant) => variant.isDefault && (variant.stock > 0 || variant.allowBackorder),
+        ) ||
+        rawVariants.find((variant) => variant.stock > 0 || variant.allowBackorder) ||
+        rawVariants.find((variant) => variant.isDefault) ||
+        rawVariants[0];
+
+      setSelectedVariantId(defaultVariant?.id || '');
+      const variantImages = defaultVariant?.images || [];
+      const primary =
+        variantImages.find((i) => i.isPrimary)?.url ||
+        variantImages[0]?.url ||
+        prod.images?.find((i) => i.isPrimary)?.url ||
+        prod.images?.[0]?.url ||
+        '';
+      setSelectedImage(primary);
+
       try {
-        const prod = await api.getProduct(resolvedParams.id);
-        const rawVariants = prod.variants?.filter((variant) => variant.isActive) || [];
-        prod.variants = rawVariants;
-        setProduct(prod);
-        const defaultVariant =
-          rawVariants.find(
-            (variant) => variant.isDefault && (variant.stock > 0 || variant.allowBackorder),
-          ) ||
-          rawVariants.find((variant) => variant.stock > 0 || variant.allowBackorder) ||
-          rawVariants.find((variant) => variant.isDefault) ||
-          rawVariants[0];
-
-        setSelectedVariantId(defaultVariant?.id || '');
-        const variantImages = defaultVariant?.images || [];
-        const primary =
-          variantImages.find((i) => i.isPrimary)?.url ||
-          variantImages[0]?.url ||
-          prod.images?.find((i) => i.isPrimary)?.url ||
-          prod.images?.[0]?.url ||
-          '';
-        setSelectedImage(primary);
-
-        try {
-          const res = await api.getProducts({
-            categoryId: prod.categoryId || undefined,
-            limit: 4,
-          });
-          setSimilarProducts(res.products.filter((p) => p.id !== prod.id).slice(0, 4));
-        } catch {
-          // Ignore similar products error
-        }
+        const res = await api.getProducts({
+          categoryId: prod.categoryId || undefined,
+          limit: 4,
+        });
+        setSimilarProducts(res.products.filter((p) => p.id !== prod.id).slice(0, 4));
       } catch {
-        // Handled by api fallback
-      } finally {
-        setLoading(false);
+        // Ignore similar products error
       }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setProduct(null);
+      } else {
+        setLoadError("We couldn't load this laptop listing right now. Please try again.");
+      }
+    } finally {
+      setLoading(false);
     }
-    loadProduct();
   }, [resolvedParams.id]);
+
+  useEffect(() => {
+    void loadProduct();
+  }, [loadProduct]);
 
   useEffect(() => {
     if (!product) return;
@@ -203,6 +211,27 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           <p className="text-sm font-semibold text-[#0B1F4B]">
             Loading certified laptop specifications...
           </p>
+        </div>
+      </CustomerLayout>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <CustomerLayout>
+        <div role="alert" className="max-w-xl mx-auto px-4 py-24 text-center space-y-4">
+          <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
+            !
+          </div>
+          <h2 className="text-2xl font-bold text-[#0B1F4B]">Unable to load laptop listing</h2>
+          <p className="text-sm text-slate-600">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => void loadProduct()}
+            className="inline-block px-6 py-3 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold rounded-xl text-sm transition-all shadow-md cursor-pointer"
+          >
+            Retry
+          </button>
         </div>
       </CustomerLayout>
     );
@@ -269,7 +298,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
         ? Number(product.bulkSellPrice)
         : null;
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (cartItems.some((item) => (item.purchaseMode === 'lease') !== isLease)) {
       window.alert(
         'Buy and rent items must be kept in separate carts. Remove the existing cart items first.',
@@ -280,17 +309,19 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       setCorporateModalOpen(true);
       return;
     }
-    addItem(product, quantity, {
+    const synced = await addItem(product, quantity, {
       purchaseMode: isLease ? 'lease' : 'sell',
       hasWarranty: !isLease && hasWarranty,
       ...(isLease ? { tenureMonths: selectedRentalTenure } : {}),
       ...(selectedVariant ? { variantId: selectedVariant.id } : {}),
     });
-    setAdded(true);
-    setTimeout(() => setAdded(false), 2200);
+    if (synced) {
+      setAdded(true);
+      setTimeout(() => setAdded(false), 2200);
+    }
   };
 
-  const handleBuyNow = () => {
+  const handleBuyNow = async () => {
     if (cartItems.some((item) => (item.purchaseMode === 'lease') !== isLease)) {
       window.alert(
         'Buy and rent items must be kept in separate carts. Remove the existing cart items first.',
@@ -301,13 +332,15 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       setCorporateModalOpen(true);
       return;
     }
-    addItem(product, quantity, {
+    const synced = await addItem(product, quantity, {
       purchaseMode: isLease ? 'lease' : 'sell',
       hasWarranty: !isLease && hasWarranty,
       ...(isLease ? { tenureMonths: selectedRentalTenure } : {}),
       ...(selectedVariant ? { variantId: selectedVariant.id } : {}),
     });
-    router.push('/checkout');
+    if (synced) {
+      router.push('/checkout');
+    }
   };
 
   const handlePincodeCheck = (e: React.FormEvent) => {

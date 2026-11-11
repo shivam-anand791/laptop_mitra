@@ -22,6 +22,8 @@ import {
   useValidateDiscount,
   usePreviewCoupon,
   useSupportConfig,
+  useCartSyncState,
+  MOBILE_CART_ERROR_MESSAGE,
 } from '../../hooks/useApi';
 import CouponOffersModal from '../../components/CouponOffersModal';
 import { useAuth } from '../../providers/AuthProvider';
@@ -34,7 +36,8 @@ export default function CartScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
-  const { data: cart, isLoading } = useCart();
+  const { data: cart, isLoading, error: cartLoadError, refetch: refetchCart } = useCart();
+  const { cartSyncError, isRetryingCartSync, retryCartSync } = useCartSyncState();
   const { data: supportConfig } = useSupportConfig();
   const updateQuantity = useUpdateCartItemQuantity();
   const updateCartItem = useUpdateCartItem();
@@ -233,6 +236,25 @@ export default function CartScreen() {
     );
   }
 
+  if (cartLoadError && items.length === 0) {
+    return (
+      <View style={[styles.center, { paddingTop: insets.top }]}>
+        <View style={styles.emptyIconCircle}>
+          <Ionicons name="alert-circle-outline" size={44} color={colors.danger} />
+        </View>
+        <Text style={styles.emptyTitle}>Unable to Sync Cart</Text>
+        <Text style={styles.emptySubtitle}>{MOBILE_CART_ERROR_MESSAGE}</Text>
+        <Button
+          title={isRetryingCartSync ? 'Retrying...' : 'Retry'}
+          onPress={() => void (cartSyncError ? retryCartSync() : refetchCart())}
+          variant="primary"
+          size="md"
+          style={{ marginTop: spacing.md }}
+        />
+      </View>
+    );
+  }
+
   if (items.length === 0) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
@@ -397,6 +419,21 @@ export default function CartScreen() {
         </TouchableOpacity>
       </View>
 
+      {(cartSyncError || cartLoadError) && (
+        <View style={styles.syncErrorBanner}>
+          <View style={styles.syncErrorRow}>
+            <Ionicons name="alert-circle" size={18} color={colors.danger} />
+            <Text style={styles.syncErrorText}>{MOBILE_CART_ERROR_MESSAGE}</Text>
+          </View>
+          <Button
+            title={isRetryingCartSync ? 'Retrying...' : 'Retry'}
+            onPress={() => void (cartSyncError ? retryCartSync() : refetchCart())}
+            variant="primary"
+            size="sm"
+          />
+        </View>
+      )}
+
       {/* Cart items list */}
       <FlatList
         data={items}
@@ -532,6 +569,7 @@ export default function CartScreen() {
         <Button
           title="Proceed to Checkout"
           onPress={() => navigation.navigate('Checkout', appliedDiscount ? { initialCoupon: appliedDiscount.code } as any : undefined)}
+          disabled={Boolean(cartSyncError || cartLoadError)}
           variant="primary"
           size="lg"
           icon={<Ionicons name="arrow-forward" size={16} color="#FFF" />}
@@ -577,6 +615,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     fontWeight: '500',
+  },
+  syncErrorBanner: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: colors.danger,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  syncErrorRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  syncErrorText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.danger,
   },
   emptyIconCircle: {
     width: 80,

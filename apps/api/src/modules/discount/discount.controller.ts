@@ -18,6 +18,7 @@ import { Roles } from '../../decorators/roles.decorator';
 import { SavePayoutDetailsDto } from './dto/save-payout-details.dto';
 import { WithdrawRequestDto } from './dto/withdraw-request.dto';
 import { AvailableCouponsDto, PreviewCouponDto } from './dto/coupon.dto';
+import { RequiresSchema } from '../../common/guards/schema-gate.guard';
 
 @ApiTags('discount')
 @Controller(['discount', 'discounts', 'coupons'])
@@ -25,6 +26,7 @@ export class DiscountController {
   constructor(private readonly discountService: DiscountService) {}
 
   @Public()
+  @RequiresSchema('coupons')
   @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Post('available')
   @ApiOperation({ summary: 'List all available and unlockable coupons for cart items' })
@@ -37,6 +39,7 @@ export class DiscountController {
   }
 
   @Public()
+  @RequiresSchema('coupons')
   @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Post('preview')
   @ApiOperation({ summary: 'Preview discount calculation and line allocations for a coupon' })
@@ -49,6 +52,7 @@ export class DiscountController {
   }
 
   @Public()
+  @RequiresSchema('coupons')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('validate')
   @ApiOperation({ summary: 'Validate a discount code for a cart total' })

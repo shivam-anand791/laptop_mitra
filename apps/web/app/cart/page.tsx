@@ -23,6 +23,9 @@ export default function CartPage() {
     updateWarranty,
     removeItem,
     clearCart,
+    syncError,
+    isSyncing,
+    retrySync,
   } = useCart();
   const [pincode, setPincode] = useState('');
   const [pincodeStatus, setPincodeStatus] = useState<string | null>(null);
@@ -496,6 +499,16 @@ export default function CartPage() {
 
                 {/* Checkout CTA */}
                 <div className="space-y-2 pt-2">
+                  {syncError ? (
+                    <button
+                      type="button"
+                      onClick={() => void retrySync()}
+                      disabled={isSyncing}
+                      className="w-full h-11 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-all text-center cursor-pointer disabled:opacity-50"
+                    >
+                      <span>{isSyncing ? 'Syncing cart...' : 'Retry Cart Sync to Checkout'}</span>
+                    </button>
+                  ) : (
                   <Link
                     href={appliedCoupon ? `/checkout?coupon=${encodeURIComponent(appliedCoupon.code)}` : '/checkout'}
                     className="w-full h-11 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs active:scale-95 transition-all text-center"
@@ -505,6 +518,7 @@ export default function CartPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                     </svg>
                   </Link>
+                  )}
 
                   <Link
                     href="/products"

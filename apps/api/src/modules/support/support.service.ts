@@ -11,6 +11,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { PaymentEncryptionService } from '../../common/encryption/payment-encryption.service';
 import { PaymentService } from '../payments/payment.service';
+import {
+  isCatalogFallbackAllowed,
+  markFallbackResponse,
+  recordFallbackUsage,
+} from '../../common/fallback';
 import { ItemSituationKey, ItemAction, SituationResponse, isActionImplemented } from '../../types';
 import { CreateCorporateInquiryDto } from './dto/create-corporate-inquiry.dto';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -856,18 +861,49 @@ export class SupportService {
       ]);
     }
 
-    const articles = await this.prisma.helpArticle.findMany({
-      where,
-      orderBy: [{ order: 'asc' }, { helpfulCount: 'desc' }],
-      include: {
-        category: {
-          select: { id: true, slug: true, title: true, icon: true },
+    let articles: Awaited<ReturnType<typeof this.prisma.helpArticle.findMany>> = [];
+    try {
+      articles = await this.prisma.helpArticle.findMany({
+        where,
+        orderBy: [{ order: 'asc' }, { helpfulCount: 'desc' }],
+        include: {
+          category: {
+            select: { id: true, slug: true, title: true, icon: true },
+          },
         },
-      },
-      take: 50,
-    });
+        take: 50,
+      });
 
-    if (articles.length === 0 && await this.prisma.helpCategory.count() === 0) {
+      if (articles.length === 0 && (await this.prisma.helpCategory.count()) === 0) {
+        if (!isCatalogFallbackAllowed()) {
+          return [];
+        }
+        this.logger.warn('Help center database is empty; using fallback help articles.');
+        recordFallbackUsage('support.getHelpArticles');
+        const settings = await this.getSupportSettings();
+        const fallbackArticles = this.getFallbackHelpArticles(
+          settings?.returnWindowDays ?? 7,
+          settings?.standardWarrantyDays ?? 180,
+        );
+        const searchTerms = query?.trim().toLowerCase().split(/[\s&/]+/).filter(Boolean).map((term) =>
+          term.length > 3 && term.endsWith('s') ? term.slice(0, -1) : term,
+        );
+        return markFallbackResponse(
+          fallbackArticles.filter((article) => {
+            const matchesCategory = !categorySlug || article.category.slug === categorySlug;
+            const searchableText = `${article.title} ${article.summary} ${article.content}`.toLowerCase();
+            const matchesQuery = !searchTerms?.length || searchTerms.some((term) => searchableText.includes(term));
+            return matchesCategory && matchesQuery;
+          }),
+        );
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Help article lookup failed: ${reason}`);
+      if (!isCatalogFallbackAllowed()) {
+        throw error;
+      }
+      recordFallbackUsage('support.getHelpArticles');
       const settings = await this.getSupportSettings();
       const fallbackArticles = this.getFallbackHelpArticles(
         settings?.returnWindowDays ?? 7,
@@ -876,12 +912,14 @@ export class SupportService {
       const searchTerms = query?.trim().toLowerCase().split(/[\s&/]+/).filter(Boolean).map((term) =>
         term.length > 3 && term.endsWith('s') ? term.slice(0, -1) : term,
       );
-      return fallbackArticles.filter((article) => {
-        const matchesCategory = !categorySlug || article.category.slug === categorySlug;
-        const searchableText = `${article.title} ${article.summary} ${article.content}`.toLowerCase();
-        const matchesQuery = !searchTerms?.length || searchTerms.some((term) => searchableText.includes(term));
-        return matchesCategory && matchesQuery;
-      });
+      return markFallbackResponse(
+        fallbackArticles.filter((article) => {
+          const matchesCategory = !categorySlug || article.category.slug === categorySlug;
+          const searchableText = `${article.title} ${article.summary} ${article.content}`.toLowerCase();
+          const matchesQuery = !searchTerms?.length || searchTerms.some((term) => searchableText.includes(term));
+          return matchesCategory && matchesQuery;
+        }),
+      );
     }
 
     const policyArticlePresent = articles.some((article) =>
@@ -899,21 +937,36 @@ export class SupportService {
   }
 
   async getHelpArticleBySlug(slug: string) {
-    const article = await this.prisma.helpArticle.findUnique({
-      where: { slug },
-      include: {
-        category: true,
-      },
-    });
+    let article: any = null;
+    try {
+      article = await this.prisma.helpArticle.findUnique({
+        where: { slug },
+        include: {
+          category: true,
+        },
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Help article "${slug}" lookup failed: ${reason}`);
+      if (!isCatalogFallbackAllowed()) {
+        throw error;
+      }
+    }
 
-    if (!article || !article.isPublished || !article.category.isActive) {
-      // Check fallback
+    if (!article || !article.isPublished || !article.category?.isActive) {
+      if (!isCatalogFallbackAllowed()) {
+        throw new NotFoundException(`Help article with slug '${slug}' not found`);
+      }
       const settings = await this.getSupportSettings();
       const fallback = this.getFallbackHelpArticles(
         settings?.returnWindowDays ?? 7,
         settings?.standardWarrantyDays ?? 180,
       ).find((a) => a.slug === slug);
-      if (fallback) return fallback;
+      if (fallback) {
+        this.logger.warn(`Help article "${slug}" not found in DB; using fallback help article.`);
+        recordFallbackUsage('support.getHelpArticleBySlug');
+        return markFallbackResponse(fallback);
+      }
       throw new NotFoundException(`Help article with slug '${slug}' not found`);
     }
 
@@ -2651,7 +2704,7 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
     const isPrepaid = order.paymentMethod !== 'COD' && order.paymentMethod !== 'CASH_ON_DELIVERY';
 
     let razorpayRefundId: string | null = null;
-    let manualRefundReference: string | null = dto.manualRefundReference || null;
+    const manualRefundReference: string | null = dto.manualRefundReference || null;
 
     if (isPrepaid) {
       // Find razorpay payment ID
@@ -3469,7 +3522,7 @@ If you suspect any fraudulent contact impersonating LaptopMitra, report it immed
     const quoteExpiresAt = new Date(Date.now() + quoteValidityDays * 24 * 3600 * 1000);
 
     // Payout details encryption and masking
-    let payoutKeyId: string | null = null;
+    const payoutKeyId: string | null = null;
     let payoutEncryptedData: string | null = null;
     let payoutMaskedAccount: string | null = null;
     let payoutMaskedIfsc: string | null = null;

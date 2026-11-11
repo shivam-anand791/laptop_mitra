@@ -71,14 +71,16 @@ function DefaultCard({ product, onAddToCart, onToggleWishlist }: ProductCardProp
   const numPrice = Number(product.price);
   const bulkPrice = getBulkPrice(product);
 
-  const handleAdd = (e: React.MouseEvent) => {
+  const handleAdd = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!inStock) return;
-    addItem(product, 1);
-    setAdded(true);
-    onAddToCart?.(product);
-    setTimeout(() => setAdded(false), 1600);
+    const synced = await addItem(product, 1);
+    if (synced) {
+      setAdded(true);
+      onAddToCart?.(product);
+      setTimeout(() => setAdded(false), 1600);
+    }
   };
 
   const handleWishlist = (e: React.MouseEvent) => {

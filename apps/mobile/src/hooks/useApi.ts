@@ -1,6 +1,87 @@
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Cart, CartItem } from '@laptopmitra/types';
 import { useAuth } from '../providers/AuthProvider';
+
+export const MOBILE_CART_ERROR_MESSAGE = "We couldn't update your cart. Try again.";
+
+type CartSyncOp = (client: ReturnType<ReturnType<typeof useAuth>['getClient']>) => Promise<unknown>;
+
+interface CartSyncStore {
+  error: string | null;
+  isRetrying: boolean;
+  pendingOps: CartSyncOp[];
+}
+
+const cartSyncStore: CartSyncStore = {
+  error: null,
+  isRetrying: false,
+  pendingOps: [],
+};
+
+const cartSyncListeners = new Set<() => void>();
+
+function notifyCartSyncListeners() {
+  cartSyncListeners.forEach((listener) => listener());
+}
+
+function recordFailedCartOp(op: CartSyncOp) {
+  cartSyncStore.pendingOps.push(op);
+  cartSyncStore.error = MOBILE_CART_ERROR_MESSAGE;
+  notifyCartSyncListeners();
+}
+
+function clearCartSyncErrorIfEmpty() {
+  if (cartSyncStore.pendingOps.length === 0) {
+    cartSyncStore.error = null;
+    notifyCartSyncListeners();
+  }
+}
+
+export function useCartSyncState() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  const [, setVersion] = useState(0);
+
+  useEffect(() => {
+    const listener = () => setVersion((v) => v + 1);
+    cartSyncListeners.add(listener);
+    return () => {
+      cartSyncListeners.delete(listener);
+    };
+  }, []);
+
+  const retryCartSync = async (): Promise<boolean> => {
+    if (cartSyncStore.isRetrying) return false;
+    cartSyncStore.isRetrying = true;
+    notifyCartSyncListeners();
+    try {
+      const client = getClient();
+      const ops = [...cartSyncStore.pendingOps];
+      for (const op of ops) {
+        await op(client);
+      }
+      cartSyncStore.pendingOps = [];
+      cartSyncStore.error = null;
+      await queryClient.invalidateQueries({ queryKey: ['cart'] });
+      await queryClient.refetchQueries({ queryKey: ['cart'] });
+      return true;
+    } catch {
+      cartSyncStore.error = MOBILE_CART_ERROR_MESSAGE;
+      return false;
+    } finally {
+      cartSyncStore.isRetrying = false;
+      notifyCartSyncListeners();
+    }
+  };
+
+  return {
+    cartSyncError: cartSyncStore.error,
+    isRetryingCartSync: cartSyncStore.isRetrying,
+    hasPendingCartOps: cartSyncStore.pendingOps.length > 0,
+    retryCartSync,
+  };
+}
 
 // Products hooks
 export function useProducts(params?: Record<string, any>) {
@@ -81,8 +162,63 @@ export function useAddToCart() {
       variantId?: string;
       tenureMonths?: 1 | 3 | 6 | 12 | 24;
     }) => getClient().addToCart(productId, quantity, purchaseMode, configuration, hasWarranty, variantId, tenureMonths),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cart'] });
+    onSuccess: async () => {
+      clearCartSyncErrorIfEmpty();
+      await queryClient.invalidateQueries({ queryKey: ['cart'] });
+    },
+    onError: (_err, vars) => {
+      // Keep local item in query cache and queue op for Retry reconciliation
+      queryClient.setQueryData(['cart'], (old: any) => {
+        const currentItems: CartItem[] = old?.items ?? old?.cart?.items ?? [];
+        const mode = vars.purchaseMode ?? 'sell';
+        const config = vars.configuration ?? 'default';
+        const qty = vars.quantity ?? 1;
+        const existingIdx = currentItems.findIndex(
+          (item) =>
+            item.productId === vars.productId &&
+            (item.variantId || undefined) === vars.variantId &&
+            (item.purchaseMode || 'sell') === mode &&
+            (item.configuration || 'default') === config,
+        );
+        const updatedItems =
+          existingIdx > -1
+            ? currentItems.map((item, idx) =>
+                idx === existingIdx
+                  ? { ...item, quantity: (item.quantity || 1) + qty, hasWarranty: Boolean(vars.hasWarranty) || item.hasWarranty }
+                  : item,
+              )
+            : [
+                ...currentItems,
+                {
+                  id: `local-${Date.now()}`,
+                  productId: vars.productId,
+                  quantity: qty,
+                  purchaseMode: mode,
+                  configuration: config,
+                  hasWarranty: Boolean(vars.hasWarranty),
+                  variantId: vars.variantId,
+                  tenureMonths: vars.tenureMonths,
+                  priceAtAdd: 0,
+                } as unknown as CartItem,
+              ];
+        const newItemCount = updatedItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
+        return {
+          ...(old ?? { id: 'local-cart', items: [] }),
+          items: updatedItems,
+          itemCount: newItemCount,
+        };
+      });
+      recordFailedCartOp((client) =>
+        client.addToCart(
+          vars.productId,
+          vars.quantity,
+          vars.purchaseMode,
+          vars.configuration,
+          vars.hasWarranty,
+          vars.variantId,
+          vars.tenureMonths,
+        ),
+      );
     },
   });
 }
@@ -105,8 +241,32 @@ export function useUpdateCartItem() {
       if (hasWarranty !== undefined) payload.hasWarranty = hasWarranty;
       return getClient().updateCartItem(itemId, payload);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cart'] });
+    onMutate: async ({ itemId, quantity, hasWarranty }) => {
+      await queryClient.cancelQueries({ queryKey: ['cart'] });
+      queryClient.setQueryData(['cart'], (old: any) => {
+        if (!old) return old;
+        const currentItems = old.items ?? old.cart?.items ?? [];
+        const updatedItems = currentItems.map((item: any) =>
+          item.id === itemId
+            ? {
+                ...item,
+                ...(quantity !== undefined ? { quantity } : {}),
+                ...(hasWarranty !== undefined ? { hasWarranty, warrantyPrice: hasWarranty ? 1999 : 0 } : {}),
+              }
+            : item,
+        );
+        return { ...old, items: updatedItems };
+      });
+    },
+    onSuccess: async () => {
+      clearCartSyncErrorIfEmpty();
+      await queryClient.invalidateQueries({ queryKey: ['cart'] });
+    },
+    onError: (_err, vars) => {
+      const payload: { quantity?: number; hasWarranty?: boolean } = {};
+      if (vars.quantity !== undefined) payload.quantity = vars.quantity;
+      if (vars.hasWarranty !== undefined) payload.hasWarranty = vars.hasWarranty;
+      recordFailedCartOp((client) => client.updateCartItem(vars.itemId, payload));
     },
   });
 }
@@ -116,8 +276,25 @@ export function useRemoveCartItem() {
   const { getClient } = useAuth();
   return useMutation({
     mutationFn: (itemId: string) => getClient().removeCartItem(itemId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cart'] });
+    onMutate: async (itemId) => {
+      await queryClient.cancelQueries({ queryKey: ['cart'] });
+      queryClient.setQueryData(['cart'], (old: any) => {
+        if (!old) return old;
+        const currentItems = old.items ?? old.cart?.items ?? [];
+        const updatedItems = currentItems.filter((item: any) => item.id !== itemId);
+        return {
+          ...old,
+          items: updatedItems,
+          itemCount: updatedItems.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0),
+        };
+      });
+    },
+    onSuccess: async () => {
+      clearCartSyncErrorIfEmpty();
+      await queryClient.invalidateQueries({ queryKey: ['cart'] });
+    },
+    onError: (_err, itemId) => {
+      recordFailedCartOp((client) => client.removeCartItem(itemId));
     },
   });
 }
@@ -129,9 +306,7 @@ export function useUpdateCartItemQuantity() {
     mutationFn: ({ itemId, quantity }: { itemId: string; quantity: number }) =>
       getClient().updateCartItemQuantity(itemId, quantity),
     onMutate: async ({ itemId, quantity }) => {
-      // Optimistic update
       await queryClient.cancelQueries({ queryKey: ['cart'] });
-      const previous = queryClient.getQueryData(['cart']);
       queryClient.setQueryData(['cart'], (old: any) => {
         if (!old) return old;
         const currentItems = old.items ?? old.cart?.items ?? [];
@@ -152,16 +327,13 @@ export function useUpdateCartItemQuantity() {
           ...(old.cart ? { cart: { ...old.cart, items: updatedItems } } : {}),
         };
       });
-      return { previous };
     },
-    onError: (_err, _vars, context) => {
-      // Rollback on error
-      if (context?.previous) {
-        queryClient.setQueryData(['cart'], context.previous);
-      }
+    onSuccess: async () => {
+      clearCartSyncErrorIfEmpty();
+      await queryClient.invalidateQueries({ queryKey: ['cart'] });
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['cart'] });
+    onError: (_err, vars) => {
+      recordFailedCartOp((client) => client.updateCartItemQuantity(vars.itemId, vars.quantity));
     },
   });
 }
@@ -171,8 +343,16 @@ export function useClearCart() {
   const { getClient } = useAuth();
   return useMutation({
     mutationFn: () => getClient().clearCart(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['cart'] });
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['cart'] });
+      queryClient.setQueryData(['cart'], (old: any) => (old ? { ...old, items: [], total: 0, itemCount: 0 } : old));
+    },
+    onSuccess: async () => {
+      clearCartSyncErrorIfEmpty();
+      await queryClient.invalidateQueries({ queryKey: ['cart'] });
+    },
+    onError: () => {
+      recordFailedCartOp((client) => client.clearCart());
     },
   });
 }

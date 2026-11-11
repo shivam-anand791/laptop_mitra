@@ -1,9 +1,22 @@
-import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  BadRequestException,
+} from '@nestjs/common';
 import { CartService } from './cart.service';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { GetUser } from '../../decorators/get-user.decorator';
+import { RequiresSchema } from '../../common/guards/schema-gate.guard';
+import { AddCartItemDto, UpdateCartItemDto } from './dto/cart.dto';
 
 @ApiTags('cart')
+@ApiBearerAuth()
+@RequiresSchema('cart')
 @Controller('cart')
 export class CartController {
   constructor(private readonly cartService: CartService) {}
@@ -18,25 +31,16 @@ export class CartController {
   @Post('items')
   @ApiOperation({ summary: 'Add item to cart with purchaseMode, configuration, and warranty' })
   @ApiResponse({ status: 201 })
-  async addItem(
-    @GetUser() user: any,
-    @Body('productId') productId: string,
-    @Body('quantity') quantity?: number,
-    @Body('purchaseMode') purchaseMode?: 'sell' | 'lease',
-    @Body('configuration') configuration?: string,
-    @Body('hasWarranty') hasWarranty?: boolean,
-    @Body('variantId') variantId?: string,
-    @Body('tenureMonths') tenureMonths?: number,
-  ) {
+  async addItem(@GetUser() user: any, @Body() body: AddCartItemDto) {
     const result = await this.cartService.addItem(
       user.id,
-      productId,
-      quantity ?? 1,
-      purchaseMode,
-      configuration,
-      hasWarranty,
-      variantId,
-      tenureMonths,
+      body.productId,
+      body.quantity ?? 1,
+      body.purchaseMode,
+      body.configuration,
+      body.hasWarranty,
+      body.variantId,
+      body.tenureMonths,
     );
     return { cartItem: result, message: 'Item added to cart' };
   }
@@ -47,20 +51,22 @@ export class CartController {
   async updateQuantity(
     @GetUser() user: any,
     @Param('itemId') itemId: string,
-    @Body('quantity') quantity?: number,
-    @Body('hasWarranty') hasWarranty?: boolean,
+    @Body() body: UpdateCartItemDto,
   ) {
-    const result = await this.cartService.updateItem(user.id, itemId, { quantity, hasWarranty });
+    if (body.quantity === undefined && body.hasWarranty === undefined) {
+      throw new BadRequestException('Provide quantity or hasWarranty to update');
+    }
+    const result = await this.cartService.updateItem(user.id, itemId, {
+      quantity: body.quantity,
+      hasWarranty: body.hasWarranty,
+    });
     return { cartItem: result, message: 'Cart item updated' };
   }
 
   @Delete('items/:itemId')
   @ApiOperation({ summary: 'Remove item from cart' })
   @ApiResponse({ status: 200 })
-  async removeItem(
-    @GetUser() user: any,
-    @Param('itemId') itemId: string,
-  ) {
+  async removeItem(@GetUser() user: any, @Param('itemId') itemId: string) {
     await this.cartService.removeItem(user.id, itemId);
     return { message: 'Item removed from cart' };
   }
