@@ -1488,9 +1488,37 @@ describe('PaymentService (Security & Integrity Tests)', () => {
           statusCode: 502,
           code: 'PAYMENT_PROVIDER_UNAVAILABLE',
           message: 'Payment provider unavailable',
+          gatewayReason: 'AUTH_FAILED',
+          gatewayStatusCode: 401,
+          gatewayErrorCode: 'BAD_REQUEST_ERROR',
           requestId: 'req-gw-401',
         }),
       );
+      expect(paymentService.getGatewayHealthStatus()).toEqual(
+        expect.objectContaining({
+          lastGatewayStatusCode: 401,
+          lastGatewayErrorCode: 'BAD_REQUEST_ERROR',
+          lastGatewayReason: 'AUTH_FAILED',
+        }),
+      );
+
+      // Razorpay 400 validation errors expose BAD_REQUEST without leaking secrets
+      prisma.order.findUnique
+        .mockResolvedValueOnce(baseOrder)
+        .mockResolvedValueOnce(baseOrder);
+      rzpCreateSpy.mockRejectedValueOnce({
+        statusCode: 400,
+        error: { code: 'BAD_REQUEST_ERROR', description: 'Invalid receipt' },
+      });
+      await expect(paymentService.createOrderForUser('order-err-1', 'user-1', 'CUSTOMER')).rejects.toMatchObject({
+        response: expect.objectContaining({
+          statusCode: 502,
+          code: 'PAYMENT_PROVIDER_UNAVAILABLE',
+          gatewayReason: 'BAD_REQUEST',
+          gatewayStatusCode: 400,
+          gatewayErrorCode: 'BAD_REQUEST_ERROR',
+        }),
+      });
       expect(prisma.order.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ id: 'order-err-1', status: 'PENDING', inventoryStatus: 'RESERVED' }),
@@ -1554,6 +1582,7 @@ describe('PaymentService (Security & Integrity Tests)', () => {
 
     it('normalizes Razorpay env strings, validates key prefix/missing vars, and runs startup auth self-check', async () => {
       expect(normalizeRazorpayEnvValue('  "rzp_test_ABC123"\n ')).toBe('rzp_test_ABC123');
+      expect(normalizeRazorpayEnvValue('\uFEFF\u200B"rzp_test_ZeroWidth1"\u00A0')).toBe('rzp_test_ZeroWidth1');
       expect(normalizeRazorpayEnvValue("Bearer 'secret_xyz'")).toBe('secret_xyz');
       expect(maskRazorpayKeyId('rzp_test_1234567890')).toBe('rzp_test_***7890');
 
@@ -1595,15 +1624,34 @@ describe('PaymentService (Security & Integrity Tests)', () => {
       // Startup self-check: definitive 401 fails when enabled; transient errors warn and do not crash
       const allSpy = (quotedSvc as any).razorpay.orders.all as jest.Mock;
       await expect(quotedSvc.verifyRazorpayStartupAuth()).resolves.toBeUndefined();
+      expect(quotedSvc.getGatewayHealthStatus()).toEqual(expect.objectContaining({ status: 'ok', startupStatusCode: 200 }));
 
       allSpy.mockRejectedValueOnce({ statusCode: 503, message: 'Service Unavailable' });
       await expect(quotedSvc.verifyRazorpayStartupAuth()).resolves.toBeUndefined();
+      expect(quotedSvc.getGatewayHealthStatus()).toEqual(expect.objectContaining({ status: 'error', startupStatusCode: 503 }));
 
       // Logs loud secret-free error on definitive 401 without crash-looping by default
       const startupErrorSpy = jest.spyOn((quotedSvc as any).logger, 'error');
       allSpy.mockRejectedValueOnce({ statusCode: 401, error: { code: 'BAD_REQUEST_ERROR', description: 'Auth failed' } });
       await expect(quotedSvc.verifyRazorpayStartupAuth()).resolves.toBeUndefined();
       expect(startupErrorSpy).toHaveBeenCalledWith(expect.stringContaining('check=credentials_rejected'));
+      expect(quotedSvc.getGatewayHealthStatus()).toEqual(expect.objectContaining({ status: 'credentials_rejected', startupStatusCode: 401 }));
+
+      // Admin gateway diagnostics supports live re-probe and never leaks raw secret values
+      const diag = await quotedSvc.getAdminGatewayDiagnostics(true);
+      expect(diag).toEqual(
+        expect.objectContaining({
+          status: 'ok',
+          keyIdMasked: 'rzp_test_***1234',
+          keyIdLength: 19,
+          keySecretConfigured: true,
+          keySecretLength: 13,
+          webhookSecretConfigured: true,
+          webhookSecretLength: 9,
+        }),
+      );
+      expect(JSON.stringify(diag)).not.toContain('secret_quoted');
+      expect(JSON.stringify(diag)).not.toContain('wh_quoted');
 
       // Strict boot failure still works when RAZORPAY_STARTUP_FAIL_ON_401=true
       const strictSvc = new PaymentService(

@@ -5,6 +5,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from './decorators/public.decorator';
 import { PrismaService } from './prisma/prisma.service';
 import { MailService } from './modules/mail/mail.service';
+import { PaymentService } from './modules/payments/payment.service';
 import { SchemaCompatibilityService } from './prisma/schema-compatibility.service';
 import { getFallbackMetrics } from './common/fallback';
 
@@ -16,6 +17,7 @@ export class AppController {
     @Optional() private readonly prisma?: PrismaService,
     @Optional() private readonly mailService?: MailService,
     @Optional() private readonly schemaCompatibility?: SchemaCompatibilityService,
+    @Optional() private readonly paymentService?: PaymentService,
   ) {}
 
   @Public()
@@ -64,6 +66,8 @@ export class AppController {
     }
 
     const mailStatus = this.mailService ? this.mailService.getHealthStatus() : 'not configured';
+    const razorpayCheck = this.paymentService ? this.paymentService.getGatewayHealthStatus() : undefined;
+    const razorpayStatus = razorpayCheck ? razorpayCheck.status : 'not configured';
 
     try {
       if (this.prisma) {
@@ -86,6 +90,8 @@ export class AppController {
           code: 'MIGRATIONS_PENDING',
           pendingMigrations: pendingNames,
           mail: mailStatus,
+          razorpay: razorpayStatus,
+          ...(razorpayCheck ? { razorpayCheck } : {}),
           fallbackMetrics: getFallbackMetrics(),
           timestamp: new Date().toISOString(),
           service: 'laptopmitra-api',
@@ -101,6 +107,8 @@ export class AppController {
         pendingMigrations: schemaStatus.pendingMigrations,
         mail: mailStatus,
         mailMetrics: this.mailService?.getDailyMetrics ? this.mailService.getDailyMetrics() : undefined,
+        razorpay: razorpayStatus,
+        ...(razorpayCheck ? { razorpayCheck } : {}),
         fallbackMetrics: getFallbackMetrics(),
         timestamp: new Date().toISOString(),
         service: 'laptopmitra-api',

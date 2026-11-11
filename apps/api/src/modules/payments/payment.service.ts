@@ -27,7 +27,7 @@ const RAZORPAY_KEY_ID_PATTERN = /^rzp_(test|live)_[A-Za-z0-9]+$/;
  */
 export function normalizeRazorpayEnvValue(value?: string | null): string {
   if (typeof value !== 'string') return '';
-  let normalized = value.replace(/[\r\n]+/g, '').trim();
+  let normalized = value.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\u00A0/g, ' ').replace(/[\r\n]+/g, '').trim();
   if (/^bearer\s+/i.test(normalized)) {
     normalized = normalized.replace(/^bearer\s+/i, '').trim();
   }
@@ -70,6 +70,35 @@ export function extractRazorpayErrorDetails(error: any): {
   return { statusCode, code, description };
 }
 
+export type RazorpayGatewayFailureReason =
+  | 'AUTH_FAILED'
+  | 'BAD_REQUEST'
+  | 'FORBIDDEN'
+  | 'RATE_LIMITED'
+  | 'UPSTREAM_UNAVAILABLE'
+  | 'GATEWAY_ERROR';
+
+export interface RazorpayGatewayHealthStatus {
+  status: 'pending' | 'ok' | 'credentials_rejected' | 'error' | 'skipped';
+  keyMode: 'test' | 'live';
+  startupCheckedAt: string | null;
+  startupStatusCode: number | null;
+  startupErrorCode: string | null;
+  lastGatewayFailureAt: string | null;
+  lastGatewayStatusCode: number | null;
+  lastGatewayErrorCode: string | null;
+  lastGatewayReason: RazorpayGatewayFailureReason | null;
+}
+
+export function classifyRazorpayFailure(statusCode: number | null): RazorpayGatewayFailureReason {
+  if (statusCode === 401) return 'AUTH_FAILED';
+  if (statusCode === 403) return 'FORBIDDEN';
+  if (statusCode === 400 || statusCode === 422) return 'BAD_REQUEST';
+  if (statusCode === 429) return 'RATE_LIMITED';
+  if (statusCode === null || statusCode >= 503) return 'UPSTREAM_UNAVAILABLE';
+  return 'GATEWAY_ERROR';
+}
+
 export interface RefundPaymentOptions {
   amountPaise?: number;
   orderItemId?: string;
@@ -84,6 +113,16 @@ export class PaymentService implements OnModuleInit {
   private readonly razorpay: any;
   private readonly keyId: string;
   private readonly keyMode: 'test' | 'live';
+  private readonly keySecretLength: number;
+  private readonly webhookSecretLength: number;
+  private startupStatus: RazorpayGatewayHealthStatus['status'] = 'pending';
+  private startupCheckedAt: string | null = null;
+  private startupStatusCode: number | null = null;
+  private startupErrorCode: string | null = null;
+  private lastGatewayFailureAt: string | null = null;
+  private lastGatewayStatusCode: number | null = null;
+  private lastGatewayErrorCode: string | null = null;
+  private lastGatewayReason: RazorpayGatewayFailureReason | null = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -147,6 +186,8 @@ export class PaymentService implements OnModuleInit {
     });
     this.keyId = keyId;
     this.keyMode = keyId.startsWith('rzp_live_') ? 'live' : 'test';
+    this.keySecretLength = keySecret.length;
+    this.webhookSecretLength = webhookSecret.length;
   }
 
   async onModuleInit(): Promise<void> {
@@ -156,6 +197,7 @@ export class PaymentService implements OnModuleInit {
     ).toLowerCase();
 
     if (startupCheckFlag === 'false' || (nodeEnv === 'test' && startupCheckFlag !== 'true')) {
+      this.startupStatus = 'skipped';
       return;
     }
 
@@ -173,14 +215,22 @@ export class PaymentService implements OnModuleInit {
 
     try {
       await this.razorpay.orders.all({ count: 1 });
+      this.startupStatus = 'ok';
+      this.startupCheckedAt = new Date().toISOString();
+      this.startupStatusCode = 200;
+      this.startupErrorCode = null;
       this.logger.log(
-        `Razorpay startup self-check passed: keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}`,
+        `Razorpay startup self-check passed: keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}, keyIdLen=${this.keyId.length}, keySecretLen=${this.keySecretLength}`,
       );
     } catch (error: any) {
       const details = extractRazorpayErrorDetails(error);
+      this.startupCheckedAt = new Date().toISOString();
+      this.startupStatusCode = details.statusCode;
+      this.startupErrorCode = details.code || (details.statusCode === 401 ? 'UNKNOWN' : 'TRANSIENT');
       if (details.statusCode === 401) {
+        this.startupStatus = 'credentials_rejected';
         this.logger.error(
-          `Razorpay startup self-check FAILED [check=credentials_rejected]: keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}, statusCode=401, code=${details.code || 'UNKNOWN'}, description=${details.description}. Verify RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET belong to the same Razorpay ${this.keyMode} key pair.`,
+          `Razorpay startup self-check FAILED [check=credentials_rejected]: keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}, keyIdLen=${this.keyId.length}, keySecretLen=${this.keySecretLength}, statusCode=401, code=${details.code || 'UNKNOWN'}, description=${details.description}. Verify RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET belong to the same Razorpay ${this.keyMode} key pair.`,
         );
         if (failOn401) {
           throw new UnauthorizedException(
@@ -190,8 +240,9 @@ export class PaymentService implements OnModuleInit {
         return;
       }
 
+      this.startupStatus = 'error';
       this.logger.warn(
-        `Razorpay startup self-check encountered a non-401/transient error (service kept running): keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}, statusCode=${details.statusCode ?? 'network'}, code=${details.code || 'TRANSIENT'}, description=${details.description}`,
+        `Razorpay startup self-check encountered a non-401/transient error (service kept running): keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}, keyIdLen=${this.keyId.length}, keySecretLen=${this.keySecretLength}, statusCode=${details.statusCode ?? 'network'}, code=${details.code || 'TRANSIENT'}, description=${details.description}`,
       );
     }
   }
@@ -285,6 +336,7 @@ export class PaymentService implements OnModuleInit {
           rentalSubscriptionId: rental.id,
         },
       });
+      this.recordGatewaySuccess();
       await this.prisma.rentalSubscription.update({
         where: { id: rental.id },
         data: {
@@ -709,6 +761,7 @@ export class PaymentService implements OnModuleInit {
         receipt: order.id,
         payment_capture: 1, // Auto-capture
       });
+      this.recordGatewaySuccess();
     } catch (error: any) {
       return this.handleRazorpayGatewayError(order.id, 'order', error);
     }
@@ -1671,15 +1724,64 @@ export class PaymentService implements OnModuleInit {
     return order;
   }
 
+  private recordGatewaySuccess(): void {
+    this.lastGatewayFailureAt = null;
+    this.lastGatewayStatusCode = null;
+    this.lastGatewayErrorCode = null;
+    this.lastGatewayReason = null;
+    if (this.startupStatus === 'pending' || this.startupStatus === 'error') {
+      this.startupStatus = 'ok';
+    }
+  }
+
+  getGatewayHealthStatus(): RazorpayGatewayHealthStatus {
+    return {
+      status: this.startupStatus,
+      keyMode: this.keyMode,
+      startupCheckedAt: this.startupCheckedAt,
+      startupStatusCode: this.startupStatusCode,
+      startupErrorCode: this.startupErrorCode,
+      lastGatewayFailureAt: this.lastGatewayFailureAt,
+      lastGatewayStatusCode: this.lastGatewayStatusCode,
+      lastGatewayErrorCode: this.lastGatewayErrorCode,
+      lastGatewayReason: this.lastGatewayReason,
+    };
+  }
+
+  async getAdminGatewayDiagnostics(probe = false) {
+    if (probe) {
+      try {
+        await this.verifyRazorpayStartupAuth();
+      } catch {
+        // Diagnostics endpoint reports credentials_rejected state cleanly.
+      }
+    }
+
+    return {
+      ...this.getGatewayHealthStatus(),
+      keyIdMasked: maskRazorpayKeyId(this.keyId),
+      keyIdLength: this.keyId.length,
+      keySecretConfigured: this.keySecretLength > 0,
+      keySecretLength: this.keySecretLength,
+      webhookSecretConfigured: this.webhookSecretLength > 0,
+      webhookSecretLength: this.webhookSecretLength,
+    };
+  }
+
   private async handleRazorpayGatewayError(
     orderId: string,
     flow: 'order' | 'rental_subscription',
     error: any,
   ): Promise<never> {
     const details = extractRazorpayErrorDetails(error);
+    const gatewayReason = classifyRazorpayFailure(details.statusCode);
+    this.lastGatewayFailureAt = new Date().toISOString();
+    this.lastGatewayStatusCode = details.statusCode;
+    this.lastGatewayErrorCode = details.code || null;
+    this.lastGatewayReason = gatewayReason;
     const reasonLabel = details.statusCode === 401 ? 'authentication failed' : 'request failed';
     this.logger.error(
-      `Razorpay ${reasonLabel} during ${flow} creation for order ${orderId}: statusCode=${details.statusCode ?? 'network'}, code=${details.code || 'UNKNOWN'}, description=${details.description}, keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}`,
+      `Razorpay ${reasonLabel} during ${flow} creation for order ${orderId}: reason=${gatewayReason}, statusCode=${details.statusCode ?? 'network'}, code=${details.code || 'UNKNOWN'}, description=${details.description}, keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}, keyIdLen=${this.keyId.length}, keySecretLen=${this.keySecretLength}`,
     );
     await this.releaseOrderAfterGatewayFailure(orderId);
 
@@ -1690,6 +1792,9 @@ export class PaymentService implements OnModuleInit {
         error: 'Service Unavailable',
         code: 'PAYMENT_PROVIDER_UNAVAILABLE',
         message: 'Payment provider unavailable',
+        gatewayReason,
+        gatewayStatusCode: details.statusCode,
+        gatewayErrorCode: details.code || null,
       });
     }
 
@@ -1698,6 +1803,9 @@ export class PaymentService implements OnModuleInit {
       error: 'Bad Gateway',
       code: 'PAYMENT_PROVIDER_UNAVAILABLE',
       message: 'Payment provider unavailable',
+      gatewayReason,
+      gatewayStatusCode: details.statusCode,
+      gatewayErrorCode: details.code || null,
     });
   }
 

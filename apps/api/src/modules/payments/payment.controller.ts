@@ -9,6 +9,7 @@ import {
   HttpStatus,
   Headers,
   Param,
+  Query,
   UseGuards,
   BadRequestException,
   ForbiddenException,
@@ -132,6 +133,15 @@ export class PaymentController {
   @ApiOperation({ summary: 'List rental terminations awaiting admin review' })
   async getRentalTerminationRequests() {
     return this.paymentService.getRentalTerminationRequests();
+  }
+
+  @Get('admin/gateway-health')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Inspect secret-free Razorpay gateway configuration and startup check status' })
+  async getAdminGatewayHealth(@Query('probe') probe?: string) {
+    return this.paymentService.getAdminGatewayDiagnostics(probe === 'true');
   }
 
   @Post('razorpay/verify')

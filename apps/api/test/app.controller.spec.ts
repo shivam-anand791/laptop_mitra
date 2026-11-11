@@ -26,7 +26,7 @@ describe('AppController (/health)', () => {
     expect(result.capabilities).toContain('email-verification');
   });
 
-  it('returns ready status, database connected, and mail status for /health/ready', async () => {
+  it('returns ready status, database connected, mail status, and razorpay health status for /health/ready', async () => {
     const configService = {
       get: jest.fn(() => undefined),
     };
@@ -36,13 +36,50 @@ describe('AppController (/health)', () => {
     const mailService = {
       getHealthStatus: jest.fn().mockReturnValue('ok'),
     };
-    const controller = new AppController(configService as any, prisma as any, mailService as any);
+    const paymentService = {
+      getGatewayHealthStatus: jest.fn().mockReturnValue({
+        status: 'credentials_rejected',
+        keyMode: 'test',
+        startupCheckedAt: '2026-11-11T15:00:00.000Z',
+        startupStatusCode: 401,
+        startupErrorCode: 'BAD_REQUEST_ERROR',
+        lastGatewayFailureAt: null,
+        lastGatewayStatusCode: null,
+        lastGatewayErrorCode: null,
+        lastGatewayReason: null,
+      }),
+    };
+    const controller = new AppController(
+      configService as any,
+      prisma as any,
+      mailService as any,
+      undefined,
+      paymentService as any,
+    );
     const result = await controller.getReadiness();
 
     expect(result.status).toBe('ready');
     expect(result.database).toBe('connected');
     expect(result.mail).toBe('ok');
+    expect(result.razorpay).toBe('credentials_rejected');
+    expect(result.razorpayCheck).toEqual(
+      expect.objectContaining({ status: 'credentials_rejected', keyMode: 'test', startupStatusCode: 401 }),
+    );
     expect(prisma.$queryRaw).toHaveBeenCalled();
+  });
+
+  it('reports razorpay status as not configured when paymentService is absent', async () => {
+    const configService = {
+      get: jest.fn(() => undefined),
+    };
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([{ 1: 1 }]),
+    };
+    const controller = new AppController(configService as any, prisma as any);
+    const result = await controller.getReadiness();
+
+    expect(result.razorpay).toBe('not configured');
+    expect(result.razorpayCheck).toBeUndefined();
   });
 
   it('reports mail status as degraded when mail provider is degraded', async () => {
