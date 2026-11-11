@@ -28,6 +28,7 @@ import {
 } from '../../hooks/useApi';
 import { Address, PincodeVerificationResult } from '@laptopmitra/types';
 import { MainStackNavigationProp } from '../../navigation/types';
+import { useAuth } from '../../providers/AuthProvider';
 import RazorpayCheckoutModal, { RazorpayCheckoutData } from '../../components/RazorpayCheckoutModal';
 import CouponOffersModal from '../../components/CouponOffersModal';
 
@@ -37,6 +38,7 @@ export default function CheckoutScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
   const route = useRoute<any>();
   const initialCoupon = route.params?.initialCoupon as string | undefined;
+  const { isAuthenticated, isGuest, logout } = useAuth();
   const { data: cart } = useCart();
   const { data: addresses } = useAddresses();
   const { data: profile } = useProfile();
@@ -235,7 +237,23 @@ export default function CheckoutScreen() {
     setDiscountCode('');
   };
 
+  const promptSignInRequired = () => {
+    Alert.alert(
+      'Sign In Required',
+      'Please sign in with a customer account before placing an order or making a payment.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => { void logout(); } },
+      ],
+    );
+  };
+
   const handlePlaceOrder = async () => {
+    if (!isAuthenticated || isGuest || profile?.isGuest) {
+      promptSignInRequired();
+      return;
+    }
+
     if (hasMixedCart) {
       Alert.alert('Separate Checkout Required', 'Buy and rent items must be checked out separately. Your cart has not been changed.');
       return;
@@ -481,6 +499,18 @@ export default function CheckoutScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        {(!isAuthenticated || isGuest) && (
+          <View style={[styles.section, { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe' }]}>
+            <Text style={[styles.sectionTitle, { marginBottom: 4 }]}>Sign in required before payment</Text>
+            <Text style={[styles.addressText, { marginBottom: 10 }]}>
+              Guest sessions cannot complete checkout. Sign in or upgrade your account to place orders and pay via Razorpay.
+            </Text>
+            <TouchableOpacity style={styles.addAddressButton} onPress={() => { void logout(); }}>
+              <Ionicons name="log-in-outline" size={18} color="#2563eb" />
+              <Text style={styles.addAddressText}>Sign In to Continue</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {/* Shipping Address */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Shipping Address</Text>

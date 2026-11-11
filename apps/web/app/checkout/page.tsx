@@ -8,6 +8,7 @@ import CustomerLayout from '../../components/CustomerLayout';
 import { useCart } from '../../lib/cart-context';
 import { useAuth } from '../../lib/auth-context';
 import { api } from '../../lib/api';
+import { loadRazorpayScript } from '../../lib/razorpay';
 import { Address, CreateAddressDto, Order, PincodeVerificationResult } from '../../lib/types';
 import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../lib/config';
 import { useSupportConfig } from '../../lib/support-config';
@@ -24,7 +25,7 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { data: supportConfig } = useSupportConfig();
   const { items, subtotal, itemCount, clearCart, isSyncing: cartSyncing, syncError: cartSyncError } = useCart();
-  const { user, firebaseUser, isVerificationRequired, isLoading: authLoading, guestLogin } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
 
   // Form State
   const [formData, setFormData] = useState({
@@ -68,6 +69,9 @@ export default function CheckoutPage() {
   // Payment & Order Status
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'cod'>('razorpay');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [razorpayFeedback, setRazorpayFeedback] = useState<string | null>(null);
+  const [pendingPaymentOrder, setPendingPaymentOrder] = useState<Order | null>(null);
+  const [pendingPaymentIsRental, setPendingPaymentIsRental] = useState(false);
   // Pincode Verification & Delhi NCR COD State
   const [pincodeVerification, setPincodeVerification] = useState<PincodeVerificationResult | null>(null);
   const [isVerifyingPincode, setIsVerifyingPincode] = useState(false);
@@ -80,7 +84,14 @@ export default function CheckoutPage() {
   const [addressPickerOpen, setAddressPickerOpen] = useState(true);
   const [saveAddressToAccount, setSaveAddressToAccount] = useState(false);
 
+  const isGuestOrUnauthenticated = !user || user.isGuest || user.role === 'GUEST';
   const canUseSavedAddresses = !!user && user.role === 'CUSTOMER' && !user.isGuest;
+
+  useEffect(() => {
+    if (!authLoading && isGuestOrUnauthenticated) {
+      router.replace('/login?next=%2Fcheckout');
+    }
+  }, [authLoading, isGuestOrUnauthenticated, router]);
   const hasRentalOrder = items.some((item) => item.purchaseMode === 'lease');
   const hasMixedCart = new Set(items.map((item) => item.purchaseMode === 'lease' ? 'lease' : 'sell')).size > 1;
 
@@ -236,13 +247,9 @@ export default function CheckoutPage() {
 
   // Load Razorpay Script
   useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    document.body.appendChild(script);
-    return () => {
-      document.body.removeChild(script);
-    };
+    void loadRazorpayScript().catch(() => {
+      // Errors are surfaced inline if the user initiates online payment without the SDK.
+    });
   }, []);
 
   const applyCouponByCode = async (codeToApply: string) => {
@@ -359,6 +366,125 @@ export default function CheckoutPage() {
     setFormData((previous) => ({ ...previous, [e.target.name]: e.target.value }));
   };
 
+  const openRazorpayCheckout = async (order: Order, isRental: boolean) => {
+    setRazorpayFeedback(null);
+    setPendingPaymentOrder(order);
+    setPendingPaymentIsRental(isRental);
+    setIsSubmitting(true);
+
+    try {
+      const payment = isRental
+        ? await api.createRazorpaySubscription(order.id)
+        : await api.createRazorpayOrder(order.id);
+      if (!payment.keyId) throw new Error('Payment gateway key is unavailable');
+
+      try {
+        await loadRazorpayScript();
+      } catch (scriptError) {
+        setIsSubmitting(false);
+        setRazorpayFeedback(
+          scriptError instanceof Error
+            ? `${scriptError.message} Your order #${order.orderNumber} is pending — click "Retry Payment" below or open Order Details.`
+            : `Secure checkout SDK could not load. Your order #${order.orderNumber} is pending — retry below or open Order Details.`,
+        );
+        return;
+      }
+
+      if (typeof window === 'undefined' || !window.Razorpay) {
+        setIsSubmitting(false);
+        setRazorpayFeedback(
+          `Razorpay Checkout is currently unavailable. Your order #${order.orderNumber} is saved — retry below or open Order Details.`,
+        );
+        return;
+      }
+
+      const options = {
+        key: payment.keyId,
+        name: 'LaptopMitra',
+        description: isRental
+          ? `Rental AutoPay authorization for ${order.orderNumber}`
+          : `Order ${order.orderNumber} - Certified Refurbished Laptop`,
+        ...(isRental
+          ? { subscription_id: payment.subscriptionId }
+          : {
+              order_id: payment.id,
+              amount: payment.amount,
+              currency: payment.currency || 'INR',
+            }),
+        image: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=200&q=80',
+        prefill: {
+          name: formData.fullName,
+          email: formData.email,
+          contact: formData.phone,
+        },
+        theme: {
+          color: '#1D6FF2',
+        },
+        handler: async (response: any) => {
+          try {
+            if (isRental) {
+              await api.verifyRentalSubscription({
+                orderId: order.id,
+                razorpaySubscriptionId: response.razorpay_subscription_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              });
+            } else {
+              await api.verifyRazorpayPayment({
+                orderId: order.id,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              });
+            }
+            setRazorpayFeedback(null);
+            setPendingPaymentOrder(null);
+            clearCart();
+            setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any, status: 'CONFIRMED' as any });
+          } catch {
+            router.push(`/account/orders/${order.id}`);
+          } finally {
+            setIsSubmitting(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setIsSubmitting(false);
+            setRazorpayFeedback(
+              `Payment window was closed before completing Order #${order.orderNumber}. Your inventory reservation is still active — click "Retry Payment" below or complete it from Order Details.`,
+            );
+          },
+        },
+      };
+
+      const rzpInstance = new window.Razorpay(options);
+      if (typeof rzpInstance.on === 'function') {
+        rzpInstance.on('payment.failed', (failure: any) => {
+          const reason =
+            failure?.error?.description ||
+            failure?.error?.reason ||
+            'Your bank or payment app declined the transaction.';
+          setIsSubmitting(false);
+          setRazorpayFeedback(
+            `Payment failed for Order #${order.orderNumber}: ${reason} Click "Retry Payment" below to try again or switch payment method inside Razorpay.`,
+          );
+        });
+      }
+      rzpInstance.open();
+    } catch (error: any) {
+      setIsSubmitting(false);
+      if (error?.status === 403 && /sign in|customer account/i.test(error?.message || '')) {
+        router.replace('/login?next=%2Fcheckout');
+        return;
+      }
+      setRazorpayFeedback(
+        error instanceof Error
+          ? `${error.message} Your order #${order.orderNumber} is pending — click "Retry Payment" or check Order Details.`
+          : `Payment could not be started for Order #${order.orderNumber}. Retry below or open Order Details.`,
+      );
+    }
+  };
+
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (cartSyncing || cartSyncError || itemCount === 0 || (canUseSavedAddresses && savedAddressesLoading)) return;
@@ -379,17 +505,14 @@ export default function CheckoutPage() {
       return;
     }
 
+    if (authLoading || isGuestOrUnauthenticated) {
+      router.replace('/login?next=%2Fcheckout');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      let activeUser = user;
-      if (!activeUser && typeof guestLogin === 'function') {
-        try {
-          activeUser = await guestLogin();
-        } catch (guestErr) {
-          console.warn('[checkout] Guest login fallback notice:', guestErr);
-        }
-      }
       let orderAddressId = savedAddressesOwnerId === user?.id ? selectedSavedAddressId : null;
       if (!orderAddressId && saveAddressToAccount && canUseSavedAddresses && user) {
         const savedAddress = await api.createAddress({
@@ -448,75 +571,7 @@ export default function CheckoutPage() {
 
       // 2. If Razorpay selected, initialize payment modal
       if (paymentMethod === 'razorpay') {
-        try {
-          const payment = hasRentalOrder
-            ? await api.createRazorpaySubscription(order.id)
-            : await api.createRazorpayOrder(order.id);
-          if (!payment.keyId) throw new Error('Payment gateway key is unavailable');
-
-          if (typeof window !== 'undefined' && window.Razorpay) {
-            const options = {
-              key: payment.keyId,
-              name: 'LaptopMitra',
-              description: hasRentalOrder
-                ? `Rental AutoPay authorization for ${order.orderNumber}`
-                : `Order ${order.orderNumber} - Certified Refurbished Laptop`,
-              ...(hasRentalOrder
-                ? { subscription_id: payment.subscriptionId }
-                : {
-                    order_id: payment.id,
-                    amount: payment.amount,
-                    currency: payment.currency || 'INR',
-                  }),
-              image: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=200&q=80',
-              prefill: {
-                name: formData.fullName,
-                email: formData.email,
-                contact: formData.phone,
-              },
-              theme: {
-                color: '#1D6FF2',
-              },
-              handler: async (response: any) => {
-                try {
-                  if (hasRentalOrder) {
-                    await api.verifyRentalSubscription({
-                      orderId: order.id,
-                      razorpaySubscriptionId: response.razorpay_subscription_id,
-                      razorpayPaymentId: response.razorpay_payment_id,
-                      razorpaySignature: response.razorpay_signature,
-                    });
-                  } else {
-                    await api.verifyRazorpayPayment({
-                      orderId: order.id,
-                      razorpayOrderId: response.razorpay_order_id,
-                      razorpayPaymentId: response.razorpay_payment_id,
-                      razorpaySignature: response.razorpay_signature,
-                    });
-                  }
-                  clearCart();
-                  setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any, status: 'CONFIRMED' as any });
-                } catch {
-                  router.push(`/account/orders/${order.id}`);
-                }
-              },
-              modal: {
-                ondismiss: () => {
-                  setIsSubmitting(false);
-                },
-              },
-            };
-
-            const rzpInstance = new window.Razorpay(options);
-            rzpInstance.open();
-          } else {
-            alert('Secure checkout is unavailable. Your order is still pending; retry payment from Order Details.');
-            router.push(`/account/orders/${order.id}`);
-          }
-        } catch (error) {
-          alert(error instanceof Error ? error.message : 'Payment could not be started. Your order is still pending.');
-          router.push(`/account/orders/${order.id}`);
-        }
+        await openRazorpayCheckout(order, hasRentalOrder);
       } else {
         // COD (Cash on Delivery)
         clearCart();
@@ -533,6 +588,10 @@ export default function CheckoutPage() {
         } catch {
           // Keep the current form usable if the address list cannot be refreshed.
         }
+      }
+      if ((error as any)?.status === 403 && /sign in|customer account/i.test(error instanceof Error ? error.message : '')) {
+        router.replace('/login?next=%2Fcheckout');
+        return;
       }
       alert(error instanceof Error ? error.message : 'Could not complete order. Please verify your details and try again.');
     } finally {
@@ -607,6 +666,30 @@ export default function CheckoutPage() {
                 <span>WhatsApp Updates</span>
               </a>
             </div>
+          </div>
+        </div>
+      </CustomerLayout>
+    );
+  }
+
+  // AUTHENTICATION GATE BEFORE PAYMENT
+  if (authLoading || isGuestOrUnauthenticated) {
+    return (
+      <CustomerLayout>
+        <div className="bg-[#F8FAFC] min-h-[70vh] flex items-center justify-center py-16 px-4">
+          <div className="max-w-md w-full text-center space-y-4 bg-white p-8 rounded-3xl border border-[#E4E9F2] shadow-sm">
+            <h2 className="text-xl font-black text-[#0B1F4B]">Sign In Required</h2>
+            <p className="text-xs text-slate-500">
+              {authLoading ? 'Checking your account session…' : 'Redirecting to sign in before checkout and payment…'}
+            </p>
+            {!authLoading && (
+              <Link
+                href="/login?next=%2Fcheckout"
+                className="inline-block px-6 py-3 bg-[#1D6FF2] text-white font-bold rounded-xl text-xs shadow-md shadow-blue-500/20"
+              >
+                Continue to Sign In
+              </Link>
+            )}
           </div>
         </div>
       </CustomerLayout>
@@ -959,6 +1042,28 @@ export default function CheckoutPage() {
                           </div>
                         </div>
                       </label>
+                    )}
+
+                    {razorpayFeedback && pendingPaymentOrder && (
+                      <div className="p-4 rounded-2xl border border-amber-300 bg-amber-50 text-amber-950 space-y-3">
+                        <p className="text-xs font-semibold leading-relaxed">{razorpayFeedback}</p>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={() => openRazorpayCheckout(pendingPaymentOrder, pendingPaymentIsRental)}
+                            className="px-4 py-2 rounded-xl bg-[#1D6FF2] text-white text-xs font-bold hover:bg-[#1759C9] disabled:opacity-50 cursor-pointer"
+                          >
+                            {isSubmitting ? 'Opening Razorpay...' : 'Retry Payment'}
+                          </button>
+                          <Link
+                            href={`/account/orders/${pendingPaymentOrder.id}`}
+                            className="text-xs font-bold text-[#0B1F4B] underline"
+                          >
+                            View Order Details
+                          </Link>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>

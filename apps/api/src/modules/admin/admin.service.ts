@@ -27,6 +27,8 @@ import { AdminOrderQueryDto } from './dto/admin-order-query.dto';
 import { AdminAnalyticsQueryDto } from './dto/admin-analytics-query.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { NotificationService } from '../notifications/notification.service';
+import { PaymentService } from '../payments/payment.service';
+import { TriggerRefundDto } from './dto/trigger-refund.dto';
 import { CreateRentalPriceDto, UpdateRentalPriceDto } from './dto/save-rental-price.dto';
 import { RENTAL_PRICE_TENURES } from './rental-pricing';
 
@@ -40,6 +42,7 @@ export class AdminService {
     @Optional() private encryptionService?: PaymentEncryptionService,
     @Optional() private qrStorageService?: QrStorageService,
     @Optional() private notificationService?: NotificationService,
+    @Optional() private paymentService?: PaymentService,
   ) {}
 
   async getAllUsers(query?: AdminUserQueryDto) {
@@ -1741,28 +1744,36 @@ export class AdminService {
           );
         }
 
-        // 1. Stock restoration when moving to CANCELLED
-        if (targetStatus === 'CANCELLED') {
+        // 1. Stock restoration when moving to CANCELLED (variant-aware, active items only)
+        const inventoryWasHeld = ['RESERVED', 'CONSUMED'].includes(currentOrder.inventoryStatus);
+        if (targetStatus === 'CANCELLED' && inventoryWasHeld) {
           for (const item of currentOrder.items) {
-            await tx.product.update({
-              where: { id: item.productId },
-              data: { stock: { increment: item.quantity } },
-            });
+            if (item.status === 'CANCELLED') continue;
+            if (item.variantId) {
+              await tx.productVariant.update({
+                where: { id: item.variantId },
+                data: { stock: { increment: item.quantity } },
+              });
+            } else {
+              await tx.product.update({
+                where: { id: item.productId },
+                data: { stock: { increment: item.quantity } },
+              });
+            }
           }
         }
 
         // 2. Payment status rules:
         // - COMPLETED on DELIVERED only if paymentMethod is cod
-        // - REFUNDED on CANCELLED only if paymentStatus was COMPLETED
-        // - Never touch paymentStatus for online payments
+        // - REFUND_PENDING on CANCELLED if payment was completed; actual REFUNDED waits for Razorpay confirmation
         let newPaymentStatus: string | undefined = undefined;
         if (targetStatus === 'DELIVERED') {
           if (currentOrder.paymentMethod?.toLowerCase() === 'cod') {
             newPaymentStatus = 'COMPLETED';
           }
         } else if (targetStatus === 'CANCELLED') {
-          if (currentOrder.paymentStatus === 'COMPLETED') {
-            newPaymentStatus = 'REFUNDED';
+          if (currentOrder.paymentStatus === 'COMPLETED' || currentOrder.paymentStatus === 'PAID') {
+            newPaymentStatus = 'REFUND_PENDING';
           }
         }
 
@@ -2047,6 +2058,12 @@ export class AdminService {
         const updateData: any = {
           status: targetStatus,
           ...(newPaymentStatus ? { paymentStatus: newPaymentStatus } : {}),
+          ...(targetStatus === 'CANCELLED'
+            ? {
+                inventoryStatus: inventoryWasHeld ? 'RELEASED' : currentOrder.inventoryStatus,
+                reservationExpiresAt: null,
+              }
+            : {}),
           updatedAt: new Date(),
         };
 
@@ -2101,6 +2118,52 @@ export class AdminService {
       this.logger.error(`Database error during updateOrderStatus: ${err?.message || err}`);
       throw new ServiceUnavailableException('Database write failed during order status update');
     }
+  }
+
+  async triggerOrderRefund(orderId: string, adminId: string, dto?: TriggerRefundDto) {
+    if (!this.paymentService) {
+      throw new ServiceUnavailableException('Payment service is unavailable');
+    }
+
+    const order: any = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true, items: true },
+    });
+    if (!order) {
+      throw new NotFoundException(`Order with id ${orderId} not found`);
+    }
+    if (order.paymentStatus === 'REFUNDED') {
+      throw new BadRequestException('Order has already been refunded');
+    }
+
+    const capturedPayment = order.payments?.find((p: any) =>
+      ['COMPLETED', 'REFUND_FAILED', 'REFUND_PENDING', 'REFUNDED'].includes(p.status),
+    );
+    const razorpayPaymentId = order.paymentId || capturedPayment?.razorpayPaymentId;
+    if (order.paymentMethod !== 'razorpay' && !razorpayPaymentId) {
+      throw new BadRequestException('Only Razorpay-paid orders can be refunded via Razorpay');
+    }
+    if (!razorpayPaymentId) {
+      throw new BadRequestException('Captured Razorpay payment ID is missing for this order');
+    }
+
+    if (!dto?.orderItemId && dto?.amountPaise === undefined) {
+      const canRefundFullOrder =
+        ['REFUND_PENDING', 'REFUND_FAILED', 'PARTIALLY_REFUNDED'].includes(order.paymentStatus)
+        || (order.status === 'CANCELLED' && ['COMPLETED', 'PAID'].includes(order.paymentStatus));
+      if (!canRefundFullOrder) {
+        throw new BadRequestException(
+          'Cancel the order first or specify a cancelled item / partial amount before triggering a refund',
+        );
+      }
+    }
+
+    return this.paymentService.refundPayment(orderId, razorpayPaymentId, {
+      amountPaise: dto?.amountPaise,
+      orderItemId: dto?.orderItemId,
+      adminUserId: adminId,
+      reason: dto?.reason,
+    });
   }
 
   async cancelOrderItem(

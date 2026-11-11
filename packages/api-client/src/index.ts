@@ -822,7 +822,7 @@ export class LaptopMitraApiClient {
   }
 
   async verifyRentalSubscription(data: any): Promise<any> {
-    return this.request<any>('/payments/razorpay/verify-subscription', {
+    return this.request<any>('/payments/razorpay/subscription/verify', {
       method: 'POST',
       body: JSON.stringify(data),
     });

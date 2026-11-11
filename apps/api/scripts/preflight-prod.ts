@@ -81,7 +81,7 @@ checks.push({
 
 checks.push({
   name: 'RAZORPAY_KEY_ID',
-  passed: /^rzp_(?:live|test)_[A-Za-z0-9]+$/.test(process.env.RAZORPAY_KEY_ID?.trim() || ''),
+  passed: /^rzp_live_[A-Za-z0-9]+$/.test(process.env.RAZORPAY_KEY_ID?.trim() || ''),
 });
 checks.push({ name: 'RAZORPAY_KEY_SECRET', passed: Boolean(process.env.RAZORPAY_KEY_SECRET?.trim()) });
 checks.push({

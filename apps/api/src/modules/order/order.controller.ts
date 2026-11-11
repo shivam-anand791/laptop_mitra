@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Patch, Param, Body, UseGuards, Query, Headers } from '@nestjs/common';
+import { Controller, Post, Get, Put, Patch, Param, Body, UseGuards, Query, Headers, ForbiddenException } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { GetUser } from '../../decorators/get-user.decorator';
@@ -10,11 +10,11 @@ import { UpdateOrderStatusDto } from '../admin/dto/update-order-status.dto';
 @Controller('orders')
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
-@Roles('CUSTOMER', 'ADMIN', 'GUEST')
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
 
   @Post()
+  @Roles('CUSTOMER', 'ADMIN')
   @ApiOperation({ summary: 'Create order (checkout) with discount/referral' })
   @ApiResponse({ status: 201 })
   async createOrder(
@@ -41,6 +41,9 @@ export class OrderController {
     },
     @Headers('idempotency-key') idempotencyKeyHeader?: string,
   ) {
+    if (!user || user.role === 'GUEST' || user.isGuest) {
+      throw new ForbiddenException('Please sign in with a customer account before placing an order.');
+    }
     const idempotencyKey = idempotencyKeyHeader || body.idempotencyKey;
     return this.orderService.createOrder(
       user.id,
@@ -59,6 +62,7 @@ export class OrderController {
   }
 
   @Get()
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiOperation({ summary: 'Get orders for authenticated user' })
   @ApiResponse({ status: 200 })
   async getOrders(@GetUser() user: any, @Query('status') status?: string) {
@@ -66,6 +70,7 @@ export class OrderController {
   }
 
   @Get('counts')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiOperation({ summary: 'Get order counts grouped by status tabs for authenticated user' })
   @ApiResponse({ status: 200 })
   async getOrderCounts(@GetUser() user: any) {
@@ -73,6 +78,7 @@ export class OrderController {
   }
 
   @Get(':id')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiOperation({ summary: 'Get order by ID (ownership checked)' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
@@ -101,6 +107,7 @@ export class OrderController {
   }
 
   @Patch(':id/cancel')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiOperation({ summary: 'Cancel order (ownership checked, only PENDING/CONFIRMED)' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'Order cancelled successfully' })
@@ -109,6 +116,7 @@ export class OrderController {
   }
 
   @Post(':id/items/:itemId/cancel')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiOperation({ summary: 'Cancel a single item in an order before dispatch' })
   @ApiParam({ name: 'id', type: String })
   @ApiParam({ name: 'itemId', type: String })
@@ -129,6 +137,7 @@ export class OrderController {
   }
 
   @Post(':id/return')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiOperation({ summary: 'Request return / replacement for a delivered order' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'Return requested' })
@@ -141,6 +150,7 @@ export class OrderController {
   }
 
   @Post(':id/reorder')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiOperation({ summary: 'Reorder items from a past order into current cart' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'Items added to cart' })
@@ -149,6 +159,7 @@ export class OrderController {
   }
 
   @Get(':id/invoice')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiOperation({ summary: 'Get order tax invoice details' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'Tax invoice' })
@@ -157,6 +168,7 @@ export class OrderController {
   }
 
   @Get(':id/track')
+  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
   @ApiOperation({ summary: 'Track order shipment live status' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'Shipment tracking' })

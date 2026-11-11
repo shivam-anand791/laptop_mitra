@@ -274,16 +274,145 @@ export class NotificationService {
     });
   }
 
-  async dispatchPaymentUpdate(userId: string, orderId: string, status: string) {
-    return this.dispatchNotification(userId, {
-      title: 'Payment Update',
-      body: `Payment for order ${orderId} is ${status.toLowerCase()}.`,
-      data: {
-        type: 'payment_update',
-        orderId,
-        status,
-      },
-    });
+  async dispatchPaymentUpdate(
+    userId: string,
+    orderId: string,
+    status: string,
+    meta?: {
+      orderNumber?: string;
+      amountPaise?: number;
+      refundId?: string;
+      reason?: string;
+      monthlyAmount?: number;
+      tenureMonths?: number;
+    },
+  ) {
+    const normalizedStatus = String(status || '').toUpperCase();
+    let orderNumber = meta?.orderNumber;
+    let amountPaise = meta?.amountPaise;
+    if (!orderNumber || amountPaise === undefined) {
+      try {
+        const orderRow = await this.prisma.order?.findUnique?.({
+          where: { id: orderId },
+          select: { orderNumber: true, finalAmount: true },
+        });
+        if (orderRow) {
+          orderNumber = orderNumber || orderRow.orderNumber;
+          if (amountPaise === undefined && orderRow.finalAmount !== undefined && orderRow.finalAmount !== null) {
+            amountPaise = Math.round(Number(orderRow.finalAmount) * 100);
+          }
+        }
+      } catch {
+        // Ignore DB lookup errors so notifications never block payment flow
+      }
+    }
+    const orderRef = orderNumber || orderId;
+    const amountLine =
+      typeof amountPaise === 'number' && amountPaise > 0
+        ? `Amount: ₹${(amountPaise / 100).toFixed(2)}`
+        : typeof meta?.monthlyAmount === 'number' && meta.monthlyAmount > 0
+          ? `Monthly Rental: ₹${Number(meta.monthlyAmount).toFixed(2)}${meta?.tenureMonths ? ` (${meta.tenureMonths} months)` : ''}`
+          : '';
+
+    let emailTitle = 'Payment Update';
+    let emailBody = `There is an update on payment for order ${orderRef}: ${normalizedStatus}.`;
+    let templateName = 'payment-update';
+
+    switch (normalizedStatus) {
+      case 'COMPLETED':
+      case 'PAID':
+        emailTitle = 'Order Payment Confirmed';
+        emailBody = `We have received your payment for order ${orderRef}. Your order is now confirmed.`;
+        templateName = 'order-payment-confirmed';
+        break;
+      case 'FAILED':
+        emailTitle = 'Payment Failed';
+        emailBody = `Your recent payment attempt for order ${orderRef} did not succeed. Please retry from your orders page before your reservation expires.`;
+        templateName = 'order-payment-failed';
+        break;
+      case 'REFUND_PROCESSED':
+      case 'REFUNDED':
+        emailTitle = 'Refund Processed';
+        emailBody = `A refund for order ${orderRef} has been processed.${meta?.refundId ? ` Refund Reference: ${meta.refundId}.` : ''}`;
+        templateName = 'order-refund-processed';
+        break;
+      case 'REFUND_FAILED':
+        emailTitle = 'Refund Failed';
+        emailBody = `We could not complete your refund for order ${orderRef}. Our team has been alerted and will review it.`;
+        templateName = 'order-refund-failed';
+        break;
+      case 'RENTAL_ACTIVATED':
+        emailTitle = 'Rental Subscription Activated';
+        emailBody = `Your LaptopMitra AutoPay rental subscription for order ${orderRef} is now active.`;
+        templateName = 'rental-subscription-activated';
+        break;
+    }
+
+    try {
+      let emailEnabled = true;
+      try {
+        const prefs = await this.getPreferences(userId);
+        emailEnabled = prefs.emailOrderUpdates !== false;
+      } catch {
+        emailEnabled = (inMemoryPreferences.get(userId) || DEFAULT_PREFERENCES).emailOrderUpdates !== false;
+      }
+
+      if (emailEnabled && this.mailService) {
+        const user = await this.prisma.user?.findUnique?.({
+          where: { id: userId },
+          select: { email: true, name: true },
+        });
+        if (user?.email) {
+          const webAppUrl = (this.configService?.get<string>('WEB_APP_URL') || '').replace(/\/$/, '');
+          const orderUrl = webAppUrl ? `${webAppUrl}/account/orders/${orderId}` : '';
+          const greeting = user.name ? `Hello ${user.name},` : 'Hello,';
+          const textLines = [
+            greeting,
+            '',
+            emailTitle,
+            emailBody,
+            amountLine,
+            meta?.reason ? `Reason: ${meta.reason}` : '',
+            orderUrl ? `View order details: ${orderUrl}` : '',
+            '',
+            'Team LaptopMitra',
+          ].filter(Boolean);
+
+          const result = await this.mailService.sendMail({
+            to: user.email,
+            subject: `[LaptopMitra] ${emailTitle} — ${orderRef}`,
+            text: textLines.join('\n'),
+            templateName,
+          });
+          if (!result.success) {
+            this.logger.warn(
+              `Payment email (${templateName}) failed for user ${userId}, order ${orderId}: ${result.error || 'unknown error'}`,
+            );
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to send payment confirmation email for user ${userId}, order ${orderId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    try {
+      return await this.dispatchNotification(userId, {
+        title: emailTitle,
+        body: emailBody,
+        data: {
+          type: 'payment_update',
+          orderId,
+          status: normalizedStatus,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to dispatch push notification for user ${userId}, order ${orderId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { sent: 0, failed: 1 };
+    }
   }
 
   async dispatchCorporateInquiryAlert(inquiry: {

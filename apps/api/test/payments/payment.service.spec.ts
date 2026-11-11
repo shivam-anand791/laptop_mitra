@@ -42,8 +42,9 @@ jest.mock('razorpay', () => {
 });
 
 import { PaymentService } from '../../src/modules/payments/payment.service';
+import { PaymentController } from '../../src/modules/payments/payment.controller';
 import { ConfigService } from '@nestjs/config';
-import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { createNoTaxService } from '../helpers/no-tax-service';
 
@@ -72,6 +73,25 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         findUnique: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      rentalPayment: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      orderItem: {
+        findFirst: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      orderItemCancellation: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      auditLog: {
+        create: jest.fn().mockResolvedValue({}),
+      },
+      cartItem: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       $transaction: jest.fn().mockImplementation(async (callbackOrPromises, _options) => {
         if (typeof callbackOrPromises === 'function') {
@@ -749,7 +769,581 @@ describe('PaymentService (Security & Integrity Tests)', () => {
       const result = await paymentService.handlePaymentWebhook(rawBody, validSig);
       expect(result.valid).toBe(true);
       expect(result.event).toBe('payment_completed');
+      expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({
+        where: { cart: { userId: 'user-legit' } },
+      });
       expect(notificationService.dispatchPaymentUpdate).toHaveBeenCalledWith('user-legit', 'order-legit', 'COMPLETED');
+    });
+  });
+
+  describe('Phase 1 P0 blockers: Login enforcement, Rental flow, Cart clear & FAILED retry', () => {
+    const secret = 'secret1234567890';
+    const orderId = 'order-p1';
+    const razorpayOrderId = 'order_rzp_100';
+    const paymentId = 'pay_p1_success';
+    const sigOrder = (rzpOrd: string, pId: string) =>
+      crypto.createHmac('sha256', secret).update(`${rzpOrd}|${pId}`).digest('hex');
+    const sigSub = (pId: string, subId: string) =>
+      crypto.createHmac('sha256', secret).update(`${pId}|${subId}`).digest('hex');
+
+    it('rejects GUEST role across PaymentController payment creation and verification endpoints', async () => {
+      const controller = new PaymentController(paymentService);
+      const guest = { id: 'guest-1', role: 'GUEST', isGuest: true };
+
+      for (const method of ['createRazorpayOrder', 'createRentalSubscription', 'verifyRentalSubscription', 'verifyPayment'] as const) {
+        expect(Reflect.getMetadata('roles', (PaymentController.prototype as any)[method])).toEqual(['CUSTOMER', 'ADMIN']);
+      }
+
+      await expect(controller.createRazorpayOrder(guest, { orderId: 'ord-1' })).rejects.toThrow(ForbiddenException);
+      await expect(controller.createRentalSubscription(guest, { orderId: 'ord-1' })).rejects.toThrow(ForbiddenException);
+      await expect(
+        controller.verifyPayment(guest, {
+          orderId: 'ord-1',
+          razorpayOrderId: 'order_1',
+          razorpayPaymentId: 'pay_1',
+          razorpaySignature: 'sig_1',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        controller.verifyRentalSubscription(guest, {
+          orderId: 'ord-1',
+          razorpaySubscriptionId: 'sub_1',
+          razorpayPaymentId: 'pay_1',
+          razorpaySignature: 'sig_1',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('clears user cart inside verifyPayment transaction', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: orderId,
+        userId: 'user-cart-1',
+        finalAmount: 1250,
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        razorpayOrderId,
+        paymentMethod: 'razorpay',
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 60_000),
+        payments: [{
+          id: 'pay-rec-1',
+          orderId,
+          razorpayOrderId,
+          razorpayPaymentId: null,
+          amount: 125000,
+          currency: 'INR',
+          status: 'PENDING',
+        }],
+      });
+
+      const res = await paymentService.verifyPayment(
+        orderId,
+        razorpayOrderId,
+        paymentId,
+        sigOrder(razorpayOrderId, paymentId),
+        'user-cart-1',
+        'CUSTOMER',
+      );
+      expect(res.success).toBe(true);
+      expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({
+        where: { cart: { userId: 'user-cart-1' } },
+      });
+    });
+
+    it('allows verifyPayment retry inside same modal when prior attempt set paymentStatus=FAILED', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: orderId,
+        userId: 'user-retry-1',
+        finalAmount: 1250,
+        status: 'PENDING',
+        paymentStatus: 'FAILED',
+        razorpayOrderId,
+        paymentId: 'pay_failed_first',
+        paymentMethod: 'razorpay',
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 60_000),
+        payments: [{
+          id: 'pay-rec-failed',
+          orderId,
+          razorpayOrderId,
+          razorpayPaymentId: 'pay_failed_first',
+          amount: 125000,
+          currency: 'INR',
+          status: 'FAILED',
+        }],
+      });
+
+      const res = await paymentService.verifyPayment(
+        orderId,
+        razorpayOrderId,
+        paymentId,
+        sigOrder(razorpayOrderId, paymentId),
+        'user-retry-1',
+        'CUSTOMER',
+      );
+      expect(res.success).toBe(true);
+      expect(prisma.payment.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'pay-rec-failed',
+          status: 'FAILED',
+        }),
+        data: expect.objectContaining({
+          status: 'COMPLETED',
+          razorpayPaymentId: paymentId,
+        }),
+      }));
+      expect(prisma.order.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          id: orderId,
+          paymentStatus: { in: ['PENDING', 'FAILED'] },
+        }),
+        data: expect.objectContaining({
+          status: 'CONFIRMED',
+          paymentStatus: 'COMPLETED',
+        }),
+      }));
+      expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({
+        where: { cart: { userId: 'user-retry-1' } },
+      });
+    });
+
+    it('verifies rental subscription using Razorpay paymentId|subscriptionId HMAC and clears cart', async () => {
+      const subId = 'sub_live_check_1';
+      const rentalOrder = {
+        id: 'rental-order-verify',
+        userId: 'user-rent-1',
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        paymentMethod: 'razorpay_subscription',
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 120_000),
+      };
+      prisma.rentalSubscription.findUnique.mockResolvedValue({
+        id: 'rental-rec-1',
+        orderId: rentalOrder.id,
+        userId: 'user-rent-1',
+        razorpaySubscriptionId: subId,
+        monthlyAmount: 2500,
+        taxRate: 0,
+        taxAmount: 0,
+        taxInclusive: false,
+        status: 'PENDING_AUTHORIZATION',
+        firstPaymentId: null,
+        payments: [],
+        order: rentalOrder,
+      });
+      const rzp = (paymentService as any).razorpay;
+      rzp.subscriptions.fetch.mockResolvedValue({
+        id: subId,
+        status: 'authenticated',
+        charge_at: Math.floor(Date.now() / 1000) + 86400,
+      });
+      rzp.payments.fetch.mockResolvedValue({
+        id: 'pay_rent_1',
+        subscription_id: subId,
+        amount: 250000,
+        currency: 'INR',
+        status: 'captured',
+      });
+
+      // Swapped subscriptionId|paymentId must be rejected
+      await expect(
+        paymentService.verifyRentalSubscription(
+          rentalOrder.id,
+          subId,
+          'pay_rent_1',
+          sigOrder(subId, 'pay_rent_1'),
+          'user-rent-1',
+          'CUSTOMER',
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      // Official paymentId|subscriptionId signature succeeds and clears cart
+      const result = await paymentService.verifyRentalSubscription(
+        rentalOrder.id,
+        subId,
+        'pay_rent_1',
+        sigSub('pay_rent_1', subId),
+        'user-rent-1',
+        'CUSTOMER',
+      );
+      expect(result.success).toBe(true);
+      expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({
+        where: { cart: { userId: 'user-rent-1' } },
+      });
+    });
+
+    it('resets rentalSubscription status from CREATING back to PENDING_AUTHORIZATION if Razorpay API fails', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'rental-order-fail',
+        orderNumber: 'LM-RENT-FAIL',
+        userId: 'user-rent-2',
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        paymentMethod: 'razorpay_subscription',
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 60_000),
+        items: [{ purchaseMode: 'lease' }],
+        rentalSubscription: {
+          id: 'rental-fail-1',
+          userId: 'user-rent-2',
+          status: 'PENDING_AUTHORIZATION',
+          razorpaySubscriptionId: null,
+          razorpayPlanId: null,
+          monthlyAmount: 2500,
+          tenureMonths: 6,
+        },
+      });
+      (paymentService as any).razorpay.plans.create.mockRejectedValueOnce(new Error('Razorpay timeout'));
+
+      await expect(
+        paymentService.createRentalSubscriptionForUser('rental-order-fail', 'user-rent-2', 'CUSTOMER'),
+      ).rejects.toThrow('Razorpay timeout');
+
+      expect(prisma.rentalSubscription.updateMany).toHaveBeenLastCalledWith({
+        where: { id: 'rental-fail-1', status: 'CREATING', razorpaySubscriptionId: null },
+        data: { status: 'PENDING_AUTHORIZATION' },
+      });
+    });
+  });
+
+  describe('Phase 2: Webhooks (order.paid + SkipThrottle), Partial Refunds & Double-Refund Guards', () => {
+    const signWebhook = (rawBody: string) =>
+      crypto.createHmac('sha256', 'webhooksecret1234567890').update(rawBody).digest('hex');
+
+    it('marks Razorpay webhook handler with @SkipThrottle()', () => {
+      const skipMeta = Reflect.getMetadata(
+        'THROTTLER:SKIPdefault',
+        PaymentController.prototype.handleRazorpayWebhook,
+      );
+      expect(skipMeta).toBe(true);
+    });
+
+    it('handles order.paid webhook idempotently, clears cart, and shares capture confirmation with payment.captured', async () => {
+      const orderPaidPayload = JSON.stringify({
+        event: 'order.paid',
+        payload: {
+          order: {
+            entity: {
+              id: 'order_rzp_paid_1',
+              amount: 50000,
+              amount_paid: 50000,
+              currency: 'INR',
+            },
+          },
+          payment: {
+            entity: {
+              id: 'pay_order_paid_1',
+              order_id: 'order_rzp_paid_1',
+              amount: 50000,
+              currency: 'INR',
+              status: 'captured',
+            },
+          },
+        },
+      });
+
+      const orderRecord = {
+        id: 'order-paid-1',
+        orderNumber: 'LM-500',
+        userId: 'cust-1',
+        finalAmount: 500,
+        razorpayOrderId: 'order_rzp_paid_1',
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 60_000),
+      };
+
+      prisma.payment.findFirst.mockResolvedValueOnce({
+        id: 'pay-rec-1',
+        orderId: 'order-paid-1',
+        razorpayOrderId: 'order_rzp_paid_1',
+        razorpayPaymentId: null,
+        amount: 50000,
+        currency: 'INR',
+        status: 'PENDING',
+        order: orderRecord,
+      });
+
+      const first = await paymentService.handlePaymentWebhook(orderPaidPayload, signWebhook(orderPaidPayload));
+      expect(first).toEqual({ valid: true, event: 'payment_completed' });
+      expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({
+        where: { cart: { userId: 'cust-1' } },
+      });
+      expect(notificationService.dispatchPaymentUpdate).toHaveBeenCalledWith(
+        'cust-1',
+        'order-paid-1',
+        'COMPLETED',
+      );
+
+      // Replaying order.paid or receiving duplicate payment.captured for same payment returns already_processed
+      prisma.payment.findFirst.mockResolvedValueOnce({
+        id: 'pay-rec-1',
+        orderId: 'order-paid-1',
+        razorpayOrderId: 'order_rzp_paid_1',
+        razorpayPaymentId: 'pay_order_paid_1',
+        amount: 50000,
+        currency: 'INR',
+        status: 'COMPLETED',
+        order: { ...orderRecord, status: 'CONFIRMED', paymentStatus: 'COMPLETED', paymentId: 'pay_order_paid_1' },
+      });
+      const dupCaptured = JSON.stringify({
+        event: 'payment.captured',
+        payload: {
+          payment: {
+            entity: {
+              id: 'pay_order_paid_1',
+              order_id: 'order_rzp_paid_1',
+              amount: 50000,
+              currency: 'INR',
+            },
+          },
+        },
+      });
+      const second = await paymentService.handlePaymentWebhook(dupCaptured, signWebhook(dupCaptured));
+      expect(second).toEqual({ valid: true, event: 'already_processed' });
+    });
+
+    it('processes partial cancelled item refund via Razorpay, guards against over-refunding, and prevents double refund', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        id: 'pay-full-1',
+        orderId: 'order-2items',
+        razorpayPaymentId: 'pay_rzp_2items',
+        amount: 100000, // ₹1000
+        status: 'COMPLETED',
+        order: { id: 'order-2items', userId: 'cust-1', orderNumber: 'LM-200', status: 'CONFIRMED', paymentStatus: 'COMPLETED' },
+      });
+      prisma.orderItem.findFirst.mockResolvedValue({
+        id: 'item-1',
+        orderId: 'order-2items',
+        status: 'CANCELLED',
+        refundStatus: 'REFUND_PENDING',
+        refundAmount: 400, // ₹400 = 40000 paise
+      });
+      prisma.orderItemCancellation.findMany.mockResolvedValueOnce([]);
+
+      const partial = await paymentService.refundPayment('order-2items', 'pay_rzp_2items', {
+        orderItemId: 'item-1',
+        adminUserId: 'admin-1',
+        reason: 'Item out of stock',
+      });
+
+      expect(partial).toEqual({ status: 'REFUNDED', refundId: 'rfnd_test_1', amountPaise: 40000 });
+      expect((paymentService as any).razorpay.payments.refund).toHaveBeenCalledWith('pay_rzp_2items', {
+        amount: 40000,
+        notes: { orderId: 'order-2items', orderItemId: 'item-1', reason: 'Item out of stock' },
+      });
+      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-2items' },
+        data: { paymentStatus: 'PARTIALLY_REFUNDED' },
+      });
+      expect(notificationService.dispatchPaymentUpdate).toHaveBeenCalledWith(
+        'cust-1',
+        'order-2items',
+        'REFUND_PROCESSED',
+        expect.objectContaining({ amountPaise: 40000, refundId: 'rfnd_test_1' }),
+      );
+
+      // Re-clicking same cancelled item returns idempotent REFUNDED without calling Razorpay again
+      (paymentService as any).razorpay.payments.refund.mockClear();
+      prisma.orderItem.findFirst.mockResolvedValueOnce({
+        id: 'item-1',
+        orderId: 'order-2items',
+        status: 'CANCELLED',
+        refundStatus: 'REFUNDED',
+        refundAmount: 400,
+      });
+      const idempotentItem = await paymentService.refundPayment('order-2items', 'pay_rzp_2items', {
+        orderItemId: 'item-1',
+      });
+      expect(idempotentItem.status).toBe('REFUNDED');
+      expect((paymentService as any).razorpay.payments.refund).not.toHaveBeenCalled();
+
+      // Remaining balance refund cannot exceed paidPaise - alreadyRefundedPaise (60000)
+      prisma.orderItemCancellation.findMany.mockResolvedValue([{ refundAmount: 400 }]);
+      await expect(
+        paymentService.refundPayment('order-2items', 'pay_rzp_2items', { amountPaise: 70000 }),
+      ).rejects.toThrow(BadRequestException);
+
+      // Full remaining balance refund sends exact 60000 paise
+      const rem = await paymentService.refundPayment('order-2items', 'pay_rzp_2items', {
+        adminUserId: 'admin-1',
+      });
+      expect(rem.status).toBe('REFUNDED');
+      expect(rem.amountPaise).toBe(60000);
+      expect((paymentService as any).razorpay.payments.refund).toHaveBeenCalledWith('pay_rzp_2items', {
+        amount: 60000,
+        notes: { orderId: 'order-2items' },
+      });
+    });
+
+    it('marks REFUND_FAILED when Razorpay refund API throws and sends REFUND_FAILED notification', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        id: 'pay-rfnd-fail',
+        orderId: 'order-rfnd-fail',
+        razorpayPaymentId: 'pay_rzp_rfnd_fail',
+        amount: 50000,
+        status: 'COMPLETED',
+        order: { id: 'order-rfnd-fail', userId: 'cust-2', orderNumber: 'LM-ERR', status: 'CANCELLED', paymentStatus: 'REFUND_PENDING' },
+      });
+      (paymentService as any).razorpay.payments.refund.mockRejectedValueOnce(new Error('Gateway 502'));
+
+      const res = await paymentService.refundPayment('order-rfnd-fail', 'pay_rzp_rfnd_fail');
+      expect(res).toEqual({ status: 'REFUND_FAILED', amountPaise: 50000 });
+      expect(prisma.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-rfnd-fail', paymentStatus: { in: ['REFUND_PENDING', 'REFUND_FAILED'] } },
+        data: { paymentStatus: 'REFUND_FAILED' },
+      });
+      expect(notificationService.dispatchPaymentUpdate).toHaveBeenCalledWith(
+        'cust-2',
+        'order-rfnd-fail',
+        'REFUND_FAILED',
+        expect.objectContaining({ amountPaise: 50000 }),
+      );
+    });
+  });
+
+  describe('Phase 3: Superseded Webhooks, DTO Validation & Boot Config Checks', () => {
+    const signWebhook = (rawBody: string) =>
+      crypto.createHmac('sha256', 'webhooksecret1234567890').update(rawBody).digest('hex');
+
+    it('refunds captured payment for a superseded razorpayOrderId without overwriting active Order.paymentStatus or Order.paymentId', async () => {
+      const payload = JSON.stringify({
+        event: 'payment.captured',
+        payload: {
+          payment: {
+            entity: {
+              id: 'pay_superseded_1',
+              order_id: 'order_rzp_old',
+              amount: 50000,
+              currency: 'INR',
+            },
+          },
+        },
+      });
+
+      const activeOrder = {
+        id: 'order-active-1',
+        orderNumber: 'LM-ACT-1',
+        userId: 'cust-1',
+        finalAmount: 500,
+        razorpayOrderId: 'order_rzp_newer',
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        paymentId: null,
+        inventoryStatus: 'RESERVED',
+        reservationExpiresAt: new Date(Date.now() + 60_000),
+      };
+
+      prisma.payment.findFirst
+        .mockResolvedValueOnce({
+          id: 'pay-row-old',
+          orderId: 'order-active-1',
+          razorpayOrderId: 'order_rzp_old',
+          razorpayPaymentId: null,
+          amount: 50000,
+          currency: 'INR',
+          status: 'PENDING',
+          order: activeOrder,
+        })
+        .mockResolvedValueOnce({
+          id: 'pay-row-old',
+          orderId: 'order-active-1',
+          razorpayOrderId: 'order_rzp_old',
+          razorpayPaymentId: 'pay_superseded_1',
+          amount: 50000,
+          currency: 'INR',
+          status: 'COMPLETED',
+          order: activeOrder,
+        });
+
+      const res = await paymentService.handlePaymentWebhook(payload, signWebhook(payload));
+      expect(res).toEqual({ valid: true, event: 'superseded_payment_refund', data: { refundStatus: 'REFUNDED' } });
+      expect((paymentService as any).razorpay.payments.refund).toHaveBeenCalledWith('pay_superseded_1', {
+        amount: 50000,
+        notes: { orderId: 'order-active-1' },
+      });
+      // Active Order rows must NEVER be overwritten with REFUND_PENDING / REFUNDED or old paymentId
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('validates PaymentController DTO payloads with class-validator and forbidNonWhitelisted', async () => {
+      const { ValidationPipe } = await import('@nestjs/common');
+      const { CreateRazorpayOrderDto, VerifyRazorpayPaymentDto } = await import(
+        '../../src/modules/payments/dto/razorpay.dto'
+      );
+      const pipe = new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true });
+
+      await expect(
+        pipe.transform({ orderId: 'ord-1', amount: 1 }, { type: 'body', metatype: CreateRazorpayOrderDto }),
+      ).rejects.toThrow();
+
+      await expect(
+        pipe.transform({ orderId: '' }, { type: 'body', metatype: CreateRazorpayOrderDto }),
+      ).rejects.toThrow();
+
+      const validVerify = await pipe.transform(
+        {
+          orderId: 'ord-1',
+          razorpayOrderId: 'order_rzp_1',
+          razorpayPaymentId: 'pay_rzp_1',
+          razorpaySignature: 'sig_1',
+        },
+        { type: 'body', metatype: VerifyRazorpayPaymentDto },
+      );
+      expect(validVerify.orderId).toBe('ord-1');
+    });
+
+    it('enforces Razorpay boot config rules: requires webhook secret, requires rzp_live_ in prod and rzp_test_ in non-prod', () => {
+      const makeCfg = (envMap: Record<string, string | undefined>) => ({
+        get: (k: string) => envMap[k],
+      }) as unknown as ConfigService;
+
+      expect(
+        () =>
+          new PaymentService(
+            makeCfg({
+              NODE_ENV: 'production',
+              RAZORPAY_KEY_ID: 'rzp_test_123',
+              RAZORPAY_KEY_SECRET: 'sec',
+              RAZORPAY_WEBHOOK_SECRET: 'whsec',
+            }),
+            prisma,
+            notificationService,
+            createNoTaxService(),
+          ),
+      ).toThrow(UnauthorizedException);
+
+      expect(
+        () =>
+          new PaymentService(
+            makeCfg({
+              NODE_ENV: 'development',
+              RAZORPAY_KEY_ID: 'rzp_test_123',
+              RAZORPAY_KEY_SECRET: 'sec',
+              RAZORPAY_WEBHOOK_SECRET: '',
+            }),
+            prisma,
+            notificationService,
+            createNoTaxService(),
+          ),
+      ).toThrow(UnauthorizedException);
+
+      expect(
+        () =>
+          new PaymentService(
+            makeCfg({
+              NODE_ENV: 'production',
+              RAZORPAY_KEY_ID: 'rzp_live_valid123',
+              RAZORPAY_KEY_SECRET: 'sec',
+              RAZORPAY_WEBHOOK_SECRET: 'whsec',
+            }),
+            prisma,
+            notificationService,
+            createNoTaxService(),
+          ),
+      ).not.toThrow();
     });
   });
 });

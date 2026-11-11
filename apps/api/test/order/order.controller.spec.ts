@@ -101,6 +101,17 @@ describe('OrderController - Security Tests', () => {
     );
   });
 
+  it('rejects GUEST users before placing an order via metadata and controller guard', async () => {
+    const rolesMetadata = Reflect.getMetadata('roles', OrderController.prototype.createOrder);
+    expect(rolesMetadata).toEqual(['CUSTOMER', 'ADMIN']);
+    expect(Reflect.getMetadata('roles', OrderController)).toBeUndefined();
+
+    await expect(
+      controller.createOrder({ id: 'guest-1', role: 'GUEST', isGuest: true }, { paymentMethod: 'razorpay' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(orderService.createOrder).not.toHaveBeenCalled();
+  });
+
   describe('GET /orders/:id (findOne)', () => {
     it('should return order when user owns it', async () => {
       orderService.findOne.mockResolvedValue(mockOrderA);
@@ -393,6 +404,21 @@ describe('OrderService - Security Logic', () => {
       const result = await orderService.cancelOrder('o4', 'user-a', 'USER');
       expect(result.refundRequired).toBe(true);
       expect(result.refundMessage).toContain('refund');
+    });
+
+    it('rejects GUEST users in OrderService.createOrder', async () => {
+      await expect(
+        orderService.createOrder(
+          'guest-1',
+          undefined,
+          undefined,
+          { fullName: 'Guest', address: '12 Main St', pincode: '110019' },
+          '+919876543210',
+          undefined,
+          'guest@example.com',
+          { id: 'guest-1', role: 'GUEST', isGuest: true },
+        ),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('restores product stock on cancellation', async () => {

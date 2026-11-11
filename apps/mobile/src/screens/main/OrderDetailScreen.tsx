@@ -18,6 +18,7 @@ import {
   useRequestRentalTermination,
   useProfile,
 } from '../../hooks/useApi';
+import { useAuth } from '../../providers/AuthProvider';
 import RazorpayCheckoutModal, { RazorpayCheckoutData } from '../../components/RazorpayCheckoutModal';
 import ItemSituationHelpModal from '../../components/ItemSituationHelpModal';
 import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
@@ -47,6 +48,7 @@ export default function OrderDetailScreen() {
   const { data: order, isLoading, refetch: refetchOrder, isRefetching: isRefetchingOrder } = useOrder(orderId);
   const { data: invoiceData, refetch: refetchInvoice } = useOrderInvoice(orderId);
   const { data: trackData, refetch: refetchTracking } = useOrderTracking(orderId);
+  const { isAuthenticated, isGuest, logout } = useAuth();
   const { data: supportConfig } = useSupportConfig();
 
   useFocusEffect(
@@ -87,6 +89,17 @@ export default function OrderDetailScreen() {
 
   const handleStartRazorpayPayment = async () => {
     if (!order) return;
+    if (!isAuthenticated || isGuest || profile?.isGuest) {
+      Alert.alert(
+        'Sign In Required',
+        'Please sign in with a customer account before making a payment.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign In', onPress: () => { void logout(); } },
+        ],
+      );
+      return;
+    }
     setIsRetryingPayment(true);
     try {
       const shipping = order.shippingAddress as Record<string, string> | null;

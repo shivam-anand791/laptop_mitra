@@ -7,10 +7,11 @@ import { PaymentEncryptionModule } from '../../common/encryption/payment-encrypt
 import { QrStorageModule } from '../../common/storage/qr-storage.module';
 import { NotificationModule } from '../notifications/notification.module';
 import { DiscountModule } from '../discount/discount.module';
+import { PaymentsModule } from '../payments/payment.module';
 import { RolesGuard } from '../../guards/roles.guard';
 
 @Module({
-  imports: [PrismaModule, PaymentEncryptionModule, QrStorageModule, NotificationModule, DiscountModule],
+  imports: [PrismaModule, PaymentEncryptionModule, QrStorageModule, NotificationModule, DiscountModule, PaymentsModule],
   controllers: [AdminController, AdminCouponController],
   providers: [AdminService, RolesGuard],
   exports: [AdminService],

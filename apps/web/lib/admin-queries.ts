@@ -174,6 +174,31 @@ export function useUpdateOrderStatus() {
   });
 }
 
+export function useTriggerOrderRefund() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      orderId,
+      orderItemId,
+      amountPaise,
+      reason,
+    }: {
+      orderId: string;
+      orderItemId?: string;
+      amountPaise?: number;
+      reason?: string;
+    }) => adminApi.triggerOrderRefund(orderId, { orderItemId, amountPaise, reason }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.orders() });
+      if (variables?.orderId) {
+        queryClient.invalidateQueries({ queryKey: adminQueryKeys.order(variables.orderId) });
+      }
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.stats() });
+    },
+  });
+}
+
 export function useUpdateUserStatus() {
   const queryClient = useQueryClient();
 

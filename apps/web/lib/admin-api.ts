@@ -869,6 +869,19 @@ export const adminApi = {
     });
   },
 
+  async triggerOrderRefund(
+    orderId: string,
+    payload?: { orderItemId?: string; amountPaise?: number; reason?: string },
+  ): Promise<{ status: string; refundId?: string; amountPaise?: number }> {
+    return await request<{ status: string; refundId?: string; amountPaise?: number }>(
+      `/admin/orders/${orderId}/refund`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+      },
+    );
+  },
+
   // Lease Contracts Management
   async getAdminLeaseContracts(params?: { status?: string; search?: string }): Promise<any[]> {
     const query = new URLSearchParams();

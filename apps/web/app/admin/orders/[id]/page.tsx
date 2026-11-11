@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { adminApi } from '../../../../lib/admin-api';
-import { useAdminOrder, useUpdateOrderStatus } from '../../../../lib/admin-queries';
+import { useAdminOrder, useUpdateOrderStatus, useTriggerOrderRefund } from '../../../../lib/admin-queries';
 import {
   OrderStatus,
   ORDER_TRANSITION_MAP,
@@ -42,6 +42,9 @@ function PaymentStatusBadge({ status }: { status: string }) {
     PROCESSING: 'badge-info',
     COMPLETED: 'badge-success',
     FAILED: 'badge-danger',
+    REFUND_PENDING: 'badge-warning',
+    REFUND_FAILED: 'badge-danger',
+    PARTIALLY_REFUNDED: 'badge-info',
     REFUNDED: 'badge-gray',
   };
   return <span className={`badge ${styles[status] || 'badge-gray'}`}>{status}</span>;
@@ -65,9 +68,14 @@ export default function AdminOrderDetailPage() {
   } = useAdminOrder(id);
 
   const updateStatusMutation = useUpdateOrderStatus();
+  const triggerRefundMutation = useTriggerOrderRefund();
 
   // State machine transition state
   const [modalTransition, setModalTransition] = useState<OrderStatus | null>(null);
+  const [refundModalTarget, setRefundModalTarget] = useState<{
+    orderItemId?: string;
+    label: string;
+  } | null>(null);
 
   // Courier / Tracking dispatch modal state
   const [shippingModalOpen, setShippingModalOpen] = useState(false);
@@ -193,6 +201,27 @@ export default function AdminOrderDetailPage() {
       refetch();
     } catch (err: any) {
       addToast('error', err?.message || 'Failed to cancel item.');
+    }
+  };
+
+  const executeTriggerRefund = async () => {
+    if (!order || !refundModalTarget) return;
+    try {
+      const result = await triggerRefundMutation.mutateAsync({
+        orderId: order.id,
+        orderItemId: refundModalTarget.orderItemId,
+      });
+      if (result.status === 'REFUNDED' || result.status === 'PARTIALLY_REFUNDED') {
+        addToast('success', 'Razorpay refund processed successfully.');
+      } else if (result.status === 'REFUND_FAILED') {
+        addToast('error', 'Razorpay refund failed. You can retry Trigger Refund.');
+      } else {
+        addToast('success', `Refund initiated (status: ${result.status}).`);
+      }
+      setRefundModalTarget(null);
+      refetch();
+    } catch (err: any) {
+      addToast('error', err?.message || 'Failed to trigger Razorpay refund.');
     }
   };
 
@@ -352,9 +381,33 @@ export default function AdminOrderDetailPage() {
                             </p>
                             <span className="text-[10px] text-gray-400">Line total</span>
                             {item.status === 'CANCELLED' ? (
-                              <span className="inline-block px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 rounded">
-                                Cancelled
-                              </span>
+                              <div className="flex flex-col items-end gap-1">
+                                <span className="inline-block px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 rounded">
+                                  Cancelled
+                                </span>
+                                {item.refundStatus === 'REFUNDED' ? (
+                                  <span className="text-[10px] font-semibold text-emerald-700">
+                                    Refunded ({formatINR(toNumber(item.refundAmount))})
+                                  </span>
+                                ) : ['REFUND_PENDING', 'REFUND_FAILED'].includes(item.refundStatus || '') &&
+                                  toNumber(item.refundAmount) > 0 &&
+                                  order.paymentMethod === 'razorpay' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setRefundModalTarget({
+                                        orderItemId: item.id,
+                                        label: `Trigger Refund (${formatINR(toNumber(item.refundAmount))}) for ${product?.name || 'cancelled item'}`,
+                                      })
+                                    }
+                                    className="text-[10px] text-primary hover:underline font-semibold cursor-pointer"
+                                  >
+                                    {item.refundStatus === 'REFUND_FAILED'
+                                      ? `Retry Refund (${formatINR(toNumber(item.refundAmount))})`
+                                      : `Trigger Refund (${formatINR(toNumber(item.refundAmount))})`}
+                                  </button>
+                                ) : null}
+                              </div>
                             ) : ['PENDING', 'CONFIRMED'].includes(order.status) ? (
                               <button
                                 type="button"
@@ -615,12 +668,46 @@ export default function AdminOrderDetailPage() {
                       ))}
                     </div>
                   )}
+
+                  {order.paymentMethod === 'razorpay' &&
+                    ['REFUND_PENDING', 'REFUND_FAILED', 'PARTIALLY_REFUNDED'].includes(order.paymentStatus) && (
+                      <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
+                        <Button
+                          variant="danger"
+                          className="w-full"
+                          disabled={triggerRefundMutation.isPending}
+                          onClick={() =>
+                            setRefundModalTarget({
+                              label: `Trigger full remaining Razorpay refund for Order #${order?.orderNumber || id.slice(-8)}`,
+                            })
+                          }
+                        >
+                          {order.paymentStatus === 'REFUND_FAILED' ? 'Retry Trigger Refund' : 'Trigger Refund'}
+                        </Button>
+                      </div>
+                    )}
                 </div>
               </div>
             </div>
           </div>
         )}
       </QueryState>
+
+      {/* Confirmation Modal for Manual Razorpay Refund */}
+      <ConfirmModal
+        open={refundModalTarget !== null}
+        onClose={() => setRefundModalTarget(null)}
+        onConfirm={executeTriggerRefund}
+        title="Confirm Manual Razorpay Refund"
+        message={
+          refundModalTarget
+            ? `${refundModalTarget.label}? This calls Razorpay to refund the captured payment.`
+            : ''
+        }
+        confirmLabel="Trigger Refund"
+        variant="danger"
+        loading={triggerRefundMutation.isPending}
+      />
 
       {/* Confirmation Modal for Destructive Actions (Cancel / Refund) */}
       <ConfirmModal

@@ -31,7 +31,10 @@ const inMemoryOrders: Map<string, Order[]> = new Map();
 export class OrderService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OrderService.name);
   private reservationCleanupTimer?: ReturnType<typeof setInterval>;
+  private reservationSweepInFlight: Promise<number> | null = null;
+  private lastReservationSweepAt = 0;
   private static readonly RESERVATION_TTL_MS = 15 * 60 * 1000;
+  private static readonly LAZY_SWEEP_MIN_INTERVAL_MS = 10_000;
 
   constructor(
     private prisma: PrismaService,
@@ -47,12 +50,28 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    void this.expireAbandonedReservations().catch((error) => {
+      this.logger.error(`Failed to run initial checkout reservation sweep: ${error?.message || error}`);
+    });
     this.reservationCleanupTimer = setInterval(() => {
       void this.expireAbandonedReservations().catch((error) => {
         this.logger.error(`Failed to expire checkout reservations: ${error?.message || error}`);
       });
     }, 60_000);
     this.reservationCleanupTimer.unref?.();
+  }
+
+  private async expireAbandonedReservationsLazily(): Promise<void> {
+    if (this.reservationSweepInFlight) {
+      await this.reservationSweepInFlight.catch(() => 0);
+      return;
+    }
+    if (Date.now() - this.lastReservationSweepAt < OrderService.LAZY_SWEEP_MIN_INTERVAL_MS) {
+      return;
+    }
+    await this.expireAbandonedReservations().catch((error) => {
+      this.logger.warn(`Lazy reservation sweep skipped due to error: ${error?.message || error}`);
+    });
   }
 
   onModuleDestroy() {
@@ -176,6 +195,9 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     savedAddressId?: string,
     cartItems?: any[],
   ): Promise<Order> {
+    if (user?.role === 'GUEST' || user?.isGuest) {
+      throw new ForbiddenException('Please sign in with a customer account before placing an order.');
+    }
     if (savedAddressId) {
       const savedAddress = await this.prisma.address.findFirst({
         where: { id: savedAddressId, userId },
@@ -259,6 +281,8 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     shippingAddress.district = pinCheck.district || shippingAddress.district;
     shippingAddress.state = pinCheck.state || shippingAddress.state;
     shippingAddress.pincode = pinCheck.pincode;
+
+    await this.expireAbandonedReservationsLazily();
 
     let order: any;
     try {
@@ -880,7 +904,7 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
     });
 
     let refundStatus: string | undefined;
-    if (transition.shouldRefund && transition.order.paymentId && this.paymentService) {
+    if (transition.shouldRefund && userRole !== 'ADMIN' && transition.order.paymentId && this.paymentService) {
       try {
         refundStatus = (await this.paymentService.refundPayment(id, transition.order.paymentId)).status;
       } catch (error: any) {
@@ -1096,6 +1120,20 @@ export class OrderService implements OnModuleInit, OnModuleDestroy {
   }
 
   async expireAbandonedReservations(now = new Date()): Promise<number> {
+    if (this.reservationSweepInFlight) {
+      return this.reservationSweepInFlight;
+    }
+    const sweepPromise = this.runReservationExpirySweep(now).finally(() => {
+      if (this.reservationSweepInFlight === sweepPromise) {
+        this.reservationSweepInFlight = null;
+      }
+      this.lastReservationSweepAt = Date.now();
+    });
+    this.reservationSweepInFlight = sweepPromise;
+    return sweepPromise;
+  }
+
+  private async runReservationExpirySweep(now = new Date()): Promise<number> {
     try {
       const expired = await (this.prisma as any).order.findMany({
         where: {

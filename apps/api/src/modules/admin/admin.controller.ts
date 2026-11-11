@@ -8,6 +8,7 @@ import { RolesGuard } from '../../guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
 import { GetUser } from '../../decorators/get-user.decorator';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { TriggerRefundDto } from './dto/trigger-refund.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { AdminOrderQueryDto } from './dto/admin-order-query.dto';
@@ -288,6 +289,20 @@ export class AdminController {
       admin?.id || 'admin',
       reason || 'Cancelled by staff',
     );
+  }
+
+  @Post('orders/:id/refund')
+  @Roles('ADMIN')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({ summary: 'Manually trigger a Razorpay refund for a paid order or cancelled item' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Refund triggered or idempotent status returned' })
+  async triggerOrderRefund(
+    @GetUser() admin: any,
+    @Param('id') orderId: string,
+    @Body() dto?: TriggerRefundDto,
+  ) {
+    return this.adminService.triggerOrderRefund(orderId, admin?.id || 'admin', dto);
   }
 
 

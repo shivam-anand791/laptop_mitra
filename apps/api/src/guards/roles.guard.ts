@@ -24,6 +24,9 @@ export class RolesGuard implements CanActivate {
     const hasRole = requiredRoles.includes(user.role);
 
     if (!hasRole) {
+      if (user.role === 'GUEST' || user.isGuest) {
+        throw new ForbiddenException('Please sign in with a customer account before placing an order or making a payment.');
+      }
       throw new ForbiddenException('Insufficient permissions');
     }
 

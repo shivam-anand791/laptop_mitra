@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { Order } from '@/lib/types';
+import { useCart } from '@/lib/cart-context';
+import { useAuth } from '@/lib/auth-context';
+import { loadRazorpayScript } from '@/lib/razorpay';
 import { ItemSituationHelpModal } from '@/components/account/ItemSituationHelpModal';
 import { useSupportConfig } from '@/lib/support-config';
 import {
@@ -39,6 +42,7 @@ import {
   Check,
   AlertCircle,
   Package,
+  CreditCard,
 } from 'lucide-react';
 
 const RETURN_REASONS = [
@@ -54,6 +58,9 @@ export default function OrderDetailPage() {
   const router = useRouter();
   const orderId = params?.id as string;
   const { data: supportConfig } = useSupportConfig();
+  const { clearCart } = useCart();
+  const { user } = useAuth();
+  const [isRetryingPayment, setIsRetryingPayment] = useState(false);
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
@@ -226,6 +233,97 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleRetryPayment = useCallback(async () => {
+    if (!order) return;
+    setIsRetryingPayment(true);
+    try {
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded || typeof window === 'undefined' || !(window as any).Razorpay) {
+        showBanner('error', 'Could not load the Razorpay checkout gateway. Please check your connection and try again.');
+        setIsRetryingPayment(false);
+        return;
+      }
+
+      const orderIsLease = (order.items || []).some((item) => item.purchaseMode === 'lease');
+      const payment = orderIsLease
+        ? await api.createRazorpaySubscription(order.id)
+        : await api.createRazorpayOrder(order.id);
+      if (!payment?.keyId) {
+        throw new Error('Payment gateway key is unavailable');
+      }
+
+      const shipping = (order.shippingAddress || {}) as Record<string, string>;
+      const RazorpayConstructor = (window as any).Razorpay;
+      const rzpInstance = new RazorpayConstructor({
+        key: payment.keyId,
+        name: 'LaptopMitra',
+        description: orderIsLease
+          ? `Rental AutoPay authorization for ${order.orderNumber}`
+          : `Order ${order.orderNumber} - Certified Refurbished Laptop`,
+        ...(orderIsLease
+          ? { subscription_id: payment.subscriptionId }
+          : {
+              order_id: payment.id,
+              amount: payment.amount,
+              currency: payment.currency || 'INR',
+            }),
+        prefill: {
+          name: shipping.fullName || user?.name || '',
+          email: order.email || user?.email || '',
+          contact: order.phone || shipping.phone || user?.phone || '',
+        },
+        theme: { color: '#1D6FF2' },
+        handler: async (response: any) => {
+          try {
+            if (orderIsLease) {
+              await api.verifyRentalSubscription({
+                orderId: order.id,
+                razorpaySubscriptionId: response.razorpay_subscription_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              });
+            } else {
+              await api.verifyRazorpayPayment({
+                orderId: order.id,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              });
+            }
+            clearCart();
+            showBanner('success', 'Payment verified and your order is confirmed.');
+            await loadOrder();
+          } catch (verifyErr: any) {
+            showBanner(
+              'error',
+              verifyErr?.message || 'Payment verification failed. If money was debited, it will reconcile automatically or you can retry.'
+            );
+            await loadOrder();
+          } finally {
+            setIsRetryingPayment(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setIsRetryingPayment(false);
+            showBanner('error', 'Checkout paused. Your order items remain reserved until the reservation expires — click Retry Payment whenever ready.');
+          },
+        },
+      });
+
+      rzpInstance.on?.('payment.failed', (failure: any) => {
+        setIsRetryingPayment(false);
+        const reason = failure?.error?.description || 'Payment failed at the bank or card gateway.';
+        showBanner('error', `${reason} Please click Retry Payment to try again.`);
+      });
+
+      rzpInstance.open();
+    } catch (err: any) {
+      setIsRetryingPayment(false);
+      showBanner('error', err?.message || 'Could not initialize Razorpay payment.');
+    }
+  }, [order, user, clearCart, loadOrder, showBanner]);
+
   const handleReorder = async () => {
     if (!order) return;
     setIsReordering(true);
@@ -244,6 +342,12 @@ export default function OrderDetailPage() {
   const items = order?.items || [];
   const isLease = items.some((item) => item.purchaseMode === 'lease');
 
+  const isPendingRazorpay = Boolean(
+    order &&
+      order.status === 'PENDING' &&
+      ['PENDING', 'FAILED'].includes(order.paymentStatus) &&
+      ['razorpay', 'razorpay_subscription'].includes(order.paymentMethod || '')
+  );
   const canCancel = order ? !isLease && canCancelOrder(order.status) : false;
   const deliveredAt = order?.deliveries?.[0]?.deliveredAt || (order?.status === 'DELIVERED' ? order.updatedAt : null);
   const returnCheck = order
@@ -418,6 +522,41 @@ export default function OrderDetailPage() {
           </button>
         </div>
       </div>
+
+      {/* Pending / Failed Razorpay Payment Retry Banner */}
+      {isPendingRazorpay && (
+        <div className="bg-amber-50 rounded-2xl border border-amber-200 p-5 sm:p-6 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h2 className="text-sm font-bold text-amber-950 flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-amber-700" />
+              {order.paymentStatus === 'FAILED' ? 'Payment Failed — Retry Required' : 'Payment Pending'}
+            </h2>
+            <p className="text-xs text-amber-900">
+              {isLease
+                ? 'Authorize your AutoPay mandate and complete your first monthly rental payment via Razorpay.'
+                : 'Your order items are temporarily reserved. Complete your Razorpay payment to confirm this order.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleRetryPayment}
+            disabled={isRetryingPayment}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shadow-xs cursor-pointer disabled:opacity-60 whitespace-nowrap"
+          >
+            {isRetryingPayment ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Connecting to Razorpay...
+              </>
+            ) : (
+              <>
+                <CreditCard className="w-3.5 h-3.5" />
+                {isLease ? 'Authorize & Pay' : order.paymentStatus === 'FAILED' ? 'Retry Payment' : 'Complete Payment'} ({formatIndianRupees(order.finalAmount)})
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Real Progress Tracker (Placed, Confirmed, Shipped, Delivered) */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7 shadow-2xs space-y-5">

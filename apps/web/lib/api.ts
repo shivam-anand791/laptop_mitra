@@ -531,7 +531,7 @@ export const api = {
     razorpayPaymentId: string;
     razorpaySignature: string;
   }): Promise<any> {
-    return await request<any>('/payments/razorpay/verify-subscription', {
+    return await request<any>('/payments/razorpay/subscription/verify', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

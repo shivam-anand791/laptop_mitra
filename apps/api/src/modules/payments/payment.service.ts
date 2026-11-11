@@ -17,6 +17,14 @@ import * as crypto from 'crypto';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Razorpay = require('razorpay');
 
+export interface RefundPaymentOptions {
+  amountPaise?: number;
+  orderItemId?: string;
+  adminUserId?: string;
+  reason?: string;
+  supersededAttempt?: boolean;
+}
+
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
@@ -29,16 +37,26 @@ export class PaymentService {
     private readonly notificationService: NotificationService,
     private readonly taxService: TaxService,
   ) {
-    const keyId = this.configService.get<string>('RAZORPAY_KEY_ID');
-    const keySecret = this.configService.get<string>('RAZORPAY_KEY_SECRET');
+    const keyId = this.configService.get<string>('RAZORPAY_KEY_ID')?.trim();
+    const keySecret = this.configService.get<string>('RAZORPAY_KEY_SECRET')?.trim();
+    const webhookSecret = this.configService.get<string>('RAZORPAY_WEBHOOK_SECRET')?.trim();
+    const nodeEnv = this.configService.get<string>('NODE_ENV');
 
-    if (!keyId || !keySecret) {
-      throw new UnauthorizedException('Razorpay credentials not configured');
+    if (!keyId || !keySecret || !webhookSecret) {
+      throw new UnauthorizedException('Razorpay credentials and webhook secret must be configured');
     }
 
-    // Hard stop: refuse live keys in non-production
-    if (keyId.startsWith('rzp_live_') && this.configService.get<string>('NODE_ENV') !== 'production') {
-      throw new UnauthorizedException('Live Razorpay keys not allowed in development');
+    if (nodeEnv === 'production') {
+      if (!keyId.startsWith('rzp_live_')) {
+        throw new UnauthorizedException('Live Razorpay key (rzp_live_*) is required in production');
+      }
+    } else {
+      if (keyId.startsWith('rzp_live_')) {
+        throw new UnauthorizedException('Live Razorpay keys not allowed outside production');
+      }
+      if (!keyId.startsWith('rzp_test_')) {
+        throw new UnauthorizedException('Test Razorpay key (rzp_test_*) is required in non-production environments');
+      }
     }
 
     this.razorpay = new Razorpay({
@@ -53,6 +71,9 @@ export class PaymentService {
   }
 
   async createRentalSubscriptionForUser(orderId: string, userId: string, userRole: string) {
+    if (userRole === 'GUEST') {
+      throw new ForbiddenException('Please sign in with a customer account before making a payment.');
+    }
     const order: any = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { items: true, rentalSubscription: true },
@@ -103,52 +124,60 @@ export class PaymentService {
       throw new BadRequestException('Rental monthly amount is invalid');
     }
 
-    let planId = rental.razorpayPlanId;
-    if (!planId) {
-      const plan: any = await this.razorpay.plans.create({
-        period: 'monthly',
-        interval: 1,
-        item: {
-          name: `LaptopMitra rental ${order.orderNumber}`,
-          amount,
-          currency: 'INR',
-          description: `Monthly rental for ${rental.tenureMonths} months`,
+    try {
+      let planId = rental.razorpayPlanId;
+      if (!planId) {
+        const plan: any = await this.razorpay.plans.create({
+          period: 'monthly',
+          interval: 1,
+          item: {
+            name: `LaptopMitra rental ${order.orderNumber}`,
+            amount,
+            currency: 'INR',
+            description: `Monthly rental for ${rental.tenureMonths} months`,
+          },
+        });
+        planId = plan.id;
+        await this.prisma.rentalSubscription.update({
+          where: { id: rental.id },
+          data: { razorpayPlanId: planId },
+        });
+      }
+
+      const subscription: any = await this.razorpay.subscriptions.create({
+        plan_id: planId,
+        total_count: rental.tenureMonths,
+        quantity: 1,
+        customer_notify: 1,
+        expire_by: Math.floor(new Date(order.reservationExpiresAt).getTime() / 1000),
+        notes: {
+          orderId: order.id,
+          rentalSubscriptionId: rental.id,
         },
       });
-      planId = plan.id;
       await this.prisma.rentalSubscription.update({
         where: { id: rental.id },
-        data: { razorpayPlanId: planId },
+        data: {
+          razorpaySubscriptionId: subscription.id,
+          status: 'PENDING_AUTHORIZATION',
+          mandateStatus: subscription.status || 'PENDING',
+          nextChargeAt: subscription.charge_at ? new Date(Number(subscription.charge_at) * 1000) : null,
+        },
       });
+
+      return {
+        subscriptionId: subscription.id,
+        amount,
+        currency: 'INR',
+        keyId: this.keyId,
+      };
+    } catch (error) {
+      await this.prisma.rentalSubscription.updateMany({
+        where: { id: rental.id, status: 'CREATING', razorpaySubscriptionId: null },
+        data: { status: 'PENDING_AUTHORIZATION' },
+      });
+      throw error;
     }
-
-    const subscription: any = await this.razorpay.subscriptions.create({
-      plan_id: planId,
-      total_count: rental.tenureMonths,
-      quantity: 1,
-      customer_notify: 1,
-      expire_by: Math.floor(new Date(order.reservationExpiresAt).getTime() / 1000),
-      notes: {
-        orderId: order.id,
-        rentalSubscriptionId: rental.id,
-      },
-    });
-    await this.prisma.rentalSubscription.update({
-      where: { id: rental.id },
-      data: {
-        razorpaySubscriptionId: subscription.id,
-        status: 'PENDING_AUTHORIZATION',
-        mandateStatus: subscription.status || 'PENDING',
-        nextChargeAt: subscription.charge_at ? new Date(Number(subscription.charge_at) * 1000) : null,
-      },
-    });
-
-    return {
-      subscriptionId: subscription.id,
-      amount,
-      currency: 'INR',
-      keyId: this.keyId,
-    };
   }
 
   async verifyRentalSubscription(
@@ -178,7 +207,7 @@ export class PaymentService {
     if (!secret) throw new UnauthorizedException('Razorpay secret not configured');
     const expectedSignature = crypto
       .createHmac('sha256', secret)
-      .update(`${subscriptionId}|${paymentId}`)
+      .update(`${paymentId}|${subscriptionId}`)
       .digest('hex');
     const provided = Buffer.from(signature, 'utf8');
     const expected = Buffer.from(expectedSignature, 'utf8');
@@ -339,7 +368,11 @@ export class PaymentService {
     }, { isolationLevel: 'Serializable' });
 
     if (result.activated) {
-      await this.notificationService.dispatchPaymentUpdate(rental.userId, rental.orderId, 'COMPLETED');
+      await this.notificationService.dispatchPaymentUpdate(rental.userId, rental.orderId, 'RENTAL_ACTIVATED', {
+        orderNumber: rental.order?.orderNumber,
+        monthlyAmount: Number(rental.monthlyAmount),
+        tenureMonths: rental.tenureMonths,
+      });
     }
     return result;
   }
@@ -387,6 +420,10 @@ export class PaymentService {
           data: { paymentStatus: 'FAILED' },
         });
       }
+    });
+    await this.notificationService.dispatchPaymentUpdate(rental.userId, rental.orderId, 'FAILED', {
+      orderNumber: rental.order?.orderNumber,
+      amountPaise: Number(payment.amount || 0),
     });
   }
 
@@ -453,6 +490,9 @@ export class PaymentService {
   }
 
   async createOrderForUser(orderId: string, userId: string, userRole: string): Promise<any> {
+    if (userRole === 'GUEST') {
+      throw new ForbiddenException('Please sign in with a customer account before making a payment.');
+    }
     if (!orderId) {
       throw new BadRequestException('orderId is required');
     }
@@ -565,19 +605,250 @@ export class PaymentService {
     };
   }
 
-  async refundPayment(orderId: string, razorpayPaymentId: string): Promise<{ status: string }> {
+  async refundPayment(
+    orderId: string,
+    razorpayPaymentId?: string,
+    options?: RefundPaymentOptions,
+  ): Promise<{ status: string; refundId?: string; amountPaise?: number }> {
     const payment: any = await this.prisma.payment.findFirst({
-      where: { orderId, razorpayPaymentId },
+      where: razorpayPaymentId
+        ? { orderId, razorpayPaymentId }
+        : { orderId, status: { in: ['COMPLETED', 'REFUND_FAILED', 'REFUND_PENDING', 'REFUNDED'] } },
+      include: {
+        order: {
+          select: {
+            id: true,
+            userId: true,
+            orderNumber: true,
+            status: true,
+            paymentStatus: true,
+            razorpayOrderId: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
     });
     if (!payment) throw new NotFoundException('Captured payment record not found');
-    if (payment.status === 'REFUNDED') return { status: 'REFUNDED' };
-    if (payment.status === 'REFUND_PENDING') return { status: 'REFUND_PENDING' };
-    if (payment.status !== 'COMPLETED') {
+    const targetPaymentId = razorpayPaymentId || payment.razorpayPaymentId;
+    if (!targetPaymentId) {
+      throw new BadRequestException('Captured Razorpay payment ID is missing for this order');
+    }
+    if (payment.status === 'REFUNDED') {
+      return { status: 'REFUNDED', refundId: payment.refundId || undefined, amountPaise: 0 };
+    }
+
+    const paidPaise = Math.round(Number(payment.amount));
+    if (!Number.isSafeInteger(paidPaise) || paidPaise <= 0) {
+      throw new BadRequestException('Invalid captured payment amount');
+    }
+
+    const refundedCancellations = (this.prisma as any).orderItemCancellation?.findMany
+      ? await (this.prisma as any).orderItemCancellation.findMany({
+          where: { orderId, refundStatus: 'REFUNDED' },
+          select: { refundAmount: true },
+        })
+      : [];
+    const dbRefundedPaise = (refundedCancellations || []).reduce(
+      (sum: number, c: any) => sum + Math.round(Number(c.refundAmount || 0) * 100),
+      0,
+    );
+
+    let providerRefundedPaise = 0;
+    if (typeof this.razorpay?.payments?.fetch === 'function') {
+      try {
+        const providerPayment = await this.razorpay.payments.fetch(targetPaymentId);
+        providerRefundedPaise = Math.round(Number(providerPayment?.amount_refunded || 0));
+      } catch {
+        // Fall back to DB refunded ledger if provider fetch is unavailable.
+      }
+    }
+
+    const alreadyRefundedPaise = Math.max(dbRefundedPaise, providerRefundedPaise);
+    const remainingPaise = Math.max(0, paidPaise - alreadyRefundedPaise);
+    const orderUserId = payment.order?.userId;
+    const orderNumber = payment.order?.orderNumber;
+
+    // Case A: Partial refund for a specific cancelled order item
+    if (options?.orderItemId) {
+      const orderItem = await (this.prisma as any).orderItem?.findFirst?.({
+        where: { id: options.orderItemId, orderId },
+      });
+      if (!orderItem) throw new NotFoundException('Order item not found');
+      if (orderItem.status !== 'CANCELLED') {
+        throw new BadRequestException('Only cancelled order items can be refunded');
+      }
+      if (orderItem.refundStatus === 'REFUNDED') {
+        return {
+          status: 'REFUNDED',
+          amountPaise: Math.round(Number(orderItem.refundAmount || 0) * 100),
+        };
+      }
+      if (orderItem.refundStatus === 'REFUND_PROCESSING') {
+        return { status: 'REFUND_PENDING' };
+      }
+      if (!['REFUND_PENDING', 'REFUND_FAILED'].includes(orderItem.refundStatus || '')) {
+        throw new BadRequestException('Order item is not eligible for refund');
+      }
+      if (!['COMPLETED', 'REFUND_FAILED', 'REFUND_PENDING'].includes(payment.status)) {
+        throw new BadRequestException('Payment is not eligible for partial item refund');
+      }
+
+      const defaultItemPaise = Math.round(Number(orderItem.refundAmount || 0) * 100);
+      const targetPaise = options.amountPaise ?? defaultItemPaise;
+      if (!Number.isSafeInteger(targetPaise) || targetPaise <= 0) {
+        throw new BadRequestException('No refundable amount remaining for this order item');
+      }
+      if (targetPaise > remainingPaise) {
+        throw new BadRequestException(
+          `Refund amount exceeds remaining refundable balance (₹${(remainingPaise / 100).toFixed(2)})`,
+        );
+      }
+
+      const claimedItem = await (this.prisma as any).orderItem.updateMany({
+        where: {
+          id: orderItem.id,
+          orderId,
+          status: 'CANCELLED',
+          refundStatus: { in: ['REFUND_PENDING', 'REFUND_FAILED'] },
+        },
+        data: { refundStatus: 'REFUND_PROCESSING' },
+      });
+      if (claimedItem.count !== 1) {
+        const latestItem = await (this.prisma as any).orderItem.findFirst({ where: { id: orderItem.id } });
+        return { status: latestItem?.refundStatus === 'REFUNDED' ? 'REFUNDED' : 'REFUND_PENDING' };
+      }
+
+      let providerRefund: any;
+      try {
+        providerRefund = await this.razorpay.payments.refund(targetPaymentId, {
+          amount: targetPaise,
+          notes: {
+            orderId,
+            orderItemId: orderItem.id,
+            ...(options.reason ? { reason: options.reason } : {}),
+          },
+        });
+      } catch {
+        await this.prisma.$transaction(async (tx: any) => {
+          await tx.orderItem.updateMany({
+            where: { id: orderItem.id, refundStatus: 'REFUND_PROCESSING' },
+            data: { refundStatus: 'REFUND_FAILED' },
+          });
+          await tx.orderItemCancellation?.updateMany?.({
+            where: { orderItemId: orderItem.id, refundStatus: { in: ['REFUND_PENDING', 'REFUND_PROCESSING'] } },
+            data: { refundStatus: 'REFUND_FAILED' },
+          });
+        });
+        if (orderUserId) {
+          await this.notificationService.dispatchPaymentUpdate(orderUserId, orderId, 'REFUND_FAILED', {
+            orderNumber,
+            amountPaise: targetPaise,
+            reason: options.reason,
+          });
+        }
+        return { status: 'REFUND_FAILED', amountPaise: targetPaise };
+      }
+
+      const completed = providerRefund?.status === 'processed';
+      const nextItemStatus = completed ? 'REFUNDED' : 'REFUND_PENDING';
+      const fullyRefunded = completed && alreadyRefundedPaise + targetPaise >= paidPaise;
+      await this.prisma.$transaction(async (tx: any) => {
+        await tx.orderItem.updateMany({
+          where: { id: orderItem.id, refundStatus: 'REFUND_PROCESSING' },
+          data: { refundStatus: nextItemStatus },
+        });
+        await tx.orderItemCancellation?.updateMany?.({
+          where: { orderItemId: orderItem.id },
+          data: { refundStatus: nextItemStatus },
+        });
+        await tx.payment.updateMany({
+          where: { id: payment.id },
+          data: {
+            status: fullyRefunded ? 'REFUNDED' : payment.status,
+            refundStatus: providerRefund?.status || 'pending',
+            refundId: providerRefund?.id || undefined,
+          },
+        });
+        if (completed) {
+          await tx.order.updateMany({
+            where: { id: orderId },
+            data: { paymentStatus: fullyRefunded ? 'REFUNDED' : 'PARTIALLY_REFUNDED' },
+          });
+        }
+        if (options.adminUserId && tx.auditLog?.create) {
+          await tx.auditLog.create({
+            data: {
+              actorUserId: options.adminUserId,
+              action: 'TRIGGER_PARTIAL_REFUND',
+              entityType: 'ORDER_ITEM',
+              entityId: orderItem.id,
+              metadata: {
+                orderId,
+                amountPaise: targetPaise,
+                refundId: providerRefund?.id || null,
+                status: nextItemStatus,
+                reason: options.reason || null,
+              },
+            },
+          });
+        }
+      });
+
+      if (orderUserId) {
+        await this.notificationService.dispatchPaymentUpdate(
+          orderUserId,
+          orderId,
+          completed ? 'REFUND_PROCESSED' : 'REFUND_FAILED',
+          {
+            orderNumber,
+            amountPaise: targetPaise,
+            refundId: providerRefund?.id,
+            reason: options.reason,
+          },
+        );
+      }
+      return { status: nextItemStatus, refundId: providerRefund?.id, amountPaise: targetPaise };
+    }
+
+    // Case B: Full-order or explicit partial-amount refund
+    if (payment.status === 'REFUND_PENDING') {
+      return { status: 'REFUND_PENDING', refundId: payment.refundId || undefined };
+    }
+    if (!['COMPLETED', 'REFUND_FAILED'].includes(payment.status)) {
       throw new BadRequestException('Payment is not eligible for refund');
     }
 
+    const targetPaise = options?.amountPaise ?? remainingPaise;
+    if (!Number.isSafeInteger(targetPaise) || targetPaise <= 0) {
+      if (remainingPaise <= 0) {
+        await this.prisma.$transaction([
+          (this.prisma as any).payment.updateMany({
+            where: { id: payment.id },
+            data: { status: 'REFUNDED', refundStatus: 'processed' },
+          }),
+          (this.prisma as any).order.updateMany({
+            where: { id: orderId, paymentStatus: { in: ['REFUND_PENDING', 'REFUND_FAILED', 'PARTIALLY_REFUNDED'] } },
+            data: { paymentStatus: 'REFUNDED' },
+          }),
+        ]);
+        return { status: 'REFUNDED', amountPaise: 0 };
+      }
+      throw new BadRequestException('Refund amount must be a positive integer in paise');
+    }
+    if (targetPaise > remainingPaise) {
+      throw new BadRequestException(
+        `Refund amount exceeds remaining refundable balance (₹${(remainingPaise / 100).toFixed(2)})`,
+      );
+    }
+
+    const previousPaymentStatus = payment.status;
     const claimed = await (this.prisma as any).payment.updateMany({
-      where: { id: payment.id, orderId, razorpayPaymentId, status: 'COMPLETED' },
+      where: {
+        id: payment.id,
+        orderId,
+        razorpayPaymentId: targetPaymentId,
+        status: { in: ['COMPLETED', 'REFUND_FAILED'] },
+      },
       data: { status: 'REFUND_PENDING', refundStatus: 'pending' },
     });
     if (claimed.count !== 1) {
@@ -587,41 +858,124 @@ export class PaymentService {
 
     let providerRefund: any;
     try {
-      providerRefund = await this.razorpay.payments.refund(razorpayPaymentId, {
-        amount: Math.round(Number(payment.amount)),
-        notes: { orderId },
+      providerRefund = await this.razorpay.payments.refund(targetPaymentId, {
+        amount: targetPaise,
+        notes: {
+          orderId,
+          ...(options?.reason ? { reason: options.reason } : {}),
+        },
       });
     } catch {
-      await this.prisma.$transaction([
-        (this.prisma as any).payment.updateMany({
+      const isSupersededPayment =
+        Boolean(options?.supersededAttempt) ||
+        Boolean(
+          payment.order?.razorpayOrderId &&
+            payment.razorpayOrderId &&
+            payment.order.razorpayOrderId !== payment.razorpayOrderId,
+        );
+      await this.prisma.$transaction(async (tx: any) => {
+        await tx.payment.updateMany({
           where: { id: payment.id, status: 'REFUND_PENDING' },
           data: { status: 'REFUND_FAILED', refundStatus: 'failed' },
-        }),
-        (this.prisma as any).order.updateMany({
-          where: { id: orderId, paymentStatus: 'REFUND_PENDING' },
-          data: { paymentStatus: 'REFUND_FAILED' },
-        }),
-      ]);
-      return { status: 'REFUND_FAILED' };
+        });
+        if (!isSupersededPayment) {
+          await tx.order.updateMany({
+            where: { id: orderId, paymentStatus: { in: ['REFUND_PENDING', 'REFUND_FAILED'] } },
+            data: { paymentStatus: 'REFUND_FAILED' },
+          });
+        }
+      });
+      if (orderUserId) {
+        await this.notificationService.dispatchPaymentUpdate(orderUserId, orderId, 'REFUND_FAILED', {
+          orderNumber,
+          amountPaise: targetPaise,
+          reason: options?.reason,
+        });
+      }
+      return { status: 'REFUND_FAILED', amountPaise: targetPaise };
     }
 
     const completed = providerRefund?.status === 'processed';
-    const nextStatus = completed ? 'REFUNDED' : 'REFUND_PENDING';
-    await this.prisma.$transaction([
-      (this.prisma as any).payment.updateMany({
+    const isFullRefund = alreadyRefundedPaise + targetPaise >= paidPaise;
+    const nextPaymentStatus = completed
+      ? isFullRefund
+        ? 'REFUNDED'
+        : previousPaymentStatus === 'REFUND_FAILED'
+          ? 'COMPLETED'
+          : 'COMPLETED'
+      : 'REFUND_PENDING';
+    const nextOrderPaymentStatus = completed
+      ? isFullRefund
+        ? 'REFUNDED'
+        : 'PARTIALLY_REFUNDED'
+      : 'REFUND_PENDING';
+
+    const isSupersededPayment =
+      Boolean(options?.supersededAttempt) ||
+      Boolean(
+        payment.order?.razorpayOrderId &&
+          payment.razorpayOrderId &&
+          payment.order.razorpayOrderId !== payment.razorpayOrderId,
+      );
+    await this.prisma.$transaction(async (tx: any) => {
+      await tx.payment.updateMany({
         where: { id: payment.id, status: 'REFUND_PENDING' },
         data: {
-          status: nextStatus,
+          status: nextPaymentStatus,
           refundStatus: providerRefund?.status || 'pending',
           refundId: providerRefund?.id || undefined,
         },
-      }),
-      (this.prisma as any).order.updateMany({
-        where: { id: orderId, paymentStatus: 'REFUND_PENDING' },
-        data: { paymentStatus: nextStatus },
-      }),
-    ]);
-    return { status: nextStatus };
+      });
+      if (!isSupersededPayment) {
+        await tx.order.updateMany({
+          where: {
+            id: orderId,
+            paymentStatus: { in: ['REFUND_PENDING', 'REFUND_FAILED', 'COMPLETED', 'PAID', 'PARTIALLY_REFUNDED'] },
+          },
+          data: { paymentStatus: nextOrderPaymentStatus },
+        });
+      }
+      if (completed && isFullRefund) {
+        await tx.orderItem?.updateMany?.({
+          where: { orderId, status: 'CANCELLED', refundStatus: { in: ['REFUND_PENDING', 'REFUND_FAILED'] } },
+          data: { refundStatus: 'REFUNDED' },
+        });
+        await tx.orderItemCancellation?.updateMany?.({
+          where: { orderId, refundStatus: { in: ['REFUND_PENDING', 'REFUND_FAILED'] } },
+          data: { refundStatus: 'REFUNDED' },
+        });
+      }
+      if (options?.adminUserId && tx.auditLog?.create) {
+        await tx.auditLog.create({
+          data: {
+            actorUserId: options.adminUserId,
+            action: 'TRIGGER_REFUND',
+            entityType: 'ORDER',
+            entityId: orderId,
+            metadata: {
+              amountPaise: targetPaise,
+              refundId: providerRefund?.id || null,
+              status: nextOrderPaymentStatus,
+              reason: options.reason || null,
+            },
+          },
+        });
+      }
+    });
+
+    if (completed && orderUserId) {
+      await this.notificationService.dispatchPaymentUpdate(orderUserId, orderId, 'REFUND_PROCESSED', {
+        orderNumber,
+        amountPaise: targetPaise,
+        refundId: providerRefund?.id,
+        reason: options?.reason,
+      });
+    }
+    return {
+      status: completed ? (isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED') : 'REFUND_PENDING',
+      refundId: providerRefund?.id,
+      amountPaise: targetPaise,
+    };
   }
 
   async verifyPayment(
@@ -645,7 +999,7 @@ export class PaymentService {
       throw new ForbiddenException('Forbidden: Access denied');
     }
 
-    if (order.status !== 'PENDING' || order.paymentStatus !== 'PENDING') {
+    if (order.status !== 'PENDING' || !['PENDING', 'FAILED'].includes(order.paymentStatus)) {
       if (order.paymentStatus === 'COMPLETED' && order.paymentId === razorpayPaymentId) {
         return { success: true, message: 'Payment already verified' };
       }
@@ -667,8 +1021,10 @@ export class PaymentService {
 
     const paymentRecord = order.payments?.find(
       (payment: any) => payment.razorpayOrderId === order.razorpayOrderId
-        && payment.status === 'PENDING'
-        && !payment.razorpayPaymentId,
+        && (
+          (payment.status === 'PENDING' && !payment.razorpayPaymentId)
+          || payment.status === 'FAILED'
+        ),
     );
     if (!paymentRecord) {
       throw new BadRequestException('No pending payment exists for this order');
@@ -717,14 +1073,22 @@ export class PaymentService {
     }
 
     await this.prisma.$transaction(async (tx: any) => {
+      const paymentWhere: any = paymentRecord.status === 'PENDING'
+        ? {
+            id: paymentRecord.id,
+            orderId: order.id,
+            razorpayOrderId: order.razorpayOrderId,
+            status: 'PENDING',
+            razorpayPaymentId: null,
+          }
+        : {
+            id: paymentRecord.id,
+            orderId: order.id,
+            razorpayOrderId: order.razorpayOrderId,
+            status: 'FAILED',
+          };
       const paymentUpdate = await tx.payment.updateMany({
-        where: {
-          id: paymentRecord.id,
-          orderId: order.id,
-          razorpayOrderId: order.razorpayOrderId,
-          status: 'PENDING',
-          razorpayPaymentId: null,
-        },
+        where: paymentWhere,
         data: {
           status: 'COMPLETED',
           razorpayPaymentId,
@@ -741,7 +1105,7 @@ export class PaymentService {
           userId: order.userId,
           razorpayOrderId: order.razorpayOrderId,
           status: 'PENDING',
-          paymentStatus: 'PENDING',
+          paymentStatus: { in: ['PENDING', 'FAILED'] },
           inventoryStatus: 'RESERVED',
           reservationExpiresAt: { gt: new Date() },
         },
@@ -756,6 +1120,9 @@ export class PaymentService {
       });
       if (orderUpdate.count !== 1) {
         throw new ConflictException('Order was already processed');
+      }
+      if (tx.cartItem) {
+        await tx.cartItem.deleteMany({ where: { cart: { userId: order.userId } } });
       }
     }, { isolationLevel: 'Serializable' });
 
@@ -906,45 +1273,85 @@ export class PaymentService {
     const refundEntity = payload?.payload?.refund?.entity;
     if (event === 'refund.processed' || event === 'refund.failed') {
       if (!refundEntity?.payment_id) return { valid: true, event: 'ignored_no_payment_id' };
-      const payment = await this.prisma.payment.findFirst({
+      const payment: any = await this.prisma.payment.findFirst({
         where: { razorpayPaymentId: refundEntity.payment_id },
+        include: { order: { select: { id: true, userId: true, orderNumber: true } } },
       });
       if (!payment) return { valid: true, event: 'refund_payment_not_found' };
+      const refundAmountPaise = Number(refundEntity.amount || 0);
+      const isFullPaymentRefund =
+        refundAmountPaise <= 0 || refundAmountPaise >= Math.round(Number(payment.amount));
       const nextStatus = event === 'refund.processed' ? 'REFUNDED' : 'REFUND_FAILED';
-      if (payment.status === nextStatus) {
+      if (payment.status === nextStatus && (!refundEntity.id || payment.refundId === refundEntity.id)) {
         return { valid: true, event: 'already_processed' };
       }
-      await this.prisma.$transaction([
-        this.prisma.payment.updateMany({
-          where: { id: payment.id, status: 'REFUND_PENDING' },
+      await this.prisma.$transaction(async (tx: any) => {
+        await tx.payment.updateMany({
+          where: { id: payment.id, status: { in: ['REFUND_PENDING', 'COMPLETED'] } },
           data: {
-            status: nextStatus,
+            status: event === 'refund.processed' && !isFullPaymentRefund ? 'COMPLETED' : nextStatus,
             refundStatus: event === 'refund.processed' ? 'processed' : 'failed',
             refundId: refundEntity.id || undefined,
           },
-        }),
-        this.prisma.order.updateMany({
+        });
+        await tx.order.updateMany({
           where: {
             id: payment.orderId,
             paymentId: refundEntity.payment_id,
-            paymentStatus: 'REFUND_PENDING',
+            paymentStatus: { in: ['REFUND_PENDING', 'COMPLETED', 'PARTIALLY_REFUNDED'] },
           },
-          data: { paymentStatus: nextStatus },
-        }),
-      ]);
+          data: {
+            paymentStatus:
+              event === 'refund.processed' && !isFullPaymentRefund ? 'PARTIALLY_REFUNDED' : nextStatus,
+          },
+        });
+        if (event === 'refund.processed' && isFullPaymentRefund) {
+          await tx.orderItem?.updateMany?.({
+            where: {
+              orderId: payment.orderId,
+              status: 'CANCELLED',
+              refundStatus: { in: ['REFUND_PENDING', 'REFUND_PROCESSING'] },
+            },
+            data: { refundStatus: 'REFUNDED' },
+          });
+          await tx.orderItemCancellation?.updateMany?.({
+            where: {
+              orderId: payment.orderId,
+              refundStatus: { in: ['REFUND_PENDING', 'REFUND_PROCESSING'] },
+            },
+            data: { refundStatus: 'REFUNDED' },
+          });
+        }
+      });
+      if (payment.order?.userId) {
+        await this.notificationService.dispatchPaymentUpdate(
+          payment.order.userId,
+          payment.orderId,
+          event === 'refund.processed' ? 'REFUND_PROCESSED' : 'REFUND_FAILED',
+          {
+            orderNumber: payment.order.orderNumber,
+            amountPaise: refundAmountPaise > 0 ? refundAmountPaise : undefined,
+            refundId: refundEntity.id,
+          },
+        );
+      }
       return { valid: true, event: 'refund_status_updated' };
     }
 
     const paymentEntity = payload?.payload?.payment?.entity;
-    if (!paymentEntity) return { valid: true, event: 'ignored_no_entity' };
-    const razorpayPaymentId = paymentEntity.id;
-    const razorpayOrderId = paymentEntity.order_id;
+    const orderEntity = payload?.payload?.order?.entity;
+    if (!paymentEntity && !(event === 'order.paid' && orderEntity?.id)) {
+      return { valid: true, event: 'ignored_no_entity' };
+    }
+    const razorpayPaymentId = paymentEntity?.id;
+    const razorpayOrderId = paymentEntity?.order_id || orderEntity?.id;
 
     if (event === 'payment.authorized') {
       // Authorization alone is not a captured payment and cannot confirm an order.
       return { valid: true, event: 'payment_authorized' };
     }
 
+    const isCaptureEvent = event === 'payment.captured' || event === 'order.paid';
     const payment: any = razorpayOrderId
       ? await this.prisma.payment.findFirst({
         where: { razorpayOrderId },
@@ -960,13 +1367,18 @@ export class PaymentService {
     const order: any = payment.order;
 
     // Idempotency: Duplicate webhooks for already-processed terminal states
-    if (payment.razorpayPaymentId === razorpayPaymentId) {
-      if (event === 'payment.captured' && ['COMPLETED', 'REFUND_PENDING', 'REFUNDED'].includes(payment.status)) {
-        return { valid: true, event: 'already_processed' };
-      }
-      if (event === 'payment.failed' && payment.status === 'FAILED') {
-        return { valid: true, event: 'already_processed' };
-      }
+    if (
+      isCaptureEvent
+      && ['COMPLETED', 'REFUND_PENDING', 'REFUNDED'].includes(payment.status)
+      && (
+        (razorpayPaymentId && payment.razorpayPaymentId === razorpayPaymentId)
+        || (event === 'order.paid' && payment.razorpayOrderId === razorpayOrderId && order.paymentStatus === 'COMPLETED')
+      )
+    ) {
+      return { valid: true, event: 'already_processed' };
+    }
+    if (event === 'payment.failed' && payment.razorpayPaymentId === razorpayPaymentId && payment.status === 'FAILED') {
+      return { valid: true, event: 'already_processed' };
     }
 
     // Idempotency: If order was already confirmed with this payment ID
@@ -998,11 +1410,16 @@ export class PaymentService {
       await this.notificationService.dispatchPaymentUpdate(order.userId, order.id, 'FAILED');
       return { valid: true, event: 'payment_failed' };
     }
-    if (event !== 'payment.captured') return { valid: true, event };
+    if (!isCaptureEvent) return { valid: true, event };
+
+    const capturedPaymentId = razorpayPaymentId || payment.razorpayPaymentId || order.paymentId;
+    if (!capturedPaymentId) {
+      return { valid: true, event: 'ignored_no_payment_id' };
+    }
 
     const expectedPaise = Math.round(Number(order.finalAmount) * 100);
-    const actualPaise = Number(paymentEntity.amount);
-    const paidCurrency = String(paymentEntity.currency || '').toUpperCase();
+    const actualPaise = Number(paymentEntity?.amount ?? orderEntity?.amount_paid ?? orderEntity?.amount);
+    const paidCurrency = String(paymentEntity?.currency || orderEntity?.currency || '').toUpperCase();
     if (
       actualPaise !== expectedPaise
       || Math.round(Number(payment.amount)) !== expectedPaise
@@ -1040,30 +1457,41 @@ export class PaymentService {
       && ['PENDING', 'FAILED'].includes(order.paymentStatus)
       && isReservationActive;
 
+    if (!providerOrderStillCurrent) {
+      // Captured payment belongs to a superseded Razorpay order while a newer attempt exists.
+      // Only mark that superseded Payment row and trigger its refund without overwriting Order.paymentStatus / Order.paymentId.
+      await this.prisma.payment.updateMany({
+        where: { id: payment.id, status: { in: ['PENDING', 'FAILED'] } },
+        data: { status: 'COMPLETED', razorpayPaymentId: capturedPaymentId },
+      });
+      const refund = await this.refundPayment(order.id, capturedPaymentId, { supersededAttempt: true });
+      return { valid: true, event: 'superseded_payment_refund', data: { refundStatus: refund.status } };
+    }
+
     if (!orderCanBeConfirmed) {
       await this.prisma.$transaction([
         this.prisma.payment.updateMany({
           where: { id: payment.id, status: { in: ['PENDING', 'FAILED'] } },
-          data: { status: 'COMPLETED', razorpayPaymentId },
+          data: { status: 'COMPLETED', razorpayPaymentId: capturedPaymentId },
         }),
         this.prisma.order.updateMany({
           where: {
             id: order.id,
             paymentStatus: { in: ['PENDING', 'FAILED'] },
           },
-          data: { paymentStatus: 'REFUND_PENDING', paymentId: razorpayPaymentId },
+          data: { paymentStatus: 'REFUND_PENDING', paymentId: capturedPaymentId },
         }),
       ]);
-      const refund = await this.refundPayment(order.id, razorpayPaymentId);
+      const refund = await this.refundPayment(order.id, capturedPaymentId);
       return { valid: true, event: 'late_payment_refund', data: { refundStatus: refund.status } };
     }
 
-    await this.prisma.$transaction([
-      this.prisma.payment.updateMany({
+    await this.prisma.$transaction(async (tx: any) => {
+      await tx.payment.updateMany({
         where: { id: payment.id, status: { in: ['PENDING', 'FAILED'] } },
-        data: { status: 'COMPLETED', razorpayPaymentId },
-      }),
-      this.prisma.order.updateMany({
+        data: { status: 'COMPLETED', razorpayPaymentId: capturedPaymentId },
+      });
+      const orderUpdate = await tx.order.updateMany({
         where: {
           id: order.id,
           razorpayOrderId,
@@ -1076,10 +1504,13 @@ export class PaymentService {
           status: 'CONFIRMED',
           inventoryStatus: 'CONSUMED',
           reservationExpiresAt: null,
-          paymentId: razorpayPaymentId,
+          paymentId: capturedPaymentId,
         },
-      }),
-    ]);
+      });
+      if (orderUpdate.count === 1 && tx.cartItem) {
+        await tx.cartItem.deleteMany({ where: { cart: { userId: order.userId } } });
+      }
+    });
 
     await this.notificationService.dispatchPaymentUpdate(order.userId, order.id, 'COMPLETED');
     return { valid: true, event: 'payment_completed' };

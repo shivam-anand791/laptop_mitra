@@ -6,7 +6,7 @@ assertSafeDatabaseTarget();
 assertIntegrationDatabase();
 
 process.env.PAYMENT_ENCRYPTION_KEY = '00'.repeat(32);
-process.env.RAZORPAY_KEY_ID = 'test-only-key-id';
+process.env.RAZORPAY_KEY_ID = 'rzp_test_integration_only';
 process.env.RAZORPAY_KEY_SECRET = 'test-only-secret';
 process.env.RAZORPAY_WEBHOOK_SECRET = 'test-only-webhook-secret';
 process.env.STORAGE_DRIVER = 'local';

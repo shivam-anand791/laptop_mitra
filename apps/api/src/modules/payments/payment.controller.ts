@@ -11,6 +11,7 @@ import {
   Param,
   UseGuards,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { PaymentService } from './payment.service';
@@ -19,28 +20,40 @@ import { GetUser } from '../../decorators/get-user.decorator';
 import { Public } from '../../decorators/public.decorator';
 import { RolesGuard } from '../../guards/roles.guard';
 import { Roles } from '../../decorators/roles.decorator';
+import { SkipThrottle } from '@nestjs/throttler';
+import {
+  CreateRazorpayOrderDto,
+  VerifyRazorpayPaymentDto,
+  VerifyRentalSubscriptionDto,
+} from './dto/razorpay.dto';
 
 @ApiTags('payments')
 @Controller('payments')
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
+  private assertAuthenticatedCustomer(user: any) {
+    if (!user || user.role === 'GUEST' || user.isGuest) {
+      throw new ForbiddenException('Please sign in with a customer account before making a payment.');
+    }
+  }
+
   @Post('razorpay/order')
   @UseGuards(RolesGuard)
-  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
+  @Roles('CUSTOMER', 'ADMIN')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Create Razorpay order for checkout (server-validated amount and ownership)' })
   @ApiResponse({ status: 200, description: 'Razorpay order created' })
   async createRazorpayOrder(
     @GetUser() user: any,
-    @Body('orderId') orderId: string,
-    @Body('amount') _clientAmount?: number,
+    @Body() body: CreateRazorpayOrderDto,
   ) {
-    if (!orderId) {
+    this.assertAuthenticatedCustomer(user);
+    if (!body?.orderId) {
       throw new BadRequestException('orderId is required');
     }
-    return this.paymentService.createOrderForUser(orderId, user.id, user.role);
+    return this.paymentService.createOrderForUser(body.orderId, user.id, user.role);
   }
 
   @Get('tax-policy')
@@ -53,30 +66,27 @@ export class PaymentController {
 
   @Post('razorpay/subscription')
   @UseGuards(RolesGuard)
-  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
+  @Roles('CUSTOMER', 'ADMIN')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Create a Razorpay subscription for an owned rental order' })
-  async createRentalSubscription(@GetUser() user: any, @Body('orderId') orderId: string) {
-    if (!orderId) throw new BadRequestException('orderId is required');
-    return this.paymentService.createRentalSubscriptionForUser(orderId, user.id, user.role);
+  async createRentalSubscription(@GetUser() user: any, @Body() body: CreateRazorpayOrderDto) {
+    this.assertAuthenticatedCustomer(user);
+    if (!body?.orderId) throw new BadRequestException('orderId is required');
+    return this.paymentService.createRentalSubscriptionForUser(body.orderId, user.id, user.role);
   }
 
   @Post('razorpay/subscription/verify')
   @UseGuards(RolesGuard)
-  @Roles('CUSTOMER', 'ADMIN', 'GUEST')
+  @Roles('CUSTOMER', 'ADMIN')
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify Razorpay rental mandate and first payment' })
   async verifyRentalSubscription(
     @GetUser() user: any,
-    @Body() body: {
-      orderId: string;
-      razorpaySubscriptionId: string;
-      razorpayPaymentId: string;
-      razorpaySignature: string;
-    },
+    @Body() body: VerifyRentalSubscriptionDto,
   ) {
+    this.assertAuthenticatedCustomer(user);
     if (
       !body?.orderId
       || !body?.razorpaySubscriptionId
@@ -133,14 +143,9 @@ export class PaymentController {
   @ApiResponse({ status: 200, description: 'Payment verified' })
   async verifyPayment(
     @GetUser() user: any,
-    @Body()
-    body: {
-      orderId: string;
-      razorpayOrderId: string;
-      razorpayPaymentId: string;
-      razorpaySignature: string;
-    },
+    @Body() body: VerifyRazorpayPaymentDto,
   ) {
+    this.assertAuthenticatedCustomer(user);
     if (!body?.orderId || !body?.razorpayOrderId || !body?.razorpayPaymentId || !body?.razorpaySignature) {
       throw new BadRequestException('Missing payment verification fields');
     }
@@ -166,6 +171,7 @@ export class PaymentController {
 
   @Post('razorpay/webhook')
   @Public()
+  @SkipThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Razorpay webhook handler' })
   async handleRazorpayWebhook(
