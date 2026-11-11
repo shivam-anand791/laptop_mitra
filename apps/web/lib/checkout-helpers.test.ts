@@ -96,3 +96,4 @@ describe('checkout-helpers (auth 401 classification, idempotency reuse & gateway
     assert.match(PAYMENT_CONFIRMING_MESSAGE, /We're confirming your payment/);
   });
 });
+

@@ -218,3 +218,4 @@ export function formatPaymentStartError(err: any): {
 
 export const PAYMENT_CONFIRMING_MESSAGE =
   "We're confirming your payment. Please wait while we check the status with Razorpay.";
+
