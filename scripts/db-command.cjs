@@ -40,7 +40,7 @@ function runPnpm(pnpmArgs) {
 async function main() {
 try {
   if (!['dev', 'test'].includes(environment)) {
-    throw new Error('Usage: db-command.cjs <dev|test> <migrate|seed|seed-orders|reset|status|validate|diff|push|studio|test|payout|support-concurrency|history-check|api|web>');
+    throw new Error('Usage: db-command.cjs <dev|test> <migrate|seed|seed-orders|seed-rental|reset|status|validate|diff|push|studio|test|payout|support-concurrency|history-check|api|web>');
   }
 
   loadDatabaseEnvironment(
@@ -90,6 +90,13 @@ try {
     run(
       process.execPath,
       ['-r', 'ts-node/register/transpile-only', '-r', 'tsconfig-paths/register', 'scripts/seed-dev-orders.ts', ...args],
+      { cwd: path.resolve(root, 'apps/api') },
+    );
+  } else if (command === 'seed-rental') {
+    process.env.ALLOW_DEV_SEED = 'true';
+    run(
+      process.execPath,
+      ['-r', 'ts-node/register/transpile-only', '-r', 'tsconfig-paths/register', 'prisma/seed-rental-test.ts', ...args],
       { cwd: path.resolve(root, 'apps/api') },
     );
   } else if (command === 'test') {

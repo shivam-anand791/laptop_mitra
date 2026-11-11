@@ -8,6 +8,11 @@ import { Order } from '@/lib/types';
 import { useCart } from '@/lib/cart-context';
 import { useAuth } from '@/lib/auth-context';
 import { loadRazorpayScript } from '@/lib/razorpay';
+import {
+  formatPaymentStartError,
+  isAuthGuard401,
+  PAYMENT_CONFIRMING_MESSAGE,
+} from '@/lib/checkout-helpers';
 import { ItemSituationHelpModal } from '@/components/account/ItemSituationHelpModal';
 import { useSupportConfig } from '@/lib/support-config';
 import {
@@ -233,9 +238,47 @@ export default function OrderDetailPage() {
     }
   };
 
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+
+  useEffect(() => {
+    if (!isConfirmingPayment || !orderId) return;
+    let active = true;
+    let attempts = 0;
+    const timer = setInterval(async () => {
+      attempts += 1;
+      try {
+        const latest = await api.getOrder(orderId);
+        if (!active) return;
+        setOrder(latest);
+        if (latest.paymentStatus === 'COMPLETED' || latest.status === 'CONFIRMED') {
+          setIsConfirmingPayment(false);
+          clearCart();
+          showBanner('success', 'Payment verified and your order is confirmed.');
+          return;
+        }
+        if (latest.paymentStatus === 'FAILED' || latest.status === 'CANCELLED') {
+          setIsConfirmingPayment(false);
+          showBanner('error', "Payment couldn't be started. Please try again.");
+          return;
+        }
+      } catch {
+        // Keep polling up to max attempts.
+      }
+      if (attempts >= 5 && active) {
+        setIsConfirmingPayment(false);
+      }
+    }, 3000);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [isConfirmingPayment, orderId, clearCart, showBanner]);
+
   const handleRetryPayment = useCallback(async () => {
     if (!order) return;
     setIsRetryingPayment(true);
+    let modalOpened = false;
     try {
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded || typeof window === 'undefined' || !(window as any).Razorpay) {
@@ -294,10 +337,12 @@ export default function OrderDetailPage() {
             showBanner('success', 'Payment verified and your order is confirmed.');
             await loadOrder();
           } catch (verifyErr: any) {
-            showBanner(
-              'error',
-              verifyErr?.message || 'Payment verification failed. If money was debited, it will reconcile automatically or you can retry.'
-            );
+            if (isAuthGuard401(verifyErr?.status, verifyErr?.data)) {
+              router.replace(`/login?next=${encodeURIComponent(`/account/orders/${order.id}`)}`);
+              return;
+            }
+            setIsConfirmingPayment(true);
+            showBanner('error', PAYMENT_CONFIRMING_MESSAGE);
             await loadOrder();
           } finally {
             setIsRetryingPayment(false);
@@ -318,11 +363,18 @@ export default function OrderDetailPage() {
       });
 
       rzpInstance.open();
+      modalOpened = true;
     } catch (err: any) {
-      setIsRetryingPayment(false);
-      showBanner('error', err?.message || 'Could not initialize Razorpay payment.');
+      if (!modalOpened) {
+        setIsRetryingPayment(false);
+      }
+      const { message, orderWasReleased } = formatPaymentStartError(err);
+      showBanner('error', message);
+      if (orderWasReleased) {
+        await loadOrder();
+      }
     }
-  }, [order, user, clearCart, loadOrder, showBanner]);
+  }, [order, user, clearCart, loadOrder, showBanner, router]);
 
   const handleReorder = async () => {
     if (!order) return;
@@ -522,6 +574,19 @@ export default function OrderDetailPage() {
           </button>
         </div>
       </div>
+
+      {isConfirmingPayment && (
+        <div role="status" className="bg-amber-50 rounded-2xl border border-amber-200 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <p className="text-xs font-semibold text-amber-950">{PAYMENT_CONFIRMING_MESSAGE}</p>
+          <button
+            type="button"
+            onClick={() => void loadOrder()}
+            className="px-4 py-2 bg-[#1D6FF2] hover:bg-[#1759C9] text-white rounded-xl text-xs font-bold cursor-pointer whitespace-nowrap"
+          >
+            Check Order Status
+          </button>
+        </div>
+      )}
 
       {/* Pending / Failed Razorpay Payment Retry Banner */}
       {isPendingRazorpay && (

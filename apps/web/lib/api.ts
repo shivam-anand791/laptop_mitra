@@ -19,6 +19,7 @@ import {
   PincodeVerificationResult,
 } from './types';
 
+import { isAuthGuard401 } from './checkout-helpers';
 import { NEXT_PUBLIC_API_URL } from './config';
 import { auth, signOut } from './firebase';
 import { MOCK_PRODUCTS, MOCK_CATEGORIES } from './mock-data';
@@ -80,8 +81,11 @@ export async function request<T>(
     });
 
     if (!res.ok) {
-      // 1. On 401: attempt token refresh once, then retry
-      if (res.status === 401 && !isRetry && auth.currentUser) {
+      const errData = await res.json().catch(() => ({ message: res.statusText }));
+      const authGuard401 = isAuthGuard401(res.status, errData);
+
+      // 1. On real auth-guard 401: attempt Firebase token refresh at most once, then retry
+      if (authGuard401 && !isRetry && auth.currentUser) {
         try {
           const freshToken = await auth.currentUser.getIdToken(true);
           const retryHeaders = {
@@ -94,10 +98,9 @@ export async function request<T>(
         }
       }
 
-      const errData = await res.json().catch(() => ({ message: res.statusText }));
       const message =
         errData?.message ||
-        (res.status === 401
+        (authGuard401
           ? 'Session expired or unauthenticated. Please sign in again.'
           : res.status === 403
             ? 'Access forbidden.'
@@ -110,8 +113,8 @@ export async function request<T>(
         window.dispatchEvent(new CustomEvent('admin:forbidden'));
       }
 
-      // Global 401 handling on admin routes / endpoints: redirect to login
-      if (res.status === 401) {
+      // Global 401 handling ONLY for verified FirebaseAuthGuard errors (never upstream gateway errors)
+      if (authGuard401) {
         const isAdminContext =
           endpoint.startsWith('/admin') ||
           (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin'));
@@ -538,7 +541,7 @@ export const api = {
   },
 
   async requestRentalTermination(subscriptionId: string, reason?: string): Promise<any> {
-    return await request<any>(`/payments/subscriptions/${subscriptionId}/terminate`, {
+    return await request<any>(`/payments/rental/${subscriptionId}/termination-request`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });

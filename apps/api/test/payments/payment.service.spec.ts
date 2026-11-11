@@ -13,6 +13,7 @@ jest.mock('@nestjs/config', () => ({
 jest.mock('razorpay', () => {
   return jest.fn().mockImplementation(() => ({
     orders: {
+      all: jest.fn().mockResolvedValue({ items: [] }),
       create: jest.fn().mockImplementation(async (opts) => ({
         id: `order_rzp_${Date.now()}`,
         amount: opts.amount,
@@ -41,7 +42,11 @@ jest.mock('razorpay', () => {
   }));
 });
 
-import { PaymentService } from '../../src/modules/payments/payment.service';
+import {
+  PaymentService,
+  normalizeRazorpayEnvValue,
+  maskRazorpayKeyId,
+} from '../../src/modules/payments/payment.service';
 import { PaymentController } from '../../src/modules/payments/payment.controller';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -49,8 +54,10 @@ import {
   NotFoundException,
   BadRequestException,
   UnauthorizedException,
-  InternalServerErrorException,
+  BadGatewayException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { mapExceptionToHttpResponse } from '../../src/common/filters/global-exception.filter';
 import * as crypto from 'crypto';
 import { createNoTaxService } from '../helpers/no-tax-service';
 
@@ -979,7 +986,7 @@ describe('PaymentService (Security & Integrity Tests)', () => {
       });
     });
 
-    it('resets rentalSubscription status from CREATING back to PENDING_AUTHORIZATION if Razorpay API fails', async () => {
+    it('resets rentalSubscription from CREATING, maps gateway timeout to 503, and releases stock idempotently', async () => {
       prisma.order.findUnique.mockResolvedValue({
         id: 'rental-order-fail',
         orderNumber: 'LM-RENT-FAIL',
@@ -989,7 +996,7 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         paymentMethod: 'razorpay_subscription',
         inventoryStatus: 'RESERVED',
         reservationExpiresAt: new Date(Date.now() + 60_000),
-        items: [{ purchaseMode: 'lease' }],
+        items: [{ productId: 'prod-1', quantity: 1, purchaseMode: 'lease', status: 'ACTIVE' }],
         rentalSubscription: {
           id: 'rental-fail-1',
           userId: 'user-rent-2',
@@ -1000,16 +1007,34 @@ describe('PaymentService (Security & Integrity Tests)', () => {
           tenureMonths: 6,
         },
       });
+      prisma.product = { update: jest.fn().mockResolvedValue({}) };
       (paymentService as any).razorpay.plans.create.mockRejectedValueOnce(new Error('Razorpay timeout'));
 
       await expect(
         paymentService.createRentalSubscriptionForUser('rental-order-fail', 'user-rent-2', 'CUSTOMER'),
-      ).rejects.toThrow('Razorpay timeout');
+      ).rejects.toThrow(ServiceUnavailableException);
 
-      expect(prisma.rentalSubscription.updateMany).toHaveBeenLastCalledWith({
+      expect(prisma.rentalSubscription.updateMany).toHaveBeenCalledWith({
         where: { id: 'rental-fail-1', status: 'CREATING', razorpaySubscriptionId: null },
         data: { status: 'PENDING_AUTHORIZATION' },
       });
+      expect(prisma.order.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'rental-order-fail', status: 'PENDING', inventoryStatus: 'RESERVED' }),
+          data: expect.objectContaining({ status: 'CANCELLED', paymentStatus: 'FAILED', inventoryStatus: 'RELEASED' }),
+        }),
+      );
+      expect(prisma.product.update).toHaveBeenCalledTimes(1);
+
+      // Repeating release on an already-cancelled/released order is a no-op (idempotent)
+      prisma.order.findUnique.mockResolvedValueOnce({
+        id: 'rental-order-fail',
+        status: 'CANCELLED',
+        inventoryStatus: 'RELEASED',
+        items: [{ productId: 'prod-1', quantity: 1 }],
+      });
+      await (paymentService as any).releaseOrderAfterGatewayFailure('rental-order-fail');
+      expect(prisma.product.update).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1405,7 +1430,7 @@ describe('PaymentService (Security & Integrity Tests)', () => {
       ).not.toThrow();
     });
 
-    it('enforces >= 100 paise minimum amount and maps Razorpay 401/500 errors safely in createOrderForUser', async () => {
+    it('enforces >= 100 paise minimum, maps Razorpay 401/5xx errors to 502 without leaking secrets, and releases reserved stock', async () => {
       prisma.order.findUnique.mockResolvedValueOnce({
         id: 'order-sub-100',
         userId: 'user-1',
@@ -1423,6 +1448,9 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         BadRequestException,
       );
 
+      prisma.productVariant = { update: jest.fn().mockResolvedValue({}) };
+      prisma.product = { update: jest.fn().mockResolvedValue({}) };
+
       const baseOrder = {
         id: 'order-err-1',
         userId: 'user-1',
@@ -1432,22 +1460,169 @@ describe('PaymentService (Security & Integrity Tests)', () => {
         inventoryStatus: 'RESERVED',
         reservationExpiresAt: new Date(Date.now() + 60_000),
         finalAmount: 500,
-        items: [{ purchaseMode: 'buy' }],
+        items: [{ productId: 'prod-1', variantId: 'var-1', quantity: 2, purchaseMode: 'sell', status: 'ACTIVE' }],
         payments: [],
       };
       const rzpCreateSpy = (paymentService as any).razorpay.orders.create as jest.Mock;
+      const loggerErrorSpy = jest.spyOn((paymentService as any).logger, 'error');
 
-      prisma.order.findUnique.mockResolvedValueOnce(baseOrder);
-      rzpCreateSpy.mockRejectedValueOnce({ statusCode: 401, error: { description: 'Authentication failed' } });
-      await expect(paymentService.createOrderForUser('order-err-1', 'user-1', 'CUSTOMER')).rejects.toThrow(
-        UnauthorizedException,
+      prisma.order.findUnique
+        .mockResolvedValueOnce(baseOrder)
+        .mockResolvedValueOnce(baseOrder);
+      rzpCreateSpy.mockRejectedValueOnce({
+        statusCode: 401,
+        error: { code: 'BAD_REQUEST_ERROR', description: 'Authentication failed' },
+      });
+
+      let caughtGatewayErr: any;
+      try {
+        await paymentService.createOrderForUser('order-err-1', 'user-1', 'CUSTOMER');
+      } catch (err) {
+        caughtGatewayErr = err;
+      }
+      expect(caughtGatewayErr).toBeInstanceOf(BadGatewayException);
+      const mapped = mapExceptionToHttpResponse(caughtGatewayErr, 'req-gw-401');
+      expect(mapped.status).toBe(502);
+      expect(mapped.body).toEqual(
+        expect.objectContaining({
+          statusCode: 502,
+          code: 'PAYMENT_PROVIDER_UNAVAILABLE',
+          message: 'Payment provider unavailable',
+          requestId: 'req-gw-401',
+        }),
       );
+      expect(prisma.order.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'order-err-1', status: 'PENDING', inventoryStatus: 'RESERVED' }),
+          data: expect.objectContaining({ status: 'CANCELLED', paymentStatus: 'FAILED', inventoryStatus: 'RELEASED' }),
+        }),
+      );
+      expect(prisma.productVariant.update).toHaveBeenCalledWith({
+        where: { id: 'var-1' },
+        data: { stock: { increment: 2 } },
+      });
+      const loggedText = loggerErrorSpy.mock.calls.map((c) => String(c[0])).join(' ');
+      expect(loggedText).toContain('order-err-1');
+      expect(loggedText).toContain('BAD_REQUEST_ERROR');
+      expect(loggedText).toContain('rzp_test_***7890');
+      expect(loggedText).not.toContain('secret1234567890');
 
-      prisma.order.findUnique.mockResolvedValueOnce(baseOrder);
+      prisma.order.findUnique
+        .mockResolvedValueOnce(baseOrder)
+        .mockResolvedValueOnce(baseOrder);
       rzpCreateSpy.mockRejectedValueOnce({ statusCode: 502, error: { description: 'Gateway timeout' } });
       await expect(paymentService.createOrderForUser('order-err-1', 'user-1', 'CUSTOMER')).rejects.toThrow(
-        InternalServerErrorException,
+        BadGatewayException,
       );
+
+      // Transient 503/network errors map to 503 ServiceUnavailableException and release stock idempotently
+      prisma.order.findUnique
+        .mockResolvedValueOnce(baseOrder)
+        .mockResolvedValueOnce(baseOrder);
+      rzpCreateSpy.mockRejectedValueOnce({ statusCode: 503, message: 'Razorpay temporarily overloaded' });
+      await expect(paymentService.createOrderForUser('order-err-1', 'user-1', 'CUSTOMER')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+
+      // Rental subscription transient error also releases stock & maps to 502/503 instead of raw 500
+      const rentalOrder = {
+        ...baseOrder,
+        id: 'order-rent-err-1',
+        paymentMethod: 'razorpay_subscription',
+        items: [{ productId: 'prod-1', quantity: 1, purchaseMode: 'lease', status: 'ACTIVE' }],
+        rentalSubscription: {
+          id: 'sub-rec-1',
+          orderId: 'order-rent-err-1',
+          tenureMonths: 12,
+          monthlyAmount: 2499,
+          razorpayPlanId: 'plan_123',
+          razorpaySubscriptionId: null,
+        },
+      };
+      prisma.order.findUnique
+        .mockResolvedValueOnce(rentalOrder)
+        .mockResolvedValueOnce(rentalOrder);
+      prisma.rentalSubscription = {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      };
+      const rzpSubCreateSpy = (paymentService as any).razorpay.subscriptions.create as jest.Mock;
+      rzpSubCreateSpy.mockRejectedValueOnce({ statusCode: 504, message: 'Gateway Timeout' });
+      await expect(
+        paymentService.createRentalSubscriptionForUser('order-rent-err-1', 'user-1', 'CUSTOMER'),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('normalizes Razorpay env strings, validates key prefix/missing vars, and runs startup auth self-check', async () => {
+      expect(normalizeRazorpayEnvValue('  "rzp_test_ABC123"\n ')).toBe('rzp_test_ABC123');
+      expect(normalizeRazorpayEnvValue("Bearer 'secret_xyz'")).toBe('secret_xyz');
+      expect(maskRazorpayKeyId('rzp_test_1234567890')).toBe('rzp_test_***7890');
+
+      const makeCfg = (envMap: Record<string, string | undefined>) => ({
+        get: (k: string) => envMap[k],
+      }) as unknown as ConfigService;
+
+      // Rejects invalid Key ID format
+      expect(
+        () =>
+          new PaymentService(
+            makeCfg({
+              NODE_ENV: 'development',
+              RAZORPAY_KEY_ID: 'invalid_key_123',
+              RAZORPAY_KEY_SECRET: 'sec',
+              RAZORPAY_WEBHOOK_SECRET: 'whsec',
+            }),
+            prisma,
+            notificationService,
+            createNoTaxService(),
+          ),
+      ).toThrow(UnauthorizedException);
+
+      // Accepts quoted/padded keys and strips them before creating client
+      const quotedSvc = new PaymentService(
+        makeCfg({
+          NODE_ENV: 'production',
+          ALLOW_LIVE_PAYMENT_KEYS: 'false',
+          RAZORPAY_KEY_ID: ' "rzp_test_Quoted1234" ',
+          RAZORPAY_KEY_SECRET: "'secret_quoted'\r\n",
+          RAZORPAY_WEBHOOK_SECRET: '"wh_quoted"',
+        }),
+        prisma,
+        notificationService,
+        createNoTaxService(),
+      );
+      expect((quotedSvc as any).keyId).toBe('rzp_test_Quoted1234');
+
+      // Startup self-check: definitive 401 fails when enabled; transient errors warn and do not crash
+      const allSpy = (quotedSvc as any).razorpay.orders.all as jest.Mock;
+      await expect(quotedSvc.verifyRazorpayStartupAuth()).resolves.toBeUndefined();
+
+      allSpy.mockRejectedValueOnce({ statusCode: 503, message: 'Service Unavailable' });
+      await expect(quotedSvc.verifyRazorpayStartupAuth()).resolves.toBeUndefined();
+
+      // Logs loud secret-free error on definitive 401 without crash-looping by default
+      const startupErrorSpy = jest.spyOn((quotedSvc as any).logger, 'error');
+      allSpy.mockRejectedValueOnce({ statusCode: 401, error: { code: 'BAD_REQUEST_ERROR', description: 'Auth failed' } });
+      await expect(quotedSvc.verifyRazorpayStartupAuth()).resolves.toBeUndefined();
+      expect(startupErrorSpy).toHaveBeenCalledWith(expect.stringContaining('check=credentials_rejected'));
+
+      // Strict boot failure still works when RAZORPAY_STARTUP_FAIL_ON_401=true
+      const strictSvc = new PaymentService(
+        makeCfg({
+          NODE_ENV: 'production',
+          RAZORPAY_KEY_ID: 'rzp_test_Strict1234',
+          RAZORPAY_KEY_SECRET: 'secret_strict',
+          RAZORPAY_WEBHOOK_SECRET: 'wh_strict',
+          RAZORPAY_STARTUP_FAIL_ON_401: 'true',
+        }),
+        prisma,
+        notificationService,
+        createNoTaxService(),
+      );
+      ((strictSvc as any).razorpay.orders.all as jest.Mock).mockRejectedValueOnce({
+        statusCode: 401,
+        error: { code: 'BAD_REQUEST_ERROR', description: 'Auth failed' },
+      });
+      await expect(strictSvc.verifyRazorpayStartupAuth()).rejects.toThrow(UnauthorizedException);
     });
   });
 });

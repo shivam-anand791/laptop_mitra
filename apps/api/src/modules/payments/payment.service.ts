@@ -6,8 +6,9 @@ import {
   ForbiddenException,
   ConflictException,
   ServiceUnavailableException,
-  InternalServerErrorException,
+  BadGatewayException,
   Logger,
+  OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -18,6 +19,57 @@ import * as crypto from 'crypto';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Razorpay = require('razorpay');
 
+const RAZORPAY_KEY_ID_PATTERN = /^rzp_(test|live)_[A-Za-z0-9]+$/;
+
+/**
+ * Normalizes Razorpay env strings pasted with accidental whitespace, newlines,
+ * wrapping quotes, or an accidental Bearer prefix.
+ */
+export function normalizeRazorpayEnvValue(value?: string | null): string {
+  if (typeof value !== 'string') return '';
+  let normalized = value.replace(/[\r\n]+/g, '').trim();
+  if (/^bearer\s+/i.test(normalized)) {
+    normalized = normalized.replace(/^bearer\s+/i, '').trim();
+  }
+  while (
+    normalized.length >= 2
+    && (
+      (normalized.startsWith('"') && normalized.endsWith('"'))
+      || (normalized.startsWith("'") && normalized.endsWith("'"))
+      || (normalized.startsWith('`') && normalized.endsWith('`'))
+    )
+  ) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+  return normalized.replace(/^["'`]+|["'`]+$/g, '').trim();
+}
+
+/**
+ * Masks a Razorpay Key ID for safe logging (prefix + last 4 chars only).
+ */
+export function maskRazorpayKeyId(keyId?: string | null): string {
+  const normalized = normalizeRazorpayEnvValue(keyId);
+  if (!normalized) return '<unset>';
+  const prefixMatch = normalized.match(/^(rzp_(?:test|live)_)/);
+  const prefix = prefixMatch ? prefixMatch[1] : '';
+  const suffix = normalized.slice(-4);
+  return prefix ? `${prefix}***${suffix}` : `***${suffix}`;
+}
+
+export function extractRazorpayErrorDetails(error: any): {
+  statusCode: number | null;
+  code: string | null;
+  description: string;
+} {
+  const rawStatus = Number(error?.statusCode ?? error?.status);
+  const statusCode = Number.isFinite(rawStatus) && rawStatus > 0 ? rawStatus : null;
+  const code = error?.error?.code ? String(error.error.code) : error?.code ? String(error.code) : null;
+  const description = String(
+    error?.error?.description || error?.description || error?.message || 'Unknown gateway error',
+  );
+  return { statusCode, code, description };
+}
+
 export interface RefundPaymentOptions {
   amountPaise?: number;
   orderItemId?: string;
@@ -27,10 +79,11 @@ export interface RefundPaymentOptions {
 }
 
 @Injectable()
-export class PaymentService {
+export class PaymentService implements OnModuleInit {
   private readonly logger = new Logger(PaymentService.name);
   private readonly razorpay: any;
   private readonly keyId: string;
+  private readonly keyMode: 'test' | 'live';
 
   constructor(
     private readonly configService: ConfigService,
@@ -38,35 +91,53 @@ export class PaymentService {
     private readonly notificationService: NotificationService,
     private readonly taxService: TaxService,
   ) {
-    const keyId = this.configService.get<string>('RAZORPAY_KEY_ID')?.trim();
-    const keySecret = this.configService.get<string>('RAZORPAY_KEY_SECRET')?.trim();
-    const webhookSecret = this.configService.get<string>('RAZORPAY_WEBHOOK_SECRET')?.trim();
-    const nodeEnv = this.configService.get<string>('NODE_ENV');
+    const keyId = normalizeRazorpayEnvValue(this.configService.get<string>('RAZORPAY_KEY_ID'));
+    const keySecret = normalizeRazorpayEnvValue(this.configService.get<string>('RAZORPAY_KEY_SECRET'));
+    const webhookSecret = normalizeRazorpayEnvValue(this.configService.get<string>('RAZORPAY_WEBHOOK_SECRET'));
+    const nodeEnv = normalizeRazorpayEnvValue(this.configService.get<string>('NODE_ENV'));
     const allowLiveKeys =
-      String(this.configService.get<string>('ALLOW_LIVE_PAYMENT_KEYS') ?? '')
-        .trim()
-        .toLowerCase() === 'true';
+      normalizeRazorpayEnvValue(this.configService.get<string>('ALLOW_LIVE_PAYMENT_KEYS')).toLowerCase() === 'true';
 
-    if (!keyId || !keySecret || !webhookSecret) {
-      throw new UnauthorizedException('Razorpay credentials and webhook secret must be configured');
+    const missingVars = [
+      !keyId ? 'RAZORPAY_KEY_ID' : null,
+      !keySecret ? 'RAZORPAY_KEY_SECRET' : null,
+      !webhookSecret ? 'RAZORPAY_WEBHOOK_SECRET' : null,
+    ].filter(Boolean);
+
+    if (missingVars.length > 0) {
+      throw new UnauthorizedException(
+        `Razorpay boot check failed: missing required env var(s): ${missingVars.join(', ')}`,
+      );
+    }
+
+    if (!RAZORPAY_KEY_ID_PATTERN.test(keyId)) {
+      throw new UnauthorizedException(
+        `Razorpay boot check failed: RAZORPAY_KEY_ID (${maskRazorpayKeyId(keyId)}) must match /^rzp_(test|live)_/`,
+      );
     }
 
     if (nodeEnv === 'production') {
       if (allowLiveKeys) {
         if (!keyId.startsWith('rzp_live_')) {
-          throw new UnauthorizedException('Live Razorpay key (rzp_live_*) is required when ALLOW_LIVE_PAYMENT_KEYS=true');
+          throw new UnauthorizedException(
+            `Razorpay boot check failed: Live Razorpay key (rzp_live_*) is required when ALLOW_LIVE_PAYMENT_KEYS=true (got ${maskRazorpayKeyId(keyId)})`,
+          );
         }
       } else if (!keyId.startsWith('rzp_test_')) {
         throw new UnauthorizedException(
-          'Live Razorpay keys require NODE_ENV=production AND ALLOW_LIVE_PAYMENT_KEYS=true (or use rzp_test_* for onboarding/staging)',
+          `Razorpay boot check failed: Live Razorpay keys (${maskRazorpayKeyId(keyId)}) require NODE_ENV=production AND ALLOW_LIVE_PAYMENT_KEYS=true`,
         );
       }
     } else {
       if (keyId.startsWith('rzp_live_')) {
-        throw new UnauthorizedException('Live Razorpay keys not allowed outside production');
+        throw new UnauthorizedException(
+          `Razorpay boot check failed: Live Razorpay keys (${maskRazorpayKeyId(keyId)}) are not allowed outside production`,
+        );
       }
       if (!keyId.startsWith('rzp_test_')) {
-        throw new UnauthorizedException('Test Razorpay key (rzp_test_*) is required in non-production environments');
+        throw new UnauthorizedException(
+          `Razorpay boot check failed: Test Razorpay key (rzp_test_*) is required in non-production environments`,
+        );
       }
     }
 
@@ -75,6 +146,54 @@ export class PaymentService {
       key_secret: keySecret,
     });
     this.keyId = keyId;
+    this.keyMode = keyId.startsWith('rzp_live_') ? 'live' : 'test';
+  }
+
+  async onModuleInit(): Promise<void> {
+    const nodeEnv = normalizeRazorpayEnvValue(this.configService.get<string>('NODE_ENV'));
+    const startupCheckFlag = normalizeRazorpayEnvValue(
+      this.configService.get<string>('RAZORPAY_STARTUP_CHECK'),
+    ).toLowerCase();
+
+    if (startupCheckFlag === 'false' || (nodeEnv === 'test' && startupCheckFlag !== 'true')) {
+      return;
+    }
+
+    await this.verifyRazorpayStartupAuth();
+  }
+
+  async verifyRazorpayStartupAuth(): Promise<void> {
+    if (typeof this.razorpay?.orders?.all !== 'function') {
+      return;
+    }
+
+    const failOn401 =
+      normalizeRazorpayEnvValue(this.configService.get<string>('RAZORPAY_STARTUP_FAIL_ON_401')).toLowerCase()
+      === 'true';
+
+    try {
+      await this.razorpay.orders.all({ count: 1 });
+      this.logger.log(
+        `Razorpay startup self-check passed: keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}`,
+      );
+    } catch (error: any) {
+      const details = extractRazorpayErrorDetails(error);
+      if (details.statusCode === 401) {
+        this.logger.error(
+          `Razorpay startup self-check FAILED [check=credentials_rejected]: keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}, statusCode=401, code=${details.code || 'UNKNOWN'}, description=${details.description}. Verify RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET belong to the same Razorpay ${this.keyMode} key pair.`,
+        );
+        if (failOn401) {
+          throw new UnauthorizedException(
+            `Razorpay startup credentials check failed (credentials rejected for ${this.keyMode} key ${maskRazorpayKeyId(this.keyId)})`,
+          );
+        }
+        return;
+      }
+
+      this.logger.warn(
+        `Razorpay startup self-check encountered a non-401/transient error (service kept running): keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}, statusCode=${details.statusCode ?? 'network'}, code=${details.code || 'TRANSIENT'}, description=${details.description}`,
+      );
+    }
   }
 
   getTaxPolicy() {
@@ -182,12 +301,12 @@ export class PaymentService {
         currency: 'INR',
         keyId: this.keyId,
       };
-    } catch (error) {
+    } catch (error: any) {
       await this.prisma.rentalSubscription.updateMany({
         where: { id: rental.id, status: 'CREATING', razorpaySubscriptionId: null },
         data: { status: 'PENDING_AUTHORIZATION' },
       });
-      throw error;
+      return this.handleRazorpayGatewayError(order.id, 'rental_subscription', error);
     }
   }
 
@@ -214,7 +333,7 @@ export class PaymentService {
       throw new BadRequestException('Rental payment does not match the stored subscription');
     }
 
-    const secret = this.configService.get<string>('RAZORPAY_KEY_SECRET');
+    const secret = normalizeRazorpayEnvValue(this.configService.get<string>('RAZORPAY_KEY_SECRET'));
     if (!secret) throw new UnauthorizedException('Razorpay secret not configured');
     const expectedSignature = crypto
       .createHmac('sha256', secret)
@@ -591,14 +710,7 @@ export class PaymentService {
         payment_capture: 1, // Auto-capture
       });
     } catch (error: any) {
-      if (Number(error?.statusCode) === 401) {
-        this.logger.error(`Razorpay authentication failed while creating order for ${order.id}`);
-        throw new UnauthorizedException('Payment gateway authentication failed');
-      }
-      this.logger.error(
-        `Razorpay order creation failed for ${order.id}: ${error?.error?.description || error?.message || 'Unknown error'}`,
-      );
-      throw new InternalServerErrorException('Failed to create payment order with gateway');
+      return this.handleRazorpayGatewayError(order.id, 'order', error);
     }
 
     // Persist razorpayOrderId on order and create payment record atomically
@@ -1061,7 +1173,7 @@ export class PaymentService {
       throw new BadRequestException('Stored payment amount does not match this order');
     }
 
-    const keySecret = this.configService.get<string>('RAZORPAY_KEY_SECRET');
+    const keySecret = normalizeRazorpayEnvValue(this.configService.get<string>('RAZORPAY_KEY_SECRET'));
     if (!keySecret) {
       throw new UnauthorizedException('Razorpay secret not configured');
     }
@@ -1162,7 +1274,7 @@ export class PaymentService {
     rawBody: Buffer | string,
     signature: string,
   ): boolean {
-    const secret = this.configService.get<string>('RAZORPAY_WEBHOOK_SECRET');
+    const secret = normalizeRazorpayEnvValue(this.configService.get<string>('RAZORPAY_WEBHOOK_SECRET'));
     if (!secret) {
       this.logger.error('RAZORPAY_WEBHOOK_SECRET is not configured');
       throw new BadRequestException('Webhook verification failed: secret not configured');
@@ -1557,6 +1669,107 @@ export class PaymentService {
     }
 
     return order;
+  }
+
+  private async handleRazorpayGatewayError(
+    orderId: string,
+    flow: 'order' | 'rental_subscription',
+    error: any,
+  ): Promise<never> {
+    const details = extractRazorpayErrorDetails(error);
+    const reasonLabel = details.statusCode === 401 ? 'authentication failed' : 'request failed';
+    this.logger.error(
+      `Razorpay ${reasonLabel} during ${flow} creation for order ${orderId}: statusCode=${details.statusCode ?? 'network'}, code=${details.code || 'UNKNOWN'}, description=${details.description}, keyMode=${this.keyMode}, keyId=${maskRazorpayKeyId(this.keyId)}`,
+    );
+    await this.releaseOrderAfterGatewayFailure(orderId);
+
+    const isTransient = details.statusCode === null || details.statusCode >= 503;
+    if (isTransient) {
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        error: 'Service Unavailable',
+        code: 'PAYMENT_PROVIDER_UNAVAILABLE',
+        message: 'Payment provider unavailable',
+      });
+    }
+
+    throw new BadGatewayException({
+      statusCode: 502,
+      error: 'Bad Gateway',
+      code: 'PAYMENT_PROVIDER_UNAVAILABLE',
+      message: 'Payment provider unavailable',
+    });
+  }
+
+  private async releaseOrderAfterGatewayFailure(orderId: string): Promise<void> {
+    try {
+      await this.prisma.$transaction(async (tx: any) => {
+        const order = await tx.order?.findUnique?.({
+          where: { id: orderId },
+          include: { items: true },
+        });
+        if (!order || order.status !== 'PENDING' || order.inventoryStatus !== 'RESERVED') {
+          return;
+        }
+
+        const cancelled = await tx.order.updateMany({
+          where: {
+            id: orderId,
+            status: 'PENDING',
+            inventoryStatus: 'RESERVED',
+            paymentStatus: { in: ['PENDING', 'FAILED'] },
+          },
+          data: {
+            status: 'CANCELLED',
+            paymentStatus: 'FAILED',
+            inventoryStatus: 'RELEASED',
+            reservationExpiresAt: null,
+          },
+        });
+        if (cancelled?.count !== 1) return;
+
+        await tx.payment?.updateMany?.({
+          where: { orderId, status: 'PENDING' },
+          data: { status: 'FAILED' },
+        });
+        await tx.rentalSubscription?.updateMany?.({
+          where: {
+            orderId,
+            status: { in: ['PENDING_AUTHORIZATION', 'CREATING'] },
+            razorpaySubscriptionId: null,
+          },
+          data: { status: 'CANCELLED' },
+        });
+
+        for (const item of order.items || []) {
+          if (item.status === 'CANCELLED') continue;
+          const inventoryModel = item.variantId ? tx.productVariant : tx.product;
+          if (typeof inventoryModel?.update === 'function') {
+            await inventoryModel.update({
+              where: { id: item.variantId || item.productId },
+              data: { stock: { increment: item.quantity } },
+            });
+          }
+        }
+
+        const redemption = await tx.discountRedemption?.findUnique?.({ where: { orderId } });
+        if (redemption && redemption.status !== 'RESTORED') {
+          await tx.discountCode?.updateMany?.({
+            where: { id: redemption.discountCodeId, uses: { gt: 0 } },
+            data: { uses: { decrement: 1 } },
+          });
+          await tx.discountRedemption?.update?.({
+            where: { orderId },
+            data: { status: 'RESTORED', restoredAt: new Date(), restoredReason: 'Gateway order creation failed' },
+          });
+        }
+        await tx.referralRedemption?.deleteMany?.({ where: { orderId } });
+      });
+    } catch (cleanupError: any) {
+      this.logger.warn(
+        `Failed to clean up order ${orderId} after Razorpay gateway error: ${cleanupError?.message || cleanupError}`,
+      );
+    }
   }
 
   async getPaymentHistory(userId: string) {

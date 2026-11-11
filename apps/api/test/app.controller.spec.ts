@@ -1,4 +1,7 @@
+import 'reflect-metadata';
+import { HTTP_CODE_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { AppController } from '../src/app.controller';
+import { PUBLIC_ROUTE_KEY } from '../src/decorators/public.decorator';
 
 describe('AppController (/health)', () => {
   it('returns capabilities as empty by default when ENABLE_EMAIL_VERIFICATION is off', () => {
@@ -69,5 +72,13 @@ describe('AppController (/health)', () => {
     const result = await controller.getReadiness();
 
     expect(result.mail).toBe('not configured');
+  });
+
+  it('serves GET /favicon.ico publicly with 204 No Content to prevent browser console 404s', () => {
+    const handler = AppController.prototype.getFavicon;
+    expect(Reflect.getMetadata(PATH_METADATA, handler)).toBe('favicon.ico');
+    expect(Reflect.getMetadata(HTTP_CODE_METADATA, handler)).toBe(204);
+    expect(Reflect.getMetadata(PUBLIC_ROUTE_KEY, handler)).toBe(true);
+    expect(new AppController().getFavicon()).toBeUndefined();
   });
 });

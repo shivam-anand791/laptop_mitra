@@ -1,6 +1,7 @@
-import { Controller, Get, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, HttpCode, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiExcludeEndpoint, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from './decorators/public.decorator';
 import { PrismaService } from './prisma/prisma.service';
 import { MailService } from './modules/mail/mail.service';
@@ -16,6 +17,13 @@ export class AppController {
     @Optional() private readonly mailService?: MailService,
     @Optional() private readonly schemaCompatibility?: SchemaCompatibilityService,
   ) {}
+
+  @Public()
+  @SkipThrottle()
+  @Get('favicon.ico')
+  @HttpCode(204)
+  @ApiExcludeEndpoint()
+  getFavicon() {}
 
   @Public()
   @Get('health')

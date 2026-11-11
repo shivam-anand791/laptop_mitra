@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -9,6 +9,17 @@ import { useCart } from '../../lib/cart-context';
 import { useAuth } from '../../lib/auth-context';
 import { api } from '../../lib/api';
 import { loadRazorpayScript } from '../../lib/razorpay';
+import {
+  buildCheckoutSignature,
+  clearCheckoutAttempt,
+  formatPaymentStartError,
+  getOrCreateCheckoutAttempt,
+  isAuthGuard401,
+  isOrderStillPayable,
+  PAYMENT_CONFIRMING_MESSAGE,
+  rotateCheckoutAttemptKey,
+  savePendingOrderAttempt,
+} from '../../lib/checkout-helpers';
 import { Address, CreateAddressDto, Order, PincodeVerificationResult } from '../../lib/types';
 import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../lib/config';
 import { useSupportConfig } from '../../lib/support-config';
@@ -72,6 +83,12 @@ export default function CheckoutPage() {
   const [razorpayFeedback, setRazorpayFeedback] = useState<string | null>(null);
   const [pendingPaymentOrder, setPendingPaymentOrder] = useState<Order | null>(null);
   const [pendingPaymentIsRental, setPendingPaymentIsRental] = useState(false);
+  const [confirmingOrder, setConfirmingOrder] = useState<{
+    order: Order;
+    detail?: string;
+    timedOut: boolean;
+  } | null>(null);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   // Pincode Verification & Delhi NCR COD State
   const [pincodeVerification, setPincodeVerification] = useState<PincodeVerificationResult | null>(null);
   const [isVerifyingPincode, setIsVerifyingPincode] = useState(false);
@@ -229,6 +246,161 @@ export default function CheckoutPage() {
 
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
 
+  const checkoutSignature = useMemo(
+    () =>
+      buildCheckoutSignature({
+        userId: user?.id || null,
+        paymentMethod,
+        discountCode: !hasRentalOrder && appliedDiscount?.type === 'coupon' ? appliedDiscount.code : '',
+        referralCode: !hasRentalOrder && appliedDiscount?.type === 'referral' ? appliedDiscount.code : '',
+        addressId: savedAddressesOwnerId === user?.id ? selectedSavedAddressId : null,
+        pincode: formData.pincode,
+        address: formData.address,
+        items,
+      }),
+    [
+      user?.id,
+      paymentMethod,
+      hasRentalOrder,
+      appliedDiscount,
+      savedAddressesOwnerId,
+      selectedSavedAddressId,
+      formData.pincode,
+      formData.address,
+      items,
+    ],
+  );
+
+  // Restore any existing pending order for the exact cart session after refresh or Back navigation
+  useEffect(() => {
+    if (
+      authLoading ||
+      isGuestOrUnauthenticated ||
+      !user?.id ||
+      items.length === 0 ||
+      completedOrder ||
+      confirmingOrder ||
+      typeof window === 'undefined'
+    ) {
+      return;
+    }
+
+    const attempt = getOrCreateCheckoutAttempt(window.sessionStorage, checkoutSignature);
+    if (!attempt.pendingOrderId) {
+      setPendingPaymentOrder((prev) => (prev ? null : prev));
+      return;
+    }
+    if (pendingPaymentOrder?.id === attempt.pendingOrderId) return;
+
+    let active = true;
+    api
+      .getOrder(attempt.pendingOrderId)
+      .then((existing) => {
+        if (!active) return;
+        if (existing.paymentStatus === 'COMPLETED' || existing.status === 'CONFIRMED') {
+          clearCheckoutAttempt(window.sessionStorage);
+          clearCart();
+          setCompletedOrder(existing);
+          return;
+        }
+        if (isOrderStillPayable(existing)) {
+          setPendingPaymentOrder(existing);
+          setPendingPaymentIsRental(attempt.pendingIsRental);
+          setRazorpayFeedback(
+            `Order #${existing.orderNumber} is reserved and awaiting payment. Click "Retry Payment" below to continue.`,
+          );
+        } else {
+          rotateCheckoutAttemptKey(window.sessionStorage, checkoutSignature);
+          setPendingPaymentOrder(null);
+        }
+      })
+      .catch(() => {
+        // Leave state clean if order lookup temporarily fails.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    authLoading,
+    isGuestOrUnauthenticated,
+    user?.id,
+    items.length,
+    checkoutSignature,
+    completedOrder,
+    confirmingOrder,
+    pendingPaymentOrder?.id,
+    clearCart,
+  ]);
+
+  // Poll order status automatically when client verification is uncertain (non-401 verify error)
+  useEffect(() => {
+    if (!confirmingOrder || confirmingOrder.timedOut) return;
+    let active = true;
+    let attempts = 0;
+
+    const timer = setInterval(async () => {
+      attempts += 1;
+      try {
+        const latest = await api.getOrder(confirmingOrder.order.id);
+        if (!active) return;
+        if (latest.paymentStatus === 'COMPLETED' || latest.status === 'CONFIRMED') {
+          if (typeof window !== 'undefined') clearCheckoutAttempt(window.sessionStorage);
+          clearCart();
+          setConfirmingOrder(null);
+          setCompletedOrder(latest);
+          return;
+        }
+        if (latest.paymentStatus === 'FAILED' || latest.status === 'CANCELLED') {
+          setConfirmingOrder(null);
+          setPendingPaymentOrder(latest.status === 'PENDING' ? latest : null);
+          if (latest.status === 'CANCELLED' && typeof window !== 'undefined') {
+            rotateCheckoutAttemptKey(window.sessionStorage, checkoutSignature);
+          }
+          setRazorpayFeedback("Payment couldn't be started. Please try again.");
+          return;
+        }
+      } catch {
+        // Keep polling up to max attempts.
+      }
+      if (attempts >= 5 && active) {
+        setConfirmingOrder((prev) => (prev ? { ...prev, timedOut: true } : null));
+      }
+    }, 3000);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [confirmingOrder, checkoutSignature, clearCart]);
+
+  const handleManualStatusCheck = async () => {
+    if (!confirmingOrder) return;
+    setIsCheckingStatus(true);
+    try {
+      const latest = await api.getOrder(confirmingOrder.order.id);
+      if (latest.paymentStatus === 'COMPLETED' || latest.status === 'CONFIRMED') {
+        if (typeof window !== 'undefined') clearCheckoutAttempt(window.sessionStorage);
+        clearCart();
+        setConfirmingOrder(null);
+        setCompletedOrder(latest);
+      } else if (latest.paymentStatus === 'FAILED' || latest.status === 'CANCELLED') {
+        setConfirmingOrder(null);
+        setPendingPaymentOrder(latest.status === 'PENDING' ? latest : null);
+        if (latest.status === 'CANCELLED' && typeof window !== 'undefined') {
+          rotateCheckoutAttemptKey(window.sessionStorage, checkoutSignature);
+        }
+        setRazorpayFeedback("Payment couldn't be started. Please try again.");
+      } else {
+        setConfirmingOrder({ ...confirmingOrder, order: latest });
+      }
+    } catch {
+      // Surface existing status card without hiding actions.
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
   // Autofill user information if logged in
   useEffect(() => {
     if (user) {
@@ -366,7 +538,7 @@ export default function CheckoutPage() {
     setFormData((previous) => ({ ...previous, [e.target.name]: e.target.value }));
   };
 
-  const openRazorpayCheckout = async (order: Order, isRental: boolean) => {
+  const openRazorpayCheckout = async (order: Order, isRental: boolean): Promise<boolean> => {
     setRazorpayFeedback(null);
     setPendingPaymentOrder(order);
     setPendingPaymentIsRental(isRental);
@@ -387,7 +559,7 @@ export default function CheckoutPage() {
             ? `${scriptError.message} Your order #${order.orderNumber} is pending — click "Retry Payment" below or open Order Details.`
             : `Secure checkout SDK could not load. Your order #${order.orderNumber} is pending — retry below or open Order Details.`,
         );
-        return;
+        return false;
       }
 
       if (typeof window === 'undefined' || !window.Razorpay) {
@@ -395,7 +567,7 @@ export default function CheckoutPage() {
         setRazorpayFeedback(
           `Razorpay Checkout is currently unavailable. Your order #${order.orderNumber} is saved — retry below or open Order Details.`,
         );
-        return;
+        return false;
       }
 
       const options = {
@@ -437,12 +609,23 @@ export default function CheckoutPage() {
                 razorpaySignature: response.razorpay_signature,
               });
             }
+            if (typeof window !== 'undefined') clearCheckoutAttempt(window.sessionStorage);
             setRazorpayFeedback(null);
+            setConfirmingOrder(null);
             setPendingPaymentOrder(null);
             clearCart();
             setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any, status: 'CONFIRMED' as any });
-          } catch {
-            router.push(`/account/orders/${order.id}`);
+          } catch (verifyErr: any) {
+            if (isAuthGuard401(verifyErr?.status, verifyErr?.data)) {
+              router.replace('/login?next=%2Fcheckout');
+              return;
+            }
+            // Non-401 error: payment may already be captured and confirmed by webhook — never claim failure silently.
+            setConfirmingOrder({
+              order,
+              detail: verifyErr?.message || undefined,
+              timedOut: false,
+            });
           } finally {
             setIsSubmitting(false);
           }
@@ -471,22 +654,26 @@ export default function CheckoutPage() {
         });
       }
       rzpInstance.open();
+      return true;
     } catch (error: any) {
       setIsSubmitting(false);
       if (error?.status === 403 && /sign in|customer account/i.test(error?.message || '')) {
         router.replace('/login?next=%2Fcheckout');
-        return;
+        return false;
       }
-      setRazorpayFeedback(
-        error instanceof Error
-          ? `${error.message} Your order #${order.orderNumber} is pending — click "Retry Payment" or check Order Details.`
-          : `Payment could not be started for Order #${order.orderNumber}. Retry below or open Order Details.`,
-      );
+      const { message, orderWasReleased } = formatPaymentStartError(error);
+      if (orderWasReleased) {
+        setPendingPaymentOrder(null);
+        if (typeof window !== 'undefined') {
+          rotateCheckoutAttemptKey(window.sessionStorage, checkoutSignature);
+        }
+      }
+      setRazorpayFeedback(message);
+      return false;
     }
   };
 
-  const handlePlaceOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitCheckoutOrder = async () => {
     if (cartSyncing || cartSyncError || itemCount === 0 || (canUseSavedAddresses && savedAddressesLoading)) return;
     if (hasMixedCart) {
       alert('Buy and rent items must be checked out separately. Your cart has not been changed.');
@@ -511,8 +698,14 @@ export default function CheckoutPage() {
     }
 
     setIsSubmitting(true);
+    let modalOpened = false;
 
     try {
+      if (paymentMethod === 'razorpay' && pendingPaymentOrder && isOrderStillPayable(pendingPaymentOrder)) {
+        modalOpened = await openRazorpayCheckout(pendingPaymentOrder, pendingPaymentIsRental);
+        return;
+      }
+
       let orderAddressId = savedAddressesOwnerId === user?.id ? selectedSavedAddressId : null;
       if (!orderAddressId && saveAddressToAccount && canUseSavedAddresses && user) {
         const savedAddress = await api.createAddress({
@@ -538,13 +731,18 @@ export default function CheckoutPage() {
         }));
       }
 
-      // 1. Create order on backend
+      const attempt =
+        typeof window !== 'undefined'
+          ? getOrCreateCheckoutAttempt(window.sessionStorage, checkoutSignature)
+          : { idempotencyKey: `lm-web-${Date.now()}` };
+
+      // 1. Create order on backend (reusing stable idempotencyKey per cart session)
       const orderPayload = {
         discountCode: !hasRentalOrder && appliedDiscount?.type === 'coupon' ? appliedDiscount.code : undefined,
         referralCode: !hasRentalOrder && appliedDiscount?.type === 'referral' ? appliedDiscount.code : undefined,
         paymentMethod: paymentMethod,
         email: formData.email,
-        idempotencyKey: `lm-web-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        idempotencyKey: attempt.idempotencyKey,
         ...(orderAddressId ? { addressId: orderAddressId } : {}),
         shippingAddress: {
           fullName: formData.fullName,
@@ -569,11 +767,15 @@ export default function CheckoutPage() {
 
       const order = await api.createOrder(orderPayload);
 
-      // 2. If Razorpay selected, initialize payment modal
+      // 2. If Razorpay selected, persist pending order for session recovery and open modal
       if (paymentMethod === 'razorpay') {
-        await openRazorpayCheckout(order, hasRentalOrder);
+        if (typeof window !== 'undefined') {
+          savePendingOrderAttempt(window.sessionStorage, checkoutSignature, order.id, hasRentalOrder);
+        }
+        modalOpened = await openRazorpayCheckout(order, hasRentalOrder);
       } else {
         // COD (Cash on Delivery)
+        if (typeof window !== 'undefined') clearCheckoutAttempt(window.sessionStorage);
         clearCart();
         setCompletedOrder(order);
       }
@@ -595,8 +797,15 @@ export default function CheckoutPage() {
       }
       alert(error instanceof Error ? error.message : 'Could not complete order. Please verify your details and try again.');
     } finally {
-      setIsSubmitting(false);
+      if (!modalOpened) {
+        setIsSubmitting(false);
+      }
     }
+  };
+
+  const handlePlaceOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitCheckoutOrder();
   };
 
   // ORDER SUCCESS SCREEN
@@ -665,6 +874,52 @@ export default function CheckoutPage() {
               >
                 <span>WhatsApp Updates</span>
               </a>
+            </div>
+          </div>
+        </div>
+      </CustomerLayout>
+    );
+  }
+
+  if (confirmingOrder) {
+    return (
+      <CustomerLayout>
+        <div className="bg-[#F8FAFC] min-h-[70vh] flex items-center justify-center py-12 px-4">
+          <div className="max-w-lg w-full bg-white rounded-3xl border border-amber-200 shadow-sm p-6 sm:p-10 text-center space-y-5">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl mx-auto">
+              ⏳
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-xl sm:text-2xl font-bold text-[#0B1F4B]">
+                We&apos;re confirming your payment
+              </h1>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {PAYMENT_CONFIRMING_MESSAGE}
+              </p>
+              {confirmingOrder.detail && (
+                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                  Status update note: {confirmingOrder.detail}
+                </p>
+              )}
+              <p className="text-xs text-slate-500">
+                Order Reference: <strong className="font-mono text-[#0B1F4B]">{confirmingOrder.order.orderNumber}</strong>
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleManualStatusCheck}
+                disabled={isCheckingStatus}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#1D6FF2] hover:bg-[#1759C9] text-white font-bold text-xs disabled:opacity-60 cursor-pointer"
+              >
+                {isCheckingStatus ? 'Checking Order Status...' : 'Check Order Status'}
+              </button>
+              <Link
+                href={`/account/orders/${confirmingOrder.order.id}`}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-[#E4E9F2] hover:bg-[#F8FAFC] text-[#0B1F4B] font-bold text-xs"
+              >
+                View Order Details
+              </Link>
             </div>
           </div>
         </div>
@@ -1044,24 +1299,32 @@ export default function CheckoutPage() {
                       </label>
                     )}
 
-                    {razorpayFeedback && pendingPaymentOrder && (
-                      <div className="p-4 rounded-2xl border border-amber-300 bg-amber-50 text-amber-950 space-y-3">
+                    {razorpayFeedback && (
+                      <div role="alert" className="p-4 rounded-2xl border border-amber-300 bg-amber-50 text-amber-950 space-y-3">
                         <p className="text-xs font-semibold leading-relaxed">{razorpayFeedback}</p>
                         <div className="flex flex-wrap items-center gap-3">
                           <button
                             type="button"
                             disabled={isSubmitting}
-                            onClick={() => openRazorpayCheckout(pendingPaymentOrder, pendingPaymentIsRental)}
+                            onClick={() => {
+                              if (pendingPaymentOrder && isOrderStillPayable(pendingPaymentOrder)) {
+                                void openRazorpayCheckout(pendingPaymentOrder, pendingPaymentIsRental);
+                              } else {
+                                void submitCheckoutOrder();
+                              }
+                            }}
                             className="px-4 py-2 rounded-xl bg-[#1D6FF2] text-white text-xs font-bold hover:bg-[#1759C9] disabled:opacity-50 cursor-pointer"
                           >
                             {isSubmitting ? 'Opening Razorpay...' : 'Retry Payment'}
                           </button>
-                          <Link
-                            href={`/account/orders/${pendingPaymentOrder.id}`}
-                            className="text-xs font-bold text-[#0B1F4B] underline"
-                          >
-                            View Order Details
-                          </Link>
+                          {pendingPaymentOrder && (
+                            <Link
+                              href={`/account/orders/${pendingPaymentOrder.id}`}
+                              className="text-xs font-bold text-[#0B1F4B] underline"
+                            >
+                              View Order Details
+                            </Link>
+                          )}
                         </div>
                       </div>
                     )}

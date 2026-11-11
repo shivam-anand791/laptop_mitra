@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput, RefreshControl } from 'react-native';
 import { useRoute, useNavigation, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
@@ -19,7 +19,9 @@ import {
   useProfile,
 } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
+import { isAuthGuard401 } from '@laptopmitra/api-client';
 import RazorpayCheckoutModal, { RazorpayCheckoutData } from '../../components/RazorpayCheckoutModal';
+import { formatPaymentStartError, PAYMENT_CONFIRMING_MESSAGE } from '../../utils/checkout-helpers';
 import ItemSituationHelpModal from '../../components/ItemSituationHelpModal';
 import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
 import {
@@ -82,13 +84,37 @@ export default function OrderDetailScreen() {
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [selectedHelpItem, setSelectedHelpItem] = useState<any | null>(null);
 
-  // Razorpay retry state
+  // Razorpay retry & verifying state
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
   const [checkoutData, setCheckoutData] = useState<RazorpayCheckoutData | null>(null);
   const [isRetryingPayment, setIsRetryingPayment] = useState(false);
+  const [paymentStartError, setPaymentStartError] = useState<string | null>(null);
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+
+  useEffect(() => {
+    if (!isConfirmingPayment) return;
+    if (order?.paymentStatus === 'PAID' || order?.status === 'CONFIRMED') {
+      setIsConfirmingPayment(false);
+      return;
+    }
+    let cancelled = false;
+    let polls = 0;
+    const timer = setInterval(() => {
+      if (cancelled || polls >= 5) {
+        clearInterval(timer);
+        return;
+      }
+      polls += 1;
+      void refetchOrder();
+    }, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isConfirmingPayment, order?.paymentStatus, order?.status, refetchOrder]);
 
   const handleStartRazorpayPayment = async () => {
-    if (!order) return;
+    if (!order || isRetryingPayment) return;
     if (!isAuthenticated || isGuest || profile?.isGuest) {
       Alert.alert(
         'Sign In Required',
@@ -101,6 +127,8 @@ export default function OrderDetailScreen() {
       return;
     }
     setIsRetryingPayment(true);
+    setPaymentStartError(null);
+    let modalOpened = false;
     try {
       const shipping = order.shippingAddress as Record<string, string> | null;
       const customerName = shipping?.fullName || profile?.name || 'Valued Customer';
@@ -137,11 +165,22 @@ export default function OrderDetailScreen() {
           description: `Order #${order.orderNumber || order.id.slice(-8)} - Certified Refurbished`,
         });
       }
+      modalOpened = true;
       setCheckoutModalVisible(true);
     } catch (err: any) {
-      Alert.alert('Payment Initialization Failed', err.message || 'Could not connect to payment gateway.');
+      const { message, orderWasReleased } = formatPaymentStartError(err);
+      setPaymentStartError(message);
+      if (orderWasReleased) {
+        void refetchOrder();
+      }
+      Alert.alert('Payment Could Not Be Started', message, [
+        { text: 'Try Again', onPress: () => { void handleStartRazorpayPayment(); } },
+        { text: 'OK', style: 'cancel' },
+      ]);
     } finally {
-      setIsRetryingPayment(false);
+      if (!modalOpened) {
+        setIsRetryingPayment(false);
+      }
     }
   };
 
@@ -153,6 +192,7 @@ export default function OrderDetailScreen() {
     razorpaySignature: string;
   }) => {
     setCheckoutModalVisible(false);
+    setIsRetryingPayment(true);
     try {
       if (result.razorpaySubscriptionId) {
         await verifyRentalSubscription.mutateAsync({
@@ -171,16 +211,23 @@ export default function OrderDetailScreen() {
       } else {
         throw new Error('Payment response did not include a valid order or subscription');
       }
+      setIsConfirmingPayment(false);
       Alert.alert('Payment Verified!', 'Your payment was confirmed successfully.');
       void refetchOrder();
     } catch (err: any) {
-      Alert.alert('Verification in Progress', err.message || 'Payment received and being processed.');
+      const status = Number(err?.status || err?.data?.statusCode || 0);
+      if (!isAuthGuard401(status, err?.data)) {
+        setIsConfirmingPayment(true);
+      }
       void refetchOrder();
+    } finally {
+      setIsRetryingPayment(false);
     }
   };
 
   const handlePaymentFailure = (error: { description?: string }) => {
     setCheckoutModalVisible(false);
+    setIsRetryingPayment(false);
     Alert.alert('Payment Failed', error.description || 'Payment could not be completed. You can try again.');
   };
 
@@ -326,8 +373,40 @@ export default function OrderDetailScreen() {
           <Text style={styles.estimateBannerText}>{estimateText}</Text>
         </View>
 
+        {/* Payment Verification in Progress Banner */}
+        {isConfirmingPayment && (
+          <View style={styles.confirmingCard}>
+            <View style={styles.pendingPaymentHeader}>
+              <ActivityIndicator size="small" color="#1d4ed8" />
+              <Text style={styles.confirmingTitle}>We&apos;re confirming your payment</Text>
+            </View>
+            <Text style={styles.confirmingText}>{PAYMENT_CONFIRMING_MESSAGE}</Text>
+            <TouchableOpacity
+              style={styles.payNowButton}
+              onPress={() => void refetchOrder()}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.payNowButtonText}>Check Order Status</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Payment Initialization Error Banner */}
+        {paymentStartError && !isConfirmingPayment && (
+          <View style={styles.paymentErrorCard}>
+            <Text style={styles.paymentErrorText}>{paymentStartError}</Text>
+            <TouchableOpacity
+              style={styles.paymentErrorRetryButton}
+              onPress={handleStartRazorpayPayment}
+              disabled={isRetryingPayment}
+            >
+              <Text style={styles.paymentErrorRetryText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Razorpay Pending Payment Retry Banner */}
-        {isPendingRazorpay && (
+        {isPendingRazorpay && !isConfirmingPayment && (
           <View style={styles.pendingPaymentCard}>
             <View style={styles.pendingPaymentHeader}>
               <Ionicons name="card" size={18} color="#b45309" />
@@ -840,7 +919,10 @@ export default function OrderDetailScreen() {
         checkoutData={checkoutData}
         onSuccess={handlePaymentSuccess}
         onFailure={handlePaymentFailure}
-        onClose={() => setCheckoutModalVisible(false)}
+        onClose={() => {
+          setCheckoutModalVisible(false);
+          setIsRetryingPayment(false);
+        }}
       />
     </ScrollView>
   );
@@ -1320,6 +1402,52 @@ const styles = StyleSheet.create({
   payNowButtonText: {
     color: '#ffffff',
     fontSize: 14,
+    fontWeight: '700',
+  },
+  confirmingCard: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1.5,
+    borderColor: '#bfdbfe',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 10,
+    gap: 8,
+  },
+  confirmingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1e3a8a',
+  },
+  confirmingText: {
+    fontSize: 12,
+    color: '#1e40af',
+    lineHeight: 17,
+  },
+  paymentErrorCard: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+    gap: 8,
+  },
+  paymentErrorText: {
+    fontSize: 12,
+    color: '#991b1b',
+    fontWeight: '600',
+    lineHeight: 17,
+  },
+  paymentErrorRetryButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  paymentErrorRetryText: {
+    color: '#fff',
+    fontSize: 12,
     fontWeight: '700',
   },
 });

@@ -10,6 +10,10 @@ export const apiClient = new LaptopMitraApiClient({
     const currentUser = getFirebaseAuth().currentUser;
     return currentUser ? currentUser.getIdToken() : null;
   },
+  refreshToken: async () => {
+    const currentUser = getFirebaseAuth().currentUser;
+    return currentUser ? currentUser.getIdToken(true) : null;
+  },
   onUnauthorized: async () => {
     await firebaseSignOut(getFirebaseAuth()).catch(() => undefined);
     await clearAuth().catch(() => undefined);

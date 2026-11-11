@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   View,
   Text,
@@ -29,7 +30,17 @@ import {
 import { Address, PincodeVerificationResult } from '@laptopmitra/types';
 import { MainStackNavigationProp } from '../../navigation/types';
 import { useAuth } from '../../providers/AuthProvider';
+import { isAuthGuard401 } from '@laptopmitra/api-client';
 import RazorpayCheckoutModal, { RazorpayCheckoutData } from '../../components/RazorpayCheckoutModal';
+import {
+  MobileCheckoutAttempt,
+  PAYMENT_CONFIRMING_MESSAGE,
+  buildMobileCheckoutSignature,
+  formatPaymentStartError,
+  isOrderStillPayable,
+  resolveMobileCheckoutAttempt,
+  rotateMobileCheckoutAttempt,
+} from '../../utils/checkout-helpers';
 import CouponOffersModal from '../../components/CouponOffersModal';
 
 type PaymentMethod = 'razorpay' | 'cod';
@@ -38,7 +49,8 @@ export default function CheckoutScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
   const route = useRoute<any>();
   const initialCoupon = route.params?.initialCoupon as string | undefined;
-  const { isAuthenticated, isGuest, logout } = useAuth();
+  const queryClient = useQueryClient();
+  const { isAuthenticated, isGuest, logout, getClient } = useAuth();
   const { data: cart } = useCart();
   const { data: addresses } = useAddresses();
   const { data: profile } = useProfile();
@@ -72,10 +84,13 @@ export default function CheckoutScreen() {
   const [isVerifyingPincode, setIsVerifyingPincode] = useState(false);
   const [pincodeError, setPincodeError] = useState<string | null>(null);
 
-  // Razorpay Checkout Modal State
+  // Razorpay Checkout Modal & Idempotency State
   const [checkoutModalVisible, setCheckoutModalVisible] = useState(false);
   const [checkoutData, setCheckoutData] = useState<RazorpayCheckoutData | null>(null);
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+  const [paymentStartError, setPaymentStartError] = useState<string | null>(null);
+  const [confirmingOrderId, setConfirmingOrderId] = useState<string | null>(null);
+  const attemptRef = useRef<MobileCheckoutAttempt | null>(null);
 
   const items: any[] = cart?.items ?? [];
   const subtotal = items.reduce((sum: number, item: any) => {
@@ -161,6 +176,69 @@ export default function CheckoutScreen() {
 
   const formatPrice = (price: number) => `₹${price.toLocaleString('en-IN')}`;
 
+  const checkoutSignature = useMemo(
+    () =>
+      buildMobileCheckoutSignature({
+        userId: profile?.id,
+        paymentMethod,
+        discountCode: appliedDiscount?.code,
+        referralCode,
+        addressId: selectedAddressId,
+        items: items.map((it: any) => ({
+          productId: it.productId,
+          variantId: it.variantId || null,
+          quantity: it.quantity || 1,
+          purchaseMode: it.purchaseMode || 'sell',
+          configuration: it.configuration || 'default',
+          hasWarranty: Boolean(it.hasWarranty),
+          tenureMonths: it.tenureMonths || null,
+        })),
+      }),
+    [profile?.id, paymentMethod, appliedDiscount?.code, referralCode, selectedAddressId, items],
+  );
+
+  // Clear pending order reference if cart/address/payment details change.
+  useEffect(() => {
+    const resolved = resolveMobileCheckoutAttempt(attemptRef.current, checkoutSignature);
+    attemptRef.current = resolved;
+    setActiveOrderId(resolved.activeOrder?.id ?? null);
+  }, [checkoutSignature]);
+
+  // Bounded polling when payment verification returns a non-401 error (confirm via webhook/status).
+  useEffect(() => {
+    if (!confirmingOrderId) return;
+    let cancelled = false;
+    let polls = 0;
+
+    const timer = setInterval(async () => {
+      if (cancelled || polls >= 5) {
+        clearInterval(timer);
+        return;
+      }
+      polls += 1;
+      try {
+        const refreshed = await getClient().getOrder(confirmingOrderId);
+        if (cancelled) return;
+        if (refreshed?.paymentStatus === 'PAID' || refreshed?.status === 'CONFIRMED') {
+          clearInterval(timer);
+          setConfirmingOrderId(null);
+          queryClient.invalidateQueries({ queryKey: ['orders'] });
+          queryClient.invalidateQueries({ queryKey: ['cart'] });
+          queryClient.invalidateQueries({ queryKey: ['order', confirmingOrderId] });
+          navigation.navigate('OrderDetail', { orderId: confirmingOrderId });
+          Alert.alert('Payment Successful!', 'Your payment has been verified and your order is confirmed.');
+        }
+      } catch {
+        // Ignore transient poll errors; user can still tap Check Order Status.
+      }
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [confirmingOrderId, getClient, navigation, queryClient]);
+
   const apiItems = items.map((it: any) => ({
     productId: it.productId,
     variantId: it.variantId || undefined,
@@ -216,7 +294,9 @@ export default function CheckoutScreen() {
           setDiscountCode('');
           return;
         }
-      } catch {}
+      } catch {
+        // Ignore referral validation failure and surface the coupon error below.
+      }
       Alert.alert('Invalid Code', err?.message || 'Invalid or expired coupon code.');
     }
   };
@@ -249,6 +329,7 @@ export default function CheckoutScreen() {
   };
 
   const handlePlaceOrder = async () => {
+    if (isSubmitting || confirmingOrderId) return;
     if (!isAuthenticated || isGuest || profile?.isGuest) {
       promptSignInRequired();
       return;
@@ -284,45 +365,53 @@ export default function CheckoutScreen() {
     }
 
     setIsSubmitting(true);
+    setPaymentStartError(null);
 
     try {
-      const payload: {
-        discountCode?: string;
-        referralCode?: string;
-        shippingAddress?: any;
-        phone?: string;
-        notes?: string;
-        paymentMethod?: 'razorpay' | 'cod';
-        idempotencyKey?: string;
-      } = {
-        paymentMethod,
-        idempotencyKey: `lm-mob-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-        shippingAddress: {
-          fullName: selectedAddress.fullName ?? '',
-          phone: selectedAddress.phone ?? '',
-          address: selectedAddress.address,
-          city: selectedAddress.city ?? '',
-          state: selectedAddress.state ?? '',
-          pincode: selectedAddress.pincode ?? '',
-          landmark: selectedAddress.landmark ?? '',
-        },
-      };
+      const attempt = resolveMobileCheckoutAttempt(attemptRef.current, checkoutSignature);
+      attemptRef.current = attempt;
 
-      if (appliedDiscount) {
-        payload.discountCode = appliedDiscount.code;
-      }
-      if (referralCode.trim().length > 0) {
-        payload.referralCode = referralCode.trim();
-      }
-      if (selectedAddress.phone) {
-        payload.phone = selectedAddress.phone;
-      }
-      if (notes.trim().length > 0) {
-        payload.notes = notes.trim();
-      }
+      // Step 1: Reuse still-payable pending order for this cart attempt instead of duplicating
+      let order = isOrderStillPayable(attempt.activeOrder) ? attempt.activeOrder! : null;
+      if (!order) {
+        const payload: {
+          discountCode?: string;
+          referralCode?: string;
+          shippingAddress?: any;
+          phone?: string;
+          notes?: string;
+          paymentMethod?: 'razorpay' | 'cod';
+          idempotencyKey?: string;
+        } = {
+          paymentMethod,
+          idempotencyKey: attempt.idempotencyKey,
+          shippingAddress: {
+            fullName: selectedAddress.fullName ?? '',
+            phone: selectedAddress.phone ?? '',
+            address: selectedAddress.address,
+            city: selectedAddress.city ?? '',
+            state: selectedAddress.state ?? '',
+            pincode: selectedAddress.pincode ?? '',
+            landmark: selectedAddress.landmark ?? '',
+          },
+        };
 
-      // Step 1: Create backend order
-      const order = await createOrder.mutateAsync(payload);
+        if (appliedDiscount) {
+          payload.discountCode = appliedDiscount.code;
+        }
+        if (referralCode.trim().length > 0) {
+          payload.referralCode = referralCode.trim();
+        }
+        if (selectedAddress.phone) {
+          payload.phone = selectedAddress.phone;
+        }
+        if (notes.trim().length > 0) {
+          payload.notes = notes.trim();
+        }
+
+        order = await createOrder.mutateAsync(payload);
+        attemptRef.current = { ...attempt, activeOrder: order };
+      }
       setActiveOrderId(order.id);
 
       // Step 2: Handle payment method flow
@@ -334,6 +423,7 @@ export default function CheckoutScreen() {
       }
 
       // Step 3: Initialize the provider flow for the order type.
+      let modalOpened = false;
       try {
         const customerName = selectedAddress.fullName || profile?.name || 'Valued Customer';
         const customerEmail = profile?.email || '';
@@ -343,7 +433,7 @@ export default function CheckoutScreen() {
           if (!subscription.keyId) throw new Error('Payment gateway key is unavailable');
           setCheckoutData({
             orderId: order.id,
-            orderNumber: order.orderNumber,
+            ...(order.orderNumber ? { orderNumber: order.orderNumber } : {}),
             type: 'rental',
             razorpaySubscriptionId: subscription.subscriptionId,
             amountInPaise: subscription.amount,
@@ -357,7 +447,7 @@ export default function CheckoutScreen() {
           if (!rzpOrder.keyId) throw new Error('Payment gateway key is unavailable');
           setCheckoutData({
             orderId: order.id,
-            orderNumber: order.orderNumber,
+            ...(order.orderNumber ? { orderNumber: order.orderNumber } : {}),
             type: 'purchase',
             razorpayOrderId: rzpOrder.id,
             amountInPaise: rzpOrder.amount,
@@ -368,21 +458,42 @@ export default function CheckoutScreen() {
           });
         }
 
-        setIsSubmitting(false);
+        modalOpened = true;
         setCheckoutModalVisible(true);
       } catch (err: any) {
         setIsSubmitting(false);
+        const { message, orderWasReleased } = formatPaymentStartError(err);
+        if (orderWasReleased) {
+          attemptRef.current = rotateMobileCheckoutAttempt(checkoutSignature);
+          setActiveOrderId(null);
+          queryClient.invalidateQueries({ queryKey: ['orders'] });
+        }
+        setPaymentStartError(message);
         Alert.alert(
-          'Payment Gateway Error',
-          err.message || 'Could not initiate Razorpay checkout. Your order is pending in your order history.',
+          'Payment Could Not Be Started',
+          message,
           [
             {
-              text: 'View Order',
-              onPress: () => navigation.navigate('OrderDetail', { orderId: order.id }),
+              text: 'Try Again',
+              onPress: () => {
+                void handlePlaceOrder();
+              },
             },
-            { text: 'OK' },
+            ...(orderWasReleased
+              ? []
+              : [
+                  {
+                    text: 'View Order',
+                    onPress: () => navigation.navigate('OrderDetail', { orderId: order!.id }),
+                  },
+                ]),
+            { text: 'OK', style: 'cancel' },
           ],
         );
+      } finally {
+        if (!modalOpened) {
+          setIsSubmitting(false);
+        }
       }
     } catch (error: any) {
       setIsSubmitting(false);
@@ -418,29 +529,35 @@ export default function CheckoutScreen() {
       } else {
         throw new Error('Payment response did not include a valid order or subscription');
       }
+      attemptRef.current = null;
+      setActiveOrderId(null);
       setIsSubmitting(false);
       navigation.navigate('OrderDetail', { orderId: result.orderId });
       Alert.alert('Payment Successful!', 'Your payment has been verified and your order is confirmed.');
     } catch (err: any) {
       setIsSubmitting(false);
-      // Backend status is authoritative
-      navigation.navigate('OrderDetail', { orderId: result.orderId });
-      Alert.alert(
-        'Payment Under Verification',
-        err.message || 'We received your payment details. Order confirmation will update shortly.',
-      );
+      const status = Number(err?.status || err?.data?.statusCode || 0);
+      if (isAuthGuard401(status, err?.data)) {
+        return;
+      }
+      // Show confirming state + bounded polling instead of implying failure after money may be debited.
+      attemptRef.current = null;
+      setConfirmingOrderId(result.orderId);
     }
   };
 
   const handlePaymentFailure = (error: { code?: string | number; description?: string }) => {
     setCheckoutModalVisible(false);
+    setIsSubmitting(false);
     Alert.alert(
       'Payment Not Completed',
       `${error.description || 'The payment attempt was not completed.'} Your order items remain reserved. You can retry payment anytime.`,
       [
         {
           text: 'Retry Payment',
-          onPress: () => setCheckoutModalVisible(true),
+          onPress: () => {
+            void handlePlaceOrder();
+          },
         },
         {
           text: 'View Order',
@@ -454,6 +571,7 @@ export default function CheckoutScreen() {
 
   const handlePaymentClose = () => {
     setCheckoutModalVisible(false);
+    setIsSubmitting(false);
     if (activeOrderId) {
       Alert.alert(
         'Checkout Paused',
@@ -858,27 +976,53 @@ export default function CheckoutScreen() {
         }}
       />
 
-      {/* Place Order Button */}
+      {/* Place Order Button & Payment Status Banners */}
       <View style={styles.bottomBar}>
-        <TouchableOpacity
-          style={[styles.placeOrderButton, (isSubmitting || hasMixedCart) && styles.placeOrderButtonDisabled]}
-          onPress={handlePlaceOrder}
-          disabled={isSubmitting || hasMixedCart}
-          activeOpacity={0.8}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Text style={styles.placeOrderText}>
-                {hasLeaseItem
-                  ? 'Continue to AutoPay Setup'
-                  : paymentMethod === 'razorpay' ? 'Continue to Payment' : 'Place Order'}
-              </Text>
-              {!hasLeaseItem && <Text style={styles.placeOrderTotal}>{formatPrice(total)}</Text>}
-            </>
-          )}
-        </TouchableOpacity>
+        {confirmingOrderId ? (
+          <View style={styles.confirmingCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator size="small" color="#1d4ed8" />
+              <Text style={styles.confirmingTitle}>We&apos;re confirming your payment</Text>
+            </View>
+            <Text style={styles.confirmingText}>{PAYMENT_CONFIRMING_MESSAGE}</Text>
+            <TouchableOpacity
+              style={styles.confirmingButton}
+              onPress={() => navigation.navigate('OrderDetail', { orderId: confirmingOrderId })}
+            >
+              <Text style={styles.confirmingButtonText}>Check Order Status</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            {paymentStartError && (
+              <View style={styles.paymentErrorBanner}>
+                <Text style={styles.paymentErrorText}>{paymentStartError}</Text>
+                <TouchableOpacity onPress={handlePlaceOrder} disabled={isSubmitting}>
+                  <Text style={styles.paymentErrorRetry}>Try Again</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <TouchableOpacity
+              style={[styles.placeOrderButton, (isSubmitting || hasMixedCart) && styles.placeOrderButtonDisabled]}
+              onPress={handlePlaceOrder}
+              disabled={isSubmitting || hasMixedCart}
+              activeOpacity={0.8}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Text style={styles.placeOrderText}>
+                    {hasLeaseItem
+                      ? 'Continue to AutoPay Setup'
+                      : paymentMethod === 'razorpay' ? 'Continue to Payment' : 'Place Order'}
+                  </Text>
+                  {!hasLeaseItem && <Text style={styles.placeOrderTotal}>{formatPrice(total)}</Text>}
+                </>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* Razorpay Secure Checkout Modal */}
@@ -1279,5 +1423,58 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
     opacity: 0.9,
+  },
+  paymentErrorBanner: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  paymentErrorText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#991b1b',
+    fontWeight: '600',
+  },
+  paymentErrorRetry: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  confirmingCard: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 12,
+    padding: 12,
+    gap: 6,
+  },
+  confirmingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1e3a8a',
+  },
+  confirmingText: {
+    fontSize: 12,
+    color: '#1e40af',
+    lineHeight: 16,
+  },
+  confirmingButton: {
+    marginTop: 4,
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  confirmingButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

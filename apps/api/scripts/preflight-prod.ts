@@ -79,14 +79,22 @@ checks.push({
     && firebasePrivateKey.includes('-----END PRIVATE KEY-----'),
 });
 
+function normalizePreflightSecret(value = ''): string {
+  return value.trim().replace(/^["'`]+|["'`]+$/g, '').trim();
+}
+
+const allowLivePaymentKeys = normalizePreflightSecret(process.env.ALLOW_LIVE_PAYMENT_KEYS).toLowerCase() === 'true';
+const razorpayKeyId = normalizePreflightSecret(process.env.RAZORPAY_KEY_ID);
 checks.push({
   name: 'RAZORPAY_KEY_ID',
-  passed: /^rzp_live_[A-Za-z0-9]+$/.test(process.env.RAZORPAY_KEY_ID?.trim() || ''),
+  passed: allowLivePaymentKeys
+    ? /^rzp_live_[A-Za-z0-9]+$/.test(razorpayKeyId)
+    : /^rzp_test_[A-Za-z0-9]+$/.test(razorpayKeyId),
 });
-checks.push({ name: 'RAZORPAY_KEY_SECRET', passed: Boolean(process.env.RAZORPAY_KEY_SECRET?.trim()) });
+checks.push({ name: 'RAZORPAY_KEY_SECRET', passed: Boolean(normalizePreflightSecret(process.env.RAZORPAY_KEY_SECRET)) });
 checks.push({
   name: 'RAZORPAY_WEBHOOK_SECRET',
-  passed: Boolean(process.env.RAZORPAY_WEBHOOK_SECRET?.trim()),
+  passed: Boolean(normalizePreflightSecret(process.env.RAZORPAY_WEBHOOK_SECRET)),
 });
 checks.push({
   name: 'STORAGE_DRIVER',

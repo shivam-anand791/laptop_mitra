@@ -1,4 +1,11 @@
 import { formatIndianRupees } from '../utils/account-helpers';
+import {
+  buildMobileCheckoutSignature,
+  formatPaymentStartError,
+  isOrderStillPayable,
+  resolveMobileCheckoutAttempt,
+  rotateMobileCheckoutAttempt,
+} from '../utils/checkout-helpers';
 
 describe('Mobile Checkout & Razorpay Payment Architecture Tests', () => {
   describe('Delhi NCR COD Restrictions & Pincode Serviceability Parity', () => {
@@ -217,6 +224,84 @@ describe('Mobile Checkout & Razorpay Payment Architecture Tests', () => {
       }
 
       expect(orderStatus).toBe('CONFIRMED');
+    });
+  });
+
+  describe('Mobile Checkout Helpers: Idempotency, Gateway Error Mapping, and Pending Order Reuse', () => {
+    it('reuses idempotency key and activeOrder when checkout signature is unchanged, and rotates when changed', () => {
+      const sigA = buildMobileCheckoutSignature({
+        userId: 'usr-1',
+        paymentMethod: 'razorpay',
+        addressId: 'addr-1',
+        items: [{ productId: 'prod-1', quantity: 1, purchaseMode: 'sell' }],
+      });
+      const first = resolveMobileCheckoutAttempt(null, sigA);
+      const withOrder = {
+        ...first,
+        activeOrder: { id: 'ord-1', status: 'PENDING', paymentStatus: 'PENDING' },
+      };
+
+      // Repeated click or back navigation keeps same key and order
+      const reused = resolveMobileCheckoutAttempt(withOrder, sigA);
+      expect(reused.idempotencyKey).toBe(first.idempotencyKey);
+      expect(reused.activeOrder?.id).toBe('ord-1');
+
+      // Changing cart quantity invalidates attempt and drops old activeOrder
+      const sigB = buildMobileCheckoutSignature({
+        userId: 'usr-1',
+        paymentMethod: 'razorpay',
+        addressId: 'addr-1',
+        items: [{ productId: 'prod-1', quantity: 2, purchaseMode: 'sell' }],
+      });
+      const changed = resolveMobileCheckoutAttempt(withOrder, sigB);
+      expect(changed.signature).toBe(sigB);
+      expect(changed.idempotencyKey).not.toBe(first.idempotencyKey);
+      expect(changed.activeOrder).toBeNull();
+
+      // Explicit rotation after released order mints a fresh key
+      const rotated = rotateMobileCheckoutAttempt(sigA);
+      expect(rotated.signature).toBe(sigA);
+      expect(rotated.idempotencyKey).not.toBe(first.idempotencyKey);
+      expect(rotated.activeOrder).toBeNull();
+    });
+
+    it('checks order payability accurately for PENDING orders and rejects released/expired ones', () => {
+      const future = new Date(Date.now() + 60_000).toISOString();
+      const past = new Date(Date.now() - 60_000).toISOString();
+
+      expect(isOrderStillPayable({ status: 'PENDING', paymentStatus: 'PENDING', reservationExpiresAt: future })).toBe(true);
+      expect(isOrderStillPayable({ status: 'PENDING', paymentStatus: 'FAILED', reservationExpiresAt: future })).toBe(true);
+      expect(isOrderStillPayable({ status: 'CANCELLED', paymentStatus: 'FAILED', reservationExpiresAt: future })).toBe(false);
+      expect(isOrderStillPayable({ status: 'PENDING', paymentStatus: 'PAID', reservationExpiresAt: future })).toBe(false);
+      expect(isOrderStillPayable({ status: 'PENDING', paymentStatus: 'PENDING', reservationExpiresAt: past })).toBe(false);
+    });
+
+    it('maps 502/503 and non-auth-guard 401 gateway errors to user-friendly retry message with orderWasReleased=true', () => {
+      const err502 = formatPaymentStartError({
+        status: 502,
+        data: { code: 'PAYMENT_PROVIDER_UNAVAILABLE', requestId: 'req-abc' },
+        message: 'Payment provider unavailable',
+      });
+      expect(err502.orderWasReleased).toBe(true);
+      expect(err502.message).toBe("Payment couldn't be started. Please try again. (Ref: req-abc)");
+
+      const err503 = formatPaymentStartError({ status: 503 });
+      expect(err503.orderWasReleased).toBe(true);
+      expect(err503.message).toBe("Payment couldn't be started. Please try again.");
+
+      const nonAuth401 = formatPaymentStartError({
+        status: 401,
+        data: { code: 'RAZORPAY_UPSTREAM_UNAUTHORIZED' },
+      });
+      expect(nonAuth401.orderWasReleased).toBe(true);
+
+      const authGuard401 = formatPaymentStartError({
+        status: 401,
+        data: { code: 'TOKEN_EXPIRED' },
+        message: 'Session expired',
+      });
+      expect(authGuard401.orderWasReleased).toBe(false);
+      expect(authGuard401.message).toBe('Session expired');
     });
   });
 });

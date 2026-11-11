@@ -13,6 +13,7 @@
     "db:dev:migrate": "node scripts/db-command.cjs dev migrate",
     "db:dev:seed": "node scripts/db-command.cjs dev seed",
     "db:dev:seed-orders": "node scripts/db-command.cjs dev seed-orders",
+    "db:dev:seed-rental": "node scripts/db-command.cjs dev seed-rental",
     "db:dev:reset": "node scripts/db-command.cjs dev reset",
     "db:dev:status": "node scripts/db-command.cjs dev status",
     "db:dev:validate": "node scripts/db-command.cjs dev validate",

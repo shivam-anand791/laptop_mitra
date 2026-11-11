@@ -32,9 +32,41 @@ import type {
 
 export * from '@laptopmitra/types';
 
+export const AUTH_GUARD_ERROR_CODES = new Set([
+  'TOKEN_EXPIRED',
+  'TOKEN_INVALID',
+  'TOKEN_WRONG_PROJECT',
+]);
+
+export function isAuthGuard401(
+  status: number,
+  errorData?: { code?: unknown; [key: string]: unknown } | null,
+): boolean {
+  return (
+    status === 401 &&
+    typeof errorData?.code === 'string' &&
+    AUTH_GUARD_ERROR_CODES.has(errorData.code)
+  );
+}
+
+export class ApiClientError extends Error {
+  status: number;
+  code?: string | undefined;
+  data?: unknown;
+
+  constructor(status: number, message: string, data?: { code?: unknown; [key: string]: any }) {
+    super(message);
+    this.name = 'ApiClientError';
+    this.status = status;
+    this.code = typeof data?.code === 'string' ? data.code : undefined;
+    this.data = data;
+  }
+}
+
 export interface ApiClientConfig {
   baseUrl: string;
   getToken?: (() => string | null | Promise<string | null>) | undefined;
+  refreshToken?: (() => string | null | Promise<string | null>) | undefined;
   onUnauthorized?: (() => void | Promise<void>) | undefined;
 }
 
@@ -43,16 +75,23 @@ declare const process: any;
 export class LaptopMitraApiClient {
   private baseUrl: string;
   private getToken?: (() => string | null | Promise<string | null>) | undefined;
+  private refreshToken?: (() => string | null | Promise<string | null>) | undefined;
   private onUnauthorized?: (() => void | Promise<void>) | undefined;
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
     this.getToken = config.getToken;
+    this.refreshToken = config.refreshToken;
     this.onUnauthorized = config.onUnauthorized;
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const token = this.getToken ? await this.getToken() : null;
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {},
+    isRetry = false,
+    tokenOverride?: string | null,
+  ): Promise<T> {
+    const token = tokenOverride !== undefined ? tokenOverride : (this.getToken ? await this.getToken() : null);
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const headers: Record<string, string> = {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
@@ -79,11 +118,20 @@ export class LaptopMitraApiClient {
     }
 
     if (!res.ok) {
-      const errorData = (await res.json().catch(() => ({ message: res.statusText }))) as { message?: string };
-      if (res.status === 401) {
+      const errorData = (await res.json().catch(() => ({ message: res.statusText }))) as {
+        message?: string;
+        code?: string;
+      };
+      if (isAuthGuard401(res.status, errorData)) {
+        if (!isRetry && this.refreshToken) {
+          const freshToken = await Promise.resolve(this.refreshToken()).catch(() => null);
+          if (freshToken) {
+            return this.request<T>(endpoint, options, true, freshToken);
+          }
+        }
         await this.onUnauthorized?.();
       }
-      throw new Error(errorData.message || `API error ${res.status}`);
+      throw new ApiClientError(res.status, errorData.message || `API error ${res.status}`, errorData);
     }
 
     return (await res.json()) as T;
@@ -829,7 +877,7 @@ export class LaptopMitraApiClient {
   }
 
   async requestRentalTermination(subscriptionId: string, reason?: string): Promise<any> {
-    return this.request<any>(`/payments/subscriptions/${subscriptionId}/terminate`, {
+    return this.request<any>(`/payments/rental/${subscriptionId}/termination-request`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });

@@ -37,9 +37,14 @@ describe('Razorpay subscription verify endpoint contract', () => {
 
       assert.equal(requestedUrls[0], 'https://api.example.com/payments/razorpay/subscription/verify');
 
+      await client.requestRentalTermination('sub-99', 'Moving abroad');
+      assert.equal(requestedUrls[1], 'https://api.example.com/payments/rental/sub-99/termination-request');
+
       const webApiSource = readFileSync(join(process.cwd(), 'lib', 'api.ts'), 'utf8');
       assert.match(webApiSource, /\/payments\/razorpay\/subscription\/verify/);
       assert.doesNotMatch(webApiSource, /\/payments\/razorpay\/verify-subscription/);
+      assert.match(webApiSource, /\/payments\/rental\/\$\{subscriptionId\}\/termination-request/);
+      assert.doesNotMatch(webApiSource, /\/payments\/subscriptions\/\$\{subscriptionId\}\/terminate/);
     } finally {
       globalThis.fetch = originalFetch;
     }
