@@ -8,12 +8,15 @@ import CartScreen from '../screens/main/CartScreen';
 import AccountScreen from '../screens/main/AccountScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { useCart, useTickets } from '../hooks/useApi';
+import { useAuth } from '../providers/AuthProvider';
 import { colors, shadows } from '../theme/tokens';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 function CartIcon({ focused, color, size }: { focused: boolean; color: string; size: number }) {
-  const { data: cart } = useCart();
+  const { isAuthenticated, isGuest } = useAuth();
+  const canFetch = Boolean(isAuthenticated && !isGuest);
+  const { data: cart } = useCart({ enabled: canFetch && focused });
   const itemCount =
     cart?.itemCount ?? cart?.items?.reduce((sum: number, item: { quantity?: number }) => sum + (item.quantity || 1), 0) ?? 0;
 
@@ -30,7 +33,9 @@ function CartIcon({ focused, color, size }: { focused: boolean; color: string; s
 }
 
 function AccountIcon({ focused, color, size }: { focused: boolean; color: string; size: number }) {
-  const { data: tickets } = useTickets();
+  const { isAuthenticated, isGuest } = useAuth();
+  const canFetch = Boolean(isAuthenticated && !isGuest);
+  const { data: tickets } = useTickets(undefined, { enabled: canFetch && focused });
   const unreadCount = Array.isArray(tickets)
     ? tickets.filter((ticket: { hasUnread?: boolean }) => ticket.hasUnread).length
     : 0;

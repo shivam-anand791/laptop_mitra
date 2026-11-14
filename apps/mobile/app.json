@@ -24,9 +24,20 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "usesCleartextTraffic": false
+      "predictiveBackGestureEnabled": false
     },
+    "plugins": [
+      "expo-font",
+      "expo-image",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#2563eb"
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     },

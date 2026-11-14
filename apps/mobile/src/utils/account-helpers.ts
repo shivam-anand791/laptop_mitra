@@ -3,6 +3,8 @@
  * Strictly data-driven, plain language, and zero synthetic steps.
  */
 
+import { Order } from '@laptopmitra/types';
+
 export interface MobileStatusConfig {
   label: string;
   bg: string;
@@ -255,3 +257,52 @@ export function getWarrantyDisplayText(warrantyMonths?: number | null | undefine
   }
   return `${warrantyMonths}-Month Standard Warranty`;
 }
+
+export type StatusTabId = 'ALL' | 'IN_PROGRESS' | 'DELIVERED' | 'CANCELLED' | 'RETURNS';
+
+export function filterOrdersByStatus(orders: Order[], status: StatusTabId): Order[] {
+  if (status === 'ALL') return orders;
+  return orders.filter((o) => {
+    const norm = (o.status || '').toUpperCase();
+    if (status === 'IN_PROGRESS') {
+      return ['PENDING', 'CONFIRMED', 'SHIPPING', 'SHIPPED'].includes(norm);
+    }
+    if (status === 'DELIVERED') {
+      return norm === 'DELIVERED';
+    }
+    if (status === 'CANCELLED') {
+      return norm === 'CANCELLED';
+    }
+    if (status === 'RETURNS') {
+      return (
+        (o.returnStatus && o.returnStatus.toUpperCase() !== 'NONE') ||
+        norm === 'REFUNDED'
+      );
+    }
+    return true;
+  });
+}
+
+export function filterOrdersBySearch(orders: Order[], query: string): Order[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return orders;
+  return orders.filter((o) => {
+    if (o.orderNumber?.toLowerCase().includes(q)) return true;
+    if (
+      o.items?.some(
+        (it) =>
+          it.product?.name?.toLowerCase().includes(q) ||
+          it.variantName?.toLowerCase().includes(q)
+      )
+    ) {
+      return true;
+    }
+    return false;
+  });
+}
+
+export function validatePincode(pincode?: string | null | undefined): boolean {
+  if (!pincode) return false;
+  return /^\d{6}$/.test(pincode.trim());
+}
+

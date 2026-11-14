@@ -12,6 +12,7 @@ export default function AccountScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
   const { data: profile, isLoading } = useProfile();
   const {
+    isAuthenticated,
     logout,
     isGuest,
     linkGuestAccount,
@@ -148,16 +149,19 @@ export default function AccountScreen() {
 
   const menuSections = [
     {
-      title: 'Orders',
+      title: 'Orders & Deliveries',
       items: [
         { icon: 'receipt-outline' as const, label: 'My Orders', route: 'OrderHistory' as const },
+        { icon: 'repeat-outline' as const, label: 'My Returns & Refunds', route: 'ReturnsList' as const },
         { icon: 'laptop-outline' as const, label: 'My Laptops & Service', route: 'MyLaptops' as const },
+        { icon: 'construct-outline' as const, label: 'Service Bookings', route: 'ServiceJobsList' as const },
         { icon: 'location-outline' as const, label: 'Saved Addresses', route: 'AddressBook' as const },
       ],
     },
     {
-      title: 'Rewards',
+      title: 'Payments & Rewards',
       items: [
+        { icon: 'card-outline' as const, label: 'Payment History', route: 'PaymentHistory' as const },
         { icon: 'pricetag-outline' as const, label: 'My Coupons & Offers', route: 'MyCoupons' as const },
         { icon: 'wallet-outline' as const, label: 'Mitra Affiliate Program', route: 'MitraDashboard' as const },
       ],
@@ -166,6 +170,7 @@ export default function AccountScreen() {
       title: 'Account Settings',
       items: [
         { icon: 'person-circle-outline' as const, label: 'Personal Information', route: 'Profile' as const },
+        { icon: 'notifications-outline' as const, label: 'Notification Settings', route: 'NotificationPreferences' as const },
         { icon: 'lock-closed-outline' as const, label: 'Change Password', route: 'ChangePassword' as const },
       ],
     },
@@ -221,6 +226,26 @@ export default function AccountScreen() {
         </View>
       )}
 
+      {/* Welcome / Sign In Banner for Unauthenticated Visitors */}
+      {!isAuthenticated && !isGuest && (
+        <View style={styles.guestBanner}>
+          <View style={styles.guestBannerLeft}>
+            <Ionicons name="person-circle-outline" size={28} color="#2563eb" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.guestBannerTitle}>Welcome to LaptopMitra</Text>
+              <Text style={styles.guestBannerSubtitle}>Sign in to view your orders, warranty & rewards</Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.guestBannerButton}
+            onPress={() => navigation.navigate('Auth' as any)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.guestBannerButtonText}>Log In / Register</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Guest Banner */}
       {isGuest && (
         <View style={styles.guestBanner}>
@@ -270,21 +295,23 @@ export default function AccountScreen() {
       )}
 
       {/* Profile Summary Card */}
-      <View style={styles.profileCard}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{profile?.name?.charAt(0)?.toUpperCase() || 'U'}</Text>
-        </View>
-        <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>{profile?.name || (isGuest ? 'Guest Shopper' : 'User')}</Text>
-          <Text style={styles.profileEmail}>{profile?.email || (isGuest ? 'Guest session' : '')}</Text>
-          {profile?.phone ? <Text style={styles.profilePhone}>{profile.phone}</Text> : null}
-          <View style={styles.tierPill}>
-            <Text style={styles.tierPillText}>
-              {profile?.referralTier ? `${profile.referralTier} Mitra Affiliate` : 'Mitra Affiliate'}
-            </Text>
+      {(isAuthenticated || isGuest) && (
+        <View style={styles.profileCard}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{profile?.name?.charAt(0)?.toUpperCase() || 'U'}</Text>
+          </View>
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>{profile?.name || (isGuest ? 'Guest Shopper' : 'User')}</Text>
+            <Text style={styles.profileEmail}>{profile?.email || (isGuest ? 'Guest session' : '')}</Text>
+            {profile?.phone ? <Text style={styles.profilePhone}>{profile.phone}</Text> : null}
+            <View style={styles.tierPill}>
+              <Text style={styles.tierPillText}>
+                {profile?.referralTier ? `${profile.referralTier} Mitra Affiliate` : 'Mitra Affiliate'}
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
+      )}
 
       {/* Menu Sections */}
       {menuSections.map((section) => (
@@ -299,6 +326,28 @@ export default function AccountScreen() {
                   if ('onPress' in item && typeof item.onPress === 'function') {
                     item.onPress();
                   } else if ('route' in item && item.route) {
+                    if (
+                      !isAuthenticated &&
+                      !isGuest &&
+                      [
+                        'OrderHistory',
+                        'ReturnsList',
+                        'MyLaptops',
+                        'ServiceJobsList',
+                        'AddressBook',
+                        'PaymentHistory',
+                        'Profile',
+                        'NotificationPreferences',
+                        'ChangePassword',
+                        'MitraDashboard',
+                      ].includes(item.route)
+                    ) {
+                      Alert.alert('Login Required', 'Please sign in to access ' + item.label + '.', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Login', onPress: () => navigation.navigate('Auth' as any) },
+                      ]);
+                      return;
+                    }
                     (navigation as any).navigate(item.route);
                   }
                 }}
@@ -314,36 +363,49 @@ export default function AccountScreen() {
       ))}
 
       {/* Security & Multi-Device Sessions */}
-      <View style={styles.menuSection}>
-        <Text style={styles.sectionTitle}>Security & Privacy</Text>
-        <View style={styles.menuCard}>
-          <TouchableOpacity
-            style={[styles.menuRow, styles.menuRowBorder]}
-            onPress={handleSignoutEverywhere}
-            activeOpacity={0.6}
-          >
-            <Ionicons name="phone-portrait-outline" size={22} color="#64748b" style={styles.menuIcon} />
-            <Text style={styles.menuLabel}>Sign Out Everywhere</Text>
-            <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
-          </TouchableOpacity>
+      {(isAuthenticated || isGuest) && (
+        <View style={styles.menuSection}>
+          <Text style={styles.sectionTitle}>Security & Privacy</Text>
+          <View style={styles.menuCard}>
+            <TouchableOpacity
+              style={[styles.menuRow, styles.menuRowBorder]}
+              onPress={handleSignoutEverywhere}
+              activeOpacity={0.6}
+            >
+              <Ionicons name="phone-portrait-outline" size={22} color="#64748b" style={styles.menuIcon} />
+              <Text style={styles.menuLabel}>Sign Out Everywhere</Text>
+              <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.menuRow}
-            onPress={handleDeleteAccount}
-            activeOpacity={0.6}
-          >
-            <Ionicons name="trash-outline" size={22} color="#ef4444" style={styles.menuIcon} />
-            <Text style={[styles.menuLabel, { color: '#ef4444' }]}>Delete Account & Anonymize</Text>
-            <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuRow}
+              onPress={handleDeleteAccount}
+              activeOpacity={0.6}
+            >
+              <Ionicons name="trash-outline" size={22} color="#ef4444" style={styles.menuIcon} />
+              <Text style={[styles.menuLabel, { color: '#ef4444' }]}>Delete Account & Anonymize</Text>
+              <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      )}
 
-      {/* Logout Button */}
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.7}>
-        <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-        <Text style={styles.logoutText}>Log Out</Text>
-      </TouchableOpacity>
+      {/* Logout / Login Button */}
+      {isAuthenticated || isGuest ? (
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.7}>
+          <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+          <Text style={styles.logoutText}>Log Out</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={[styles.logoutButton, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }]}
+          onPress={() => navigation.navigate('Auth' as any)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="log-in-outline" size={20} color="#2563eb" />
+          <Text style={[styles.logoutText, { color: '#2563eb' }]}>Log In or Register</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Link Guest Modal */}
       <Modal visible={isLinkModalOpen} transparent animationType="slide">

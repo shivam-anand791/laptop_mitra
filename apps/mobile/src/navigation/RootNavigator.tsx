@@ -8,7 +8,7 @@ import { ActivityIndicator, View } from 'react-native';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -25,11 +25,8 @@ export default function RootNavigator() {
         animation: 'fade',
       }}
     >
-      {isAuthenticated ? (
-        <Stack.Screen name="Main" component={MainStack} />
-      ) : (
-        <Stack.Screen name="Auth" component={AuthStack} />
-      )}
+      <Stack.Screen name="Main" component={MainStack} />
+      <Stack.Screen name="Auth" component={AuthStack} />
     </Stack.Navigator>
   );
 }

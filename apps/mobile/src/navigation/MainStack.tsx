@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MainStackParamList } from './types';
 import MainTabs from './MainTabs';
+import AuthStack from './AuthStack';
 import ProductDetailScreen from '../screens/main/ProductDetailScreen';
 import SearchScreen from '../screens/main/SearchScreen';
 import CheckoutScreen from '../screens/main/CheckoutScreen';
@@ -24,6 +25,10 @@ import ReturnDetailScreen from '../screens/main/ReturnDetailScreen';
 import MyCouponsScreen from '../screens/main/MyCouponsScreen';
 import MyLaptopsScreen from '../screens/main/MyLaptopsScreen';
 import ServiceJobDetailScreen from '../screens/main/ServiceJobDetailScreen';
+import PaymentHistoryScreen from '../screens/main/PaymentHistoryScreen';
+import NotificationPreferencesScreen from '../screens/main/NotificationPreferencesScreen';
+import ReturnsListScreen from '../screens/main/ReturnsListScreen';
+import ServiceJobsListScreen from '../screens/main/ServiceJobsListScreen';
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 
@@ -36,6 +41,11 @@ export default function MainStack() {
       }}
     >
       <Stack.Screen name="MainTabs" component={MainTabs} />
+      <Stack.Screen
+        name="Auth"
+        component={AuthStack}
+        options={{ headerShown: false, presentation: 'modal' }}
+      />
       <Stack.Screen
         name="Search"
         component={SearchScreen}
@@ -162,6 +172,26 @@ export default function MainStack() {
         name="ServiceJobDetail"
         component={ServiceJobDetailScreen}
         options={{ headerShown: true, title: 'Service Tracking', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="PaymentHistory"
+        component={PaymentHistoryScreen}
+        options={{ headerShown: true, title: 'Payment History', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="NotificationPreferences"
+        component={NotificationPreferencesScreen}
+        options={{ headerShown: true, title: 'Notification Settings', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="ReturnsList"
+        component={ReturnsListScreen}
+        options={{ headerShown: true, title: 'My Returns & Refunds', headerTintColor: '#2563eb' }}
+      />
+      <Stack.Screen
+        name="ServiceJobsList"
+        component={ServiceJobsListScreen}
+        options={{ headerShown: true, title: 'Service Bookings', headerTintColor: '#2563eb' }}
       />
     </Stack.Navigator>
   );

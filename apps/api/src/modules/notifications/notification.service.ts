@@ -66,12 +66,21 @@ export class NotificationService {
     return updated;
   }
 
-  async registerDeviceToken(userId: string, token: string, platform?: string) {
+  async registerDeviceToken(userId: string, token?: string | null, platform?: string) {
     const normalizedToken = token?.trim();
     const normalizedPlatform = (platform || 'unknown').trim() || 'unknown';
 
-    if (!normalizedToken) {
-      throw new BadRequestException('Device token is required');
+    // Tolerate missing, empty, or Expo Go / simulator placeholder tokens without throwing
+    const isPlaceholder =
+      !normalizedToken ||
+      normalizedToken.toLowerCase() === 'expo-go' ||
+      normalizedToken.toLowerCase().includes('placeholder') ||
+      normalizedToken.toLowerCase().includes('simulator') ||
+      normalizedToken.toLowerCase().includes('mock') ||
+      normalizedToken === 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]';
+
+    if (isPlaceholder) {
+      return { message: 'Token registration skipped: missing or placeholder token' };
     }
 
     try {

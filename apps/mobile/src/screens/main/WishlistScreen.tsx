@@ -92,7 +92,7 @@ export default function WishlistScreen() {
         <Text style={styles.emptySubtitle}>Save and track refurbished laptops you love.</Text>
         <Button
           title="Login / Register"
-          onPress={() => navigation.navigate('MainTabs')}
+          onPress={() => navigation.navigate('Auth' as any)}
           variant="primary"
           size="md"
           style={{ marginTop: spacing.md }}

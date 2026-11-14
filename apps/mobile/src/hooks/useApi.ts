@@ -111,7 +111,7 @@ export function useProductFilters() {
 
 // Cart hooks
 
-export function useCart() {
+export function useCart(options?: { enabled?: boolean }) {
   const { getClient, isAuthenticated } = useAuth();
   return useQuery<Cart & { total: number; itemCount: number }>({
     queryKey: ['cart'],
@@ -135,7 +135,7 @@ export function useCart() {
         itemCount,
       };
     },
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && (options?.enabled ?? true),
     staleTime: 0,
     refetchOnMount: 'always',
   });
@@ -426,6 +426,16 @@ export function useOrders() {
     enabled: isAuthenticated,
     staleTime: 0,
     refetchOnMount: 'always',
+  });
+}
+
+export function useOrderCounts() {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['orderCounts'],
+    queryFn: () => getClient().getOrderCounts(),
+    enabled: isAuthenticated,
+    staleTime: 1000 * 60 * 2,
   });
 }
 
@@ -735,6 +745,38 @@ export function useReferralStats() {
   });
 }
 
+export function usePayoutDetails() {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['payout-details'],
+    queryFn: () => getClient().getPayoutDetails(),
+    enabled: isAuthenticated,
+  });
+}
+
+export function useSavePayoutDetails() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (data: any) => getClient().savePayoutDetails(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payout-details'] });
+    },
+  });
+}
+
+export function useRequestWithdrawal() {
+  const queryClient = useQueryClient();
+  const { getClient } = useAuth();
+  return useMutation({
+    mutationFn: (amount: number) => getClient().requestWithdrawal(amount),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['referral-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['payout-details'] });
+    },
+  });
+}
+
 // Notifications hooks
 export function useNotificationPreferences() {
   const { getClient, isAuthenticated } = useAuth();
@@ -819,13 +861,12 @@ export function useVoteHelpArticle() {
   });
 }
 
-export function useTickets(params?: { status?: string }) {
+export function useTickets(params?: { status?: string }, options?: { enabled?: boolean }) {
   const { getClient, isAuthenticated } = useAuth();
   return useQuery({
     queryKey: ['tickets', params],
     queryFn: () => getClient().getTickets(params),
-    enabled: isAuthenticated,
-    refetchInterval: 15000, // poll every 15s for live updates
+    enabled: isAuthenticated && (options?.enabled ?? true),
   });
 }
 
@@ -900,6 +941,15 @@ export function useRateTicket() {
       queryClient.invalidateQueries({ queryKey: ['ticket', variables.ticketId] });
       queryClient.invalidateQueries({ queryKey: ['tickets'] });
     },
+  });
+}
+
+export function useReturns(params?: { status?: string; page?: number; limit?: number }) {
+  const { getClient, isAuthenticated } = useAuth();
+  return useQuery({
+    queryKey: ['returns', params],
+    queryFn: () => getClient().getReturns(params),
+    enabled: isAuthenticated,
   });
 }
 

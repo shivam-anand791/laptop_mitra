@@ -1,5 +1,17 @@
 import { useEffect, useRef } from 'react';
-import RazorpayCheckout from 'react-native-razorpay';
+import { Alert } from 'react-native';
+import { nativePaymentsSupported } from '../utils/capabilities';
+
+function getRazorpayCheckout() {
+  if (!nativePaymentsSupported) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const rz = require('react-native-razorpay');
+    return rz?.default || rz;
+  } catch {
+    return null;
+  }
+}
 
 export interface RazorpayCheckoutData {
   orderId: string;
@@ -76,8 +88,21 @@ export default function RazorpayCheckoutModal({
       theme: { color: '#2563eb' },
     };
 
+    const RazorpayCheckout = getRazorpayCheckout();
+    if (!RazorpayCheckout || typeof RazorpayCheckout.open !== 'function') {
+      Alert.alert(
+        'Development Build Required',
+        'Push notifications and in-app payments need the full app build.',
+      );
+      callbacks.current.onFailure({
+        code: -1,
+        description: 'Push notifications and in-app payments need the full app build',
+      });
+      return;
+    }
+
     RazorpayCheckout.open(options)
-      .then((response) => {
+      .then((response: any) => {
         if (!active) return;
         if (
           !response.razorpay_payment_id ||

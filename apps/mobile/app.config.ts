@@ -14,6 +14,26 @@ export function resolveMobileSecurityConfig(
 
   const allowCleartextInDevOnly = isDevelopmentBuild;
 
+  const plugins = Array.isArray(baseConfig.plugins) ? [...baseConfig.plugins] : [];
+  const buildPropertiesPluginIndex = plugins.findIndex(
+    (p: any) => (Array.isArray(p) ? p[0] : p) === 'expo-build-properties',
+  );
+
+  const buildPropertiesConfig = [
+    'expo-build-properties',
+    {
+      android: {
+        usesCleartextTraffic: allowCleartextInDevOnly,
+      },
+    },
+  ];
+
+  if (buildPropertiesPluginIndex >= 0) {
+    plugins[buildPropertiesPluginIndex] = buildPropertiesConfig;
+  } else {
+    plugins.push(buildPropertiesConfig);
+  }
+
   return {
     ...baseConfig,
     ios: {
@@ -29,13 +49,9 @@ export function resolveMobileSecurityConfig(
         },
       },
     },
-    android: {
-      ...(baseConfig.android || {}),
-      usesCleartextTraffic: allowCleartextInDevOnly,
-    },
+    plugins,
   };
 }
 
 export default ({ config }: { config: Record<string, any> }) =>
   resolveMobileSecurityConfig(config);
-

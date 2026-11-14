@@ -16,14 +16,15 @@ export type AuthStackParamList = {
 
 export type MainTabParamList = {
   Home: undefined;
-  Store: undefined;
+  Store: { categoryId?: string; categoryName?: string } | undefined;
   Wishlist: undefined;
   Cart: undefined;
   Account: undefined;
 };
 
 export type MainStackParamList = {
-  MainTabs: undefined;
+  MainTabs: { screen?: keyof MainTabParamList; params?: any } | undefined;
+  Auth: undefined;
   Search: undefined;
   ProductDetail: { productId: string };
   Checkout: { initialCoupon?: string } | undefined;
@@ -46,7 +47,11 @@ export type MainStackParamList = {
   TicketDetail: { ticketId: string; isNew?: boolean };
   ReturnDetail: { returnId: string; isNew?: boolean };
   MyLaptops: undefined;
+  ServiceJobsList: undefined;
   ServiceJobDetail: { jobId: string };
+  PaymentHistory: undefined;
+  NotificationPreferences: undefined;
+  ReturnsList: undefined;
 };
 
 export type RootNavigationProp = NativeStackNavigationProp<RootStackParamList>;

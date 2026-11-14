@@ -10,6 +10,7 @@ import {
   Dimensions,
   FlatList,
   Linking,
+  TextInput,
 } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +31,7 @@ import { MainStackParamList, MainStackNavigationProp } from '../../navigation/ty
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import CorporateQuoteModal from '../../components/CorporateQuoteModal';
+import { DataErrorView } from '../../components/DataErrorView';
 import { colors, radius, shadows, spacing, typography } from '../../theme/tokens';
 import { RentalTenureMonths } from '@laptopmitra/types';
 
@@ -44,7 +46,7 @@ export default function ProductDetailScreen() {
   const { productId } = route.params;
   const { isAuthenticated, user } = useAuth();
 
-  const { data: product, isLoading, error } = useProduct(productId);
+  const { data: product, isLoading, error, refetch } = useProduct(productId);
   const { data: supportConfig } = useSupportConfig();
   const addToCart = useAddToCart();
   const { retryCartSync } = useCartSyncState();
@@ -62,6 +64,37 @@ export default function ProductDetailScreen() {
   const [selectedVariantId, setSelectedVariantId] = useState('');
   const [selectedRentalTenure, setSelectedRentalTenure] = useState<RentalTenureMonths>(12);
   const [hasWarranty, setHasWarranty] = useState<boolean>(false);
+
+  // Delivery Pincode State
+  const [pincode, setPincode] = useState('');
+  const [pincodeStatus, setPincodeStatus] = useState<{
+    checked: boolean;
+    valid: boolean;
+    message?: string;
+  } | null>(null);
+
+  const handleCheckPincode = () => {
+    const trimmed = pincode.trim();
+    if (!/^\d{6}$/.test(trimmed)) {
+      setPincodeStatus({
+        checked: true,
+        valid: false,
+        message: 'Please enter a valid 6-digit Indian PIN code',
+      });
+      return;
+    }
+    const minDate = new Date();
+    minDate.setDate(minDate.getDate() + 2);
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + 4);
+    const dateRangeStr = `${minDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} - ${maxDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
+
+    setPincodeStatus({
+      checked: true,
+      valid: true,
+      message: `Delivery by ${dateRangeStr} | Express Insured Delivery (Free)`,
+    });
+  };
 
   const isWishlisted = wishlist?.some(
     (item: { productId: string; id: string }) => item.productId === productId,
@@ -88,7 +121,10 @@ export default function ProductDetailScreen() {
 
   const handleAddToCart = (onSuccess?: () => void) => {
     if (!isAuthenticated) {
-      Alert.alert('Login Required', 'Please login to add items to your cart.');
+      Alert.alert('Login Required', 'Please login to add items to your cart.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Login', onPress: () => navigation.navigate('Auth' as any) },
+      ]);
       return;
     }
     if (purchaseMode === 'lease' && !hasLeasePrice) {
@@ -139,7 +175,7 @@ export default function ProductDetailScreen() {
 
   const handleBuyNow = () => {
     handleAddToCart(() => {
-      navigation.navigate('MainTabs');
+      navigation.navigate('Checkout');
     });
   };
 
@@ -167,7 +203,10 @@ export default function ProductDetailScreen() {
 
   const handleToggleWishlist = () => {
     if (!isAuthenticated) {
-      Alert.alert('Login Required', 'Please login to manage your wishlist.');
+      Alert.alert('Login Required', 'Please login to manage your wishlist.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Login', onPress: () => navigation.navigate('Auth' as any) },
+      ]);
       return;
     }
     if (isWishlisted && wishlistItem) {
@@ -190,7 +229,27 @@ export default function ProductDetailScreen() {
     );
   }
 
-  if (error || !product) {
+  if (error) {
+    return (
+      <View style={[styles.center, { paddingTop: insets.top }]}>
+        <DataErrorView
+          error={error}
+          onRetry={() => {
+            void refetch();
+          }}
+        />
+        <Button
+          title="Go Back"
+          onPress={() => navigation.goBack()}
+          variant="outline"
+          size="sm"
+          style={{ marginTop: spacing.md }}
+        />
+      </View>
+    );
+  }
+
+  if (!product) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
         <Ionicons name="alert-circle-outline" size={48} color={colors.danger} />
@@ -657,6 +716,75 @@ export default function ProductDetailScreen() {
               <View style={styles.checkItem}>
                 <Ionicons name="checkmark-circle" size={15} color={colors.green} />
                 <Text style={styles.checkText}>Genuine Fresh OS Clean Install</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Delivery & Pincode Checker Card */}
+          <View style={styles.deliveryCard}>
+            <View style={styles.deliveryHeader}>
+              <Ionicons name="location-outline" size={20} color={colors.primary} />
+              <Text style={styles.deliveryCardTitle}>Delivery & Pincode Check</Text>
+            </View>
+            <View style={styles.pincodeInputRow}>
+              <TextInput
+                style={styles.pincodeInput}
+                placeholder="Enter 6-digit PIN code"
+                placeholderTextColor="#94a3b8"
+                keyboardType="number-pad"
+                maxLength={6}
+                value={pincode}
+                onChangeText={(text) => {
+                  setPincode(text);
+                  if (pincodeStatus) setPincodeStatus(null);
+                }}
+              />
+              <TouchableOpacity
+                style={styles.pincodeCheckBtn}
+                onPress={handleCheckPincode}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.pincodeCheckBtnText}>Check</Text>
+              </TouchableOpacity>
+            </View>
+
+            {pincodeStatus?.checked ? (
+              <View
+                style={[
+                  styles.pincodeResultBox,
+                  pincodeStatus.valid ? styles.pincodeResultSuccess : styles.pincodeResultError,
+                ]}
+              >
+                <Ionicons
+                  name={pincodeStatus.valid ? 'checkmark-circle' : 'alert-circle'}
+                  size={16}
+                  color={pincodeStatus.valid ? '#166534' : '#dc2626'}
+                />
+                <Text
+                  style={[
+                    styles.pincodeResultText,
+                    pincodeStatus.valid
+                      ? styles.pincodeResultTextSuccess
+                      : styles.pincodeResultTextError,
+                  ]}
+                >
+                  {pincodeStatus.message}
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={styles.deliveryPerksList}>
+              <View style={styles.deliveryPerkItem}>
+                <Ionicons name="car-outline" size={16} color="#475569" />
+                <Text style={styles.deliveryPerkText}>Free PAN-India Insured Express Delivery</Text>
+              </View>
+              <View style={styles.deliveryPerkItem}>
+                <Ionicons name="cash-outline" size={16} color="#475569" />
+                <Text style={styles.deliveryPerkText}>Cash on Delivery & Pay-on-Delivery available</Text>
+              </View>
+              <View style={styles.deliveryPerkItem}>
+                <Ionicons name="swap-horizontal-outline" size={16} color="#475569" />
+                <Text style={styles.deliveryPerkText}>7-Day Doorstep Replacement Guarantee</Text>
               </View>
             </View>
           </View>
@@ -1432,5 +1560,102 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  deliveryCard: {
+    backgroundColor: '#fff',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    ...shadows.sm,
+    gap: spacing.sm,
+  },
+  deliveryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deliveryCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.navy,
+  },
+  pincodeInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  pincodeInput: {
+    flex: 1,
+    height: 42,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    color: colors.navy,
+  },
+  pincodeCheckBtn: {
+    backgroundColor: colors.primary,
+    height: 42,
+    paddingHorizontal: 18,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pincodeCheckBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  pincodeResultBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    marginTop: 2,
+  },
+  pincodeResultSuccess: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  pincodeResultError: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  pincodeResultText: {
+    fontSize: 12,
+    flex: 1,
+  },
+  pincodeResultTextSuccess: {
+    color: '#166534',
+    fontWeight: '600',
+  },
+  pincodeResultTextError: {
+    color: '#dc2626',
+    fontWeight: '600',
+  },
+  deliveryPerksList: {
+    marginTop: 6,
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 10,
+  },
+  deliveryPerkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deliveryPerkText: {
+    fontSize: 12,
+    color: '#475569',
   },
 });

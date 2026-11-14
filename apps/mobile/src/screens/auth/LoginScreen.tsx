@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useAuth } from '../../providers/AuthProvider';
 import { useNavigation } from '@react-navigation/native';
 import { AuthNavigationProp } from '../../navigation/types';
+import { Ionicons } from '@expo/vector-icons';
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Invalid email format'),
@@ -39,6 +40,9 @@ export default function LoginScreen() {
     setIsPending(true);
     try {
       await authLogin(data.email, data.password);
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      }
       const currentUser = (await import('../../firebase/firebase')).getFirebaseAuth().currentUser;
       if (currentUser && !currentUser.emailVerified) {
         Alert.alert(
@@ -81,6 +85,9 @@ export default function LoginScreen() {
     setIsGuestPending(true);
     try {
       await authGuestLogin();
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      }
     } catch (err) {
       Alert.alert('Guest Login Failed', err instanceof Error ? err.message : 'Please try again.');
     } finally {
@@ -95,6 +102,16 @@ export default function LoginScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {navigation.canGoBack() && (
+          <TouchableOpacity
+            style={styles.dismissButton}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityLabel="Close and return to browsing"
+          >
+            <Ionicons name="close" size={24} color="#64748b" />
+          </TouchableOpacity>
+        )}
         <View style={styles.header}>
           <Text style={styles.logo}>LaptopMitra</Text>
           <Text style={styles.subtitle}>Welcome back</Text>
@@ -209,6 +226,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 40,
     justifyContent: 'center',
+  },
+  dismissButton: {
+    alignSelf: 'flex-start',
+    padding: 6,
+    marginBottom: 12,
   },
   header: {
     alignItems: 'center',

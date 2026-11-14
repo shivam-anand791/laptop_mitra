@@ -114,7 +114,9 @@ export default function CouponOffersModal({
           onClose();
           return;
         }
-      } catch {}
+      } catch {
+        // Referral code attempt failed, fall through to primary error message
+      }
       setActionError(err?.message || 'Could not apply coupon');
     }
   };

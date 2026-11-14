@@ -32,6 +32,7 @@ import { MainStackNavigationProp } from '../../navigation/types';
 import { useAuth } from '../../providers/AuthProvider';
 import { isAuthGuard401 } from '@laptopmitra/api-client';
 import RazorpayCheckoutModal, { RazorpayCheckoutData } from '../../components/RazorpayCheckoutModal';
+import { isExpoGo } from '../../utils/capabilities';
 import {
   MobileCheckoutAttempt,
   PAYMENT_CONFIRMING_MESSAGE,
@@ -63,7 +64,7 @@ export default function CheckoutScreen() {
   const verifyPincode = useVerifyPincode();
 
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('razorpay');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(isExpoGo ? 'cod' : 'razorpay');
   const [discountCode, setDiscountCode] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState<{
     code: string;
@@ -695,10 +696,32 @@ export default function CheckoutScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Payment Method</Text>
 
+          {isExpoGo && (
+            <View style={styles.expoGoPaymentBanner}>
+              <Ionicons name="information-circle-outline" size={16} color="#0369a1" />
+              <Text style={styles.expoGoPaymentBannerText}>
+                Push notifications and in-app payments need the full app build.
+              </Text>
+            </View>
+          )}
+
           {/* Razorpay Online Payment */}
           <TouchableOpacity
-            style={[styles.paymentOption, paymentMethod === 'razorpay' && styles.paymentOptionSelected]}
-            onPress={() => setPaymentMethod('razorpay')}
+            style={[
+              styles.paymentOption,
+              paymentMethod === 'razorpay' && styles.paymentOptionSelected,
+              isExpoGo && { opacity: 0.8 },
+            ]}
+            onPress={() => {
+              if (isExpoGo) {
+                Alert.alert(
+                  'Development Build Required',
+                  'Push notifications and in-app payments need the full app build.',
+                );
+                return;
+              }
+              setPaymentMethod('razorpay');
+            }}
           >
             <View style={styles.paymentRadio}>
               <View style={[styles.radioOuter, paymentMethod === 'razorpay' && styles.radioOuterSelected]}>
@@ -1463,6 +1486,24 @@ const styles = StyleSheet.create({
   confirmingText: {
     fontSize: 12,
     color: '#1e40af',
+    lineHeight: 16,
+  },
+  expoGoPaymentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#f0f9ff',
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  expoGoPaymentBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#0369a1',
+    fontWeight: '500',
     lineHeight: 16,
   },
   confirmingButton: {

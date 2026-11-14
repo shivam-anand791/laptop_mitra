@@ -19,9 +19,9 @@ export class NotificationController {
   @ApiResponse({ status: 201, description: 'Device token registered successfully' })
   async registerToken(
     @Request() req: any,
-    @Body() body: { token: string; platform?: string },
+    @Body() body: { token?: string; platform?: string },
   ) {
-    return this.notificationService.registerDeviceToken(req.user.id, body.token, body.platform);
+    return this.notificationService.registerDeviceToken(req.user.id, body?.token, body?.platform);
   }
 
   @Get('preferences')

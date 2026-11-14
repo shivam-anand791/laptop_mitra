@@ -21,6 +21,7 @@ import {
 import { useAuth } from '../../providers/AuthProvider';
 import { isAuthGuard401 } from '@laptopmitra/api-client';
 import RazorpayCheckoutModal, { RazorpayCheckoutData } from '../../components/RazorpayCheckoutModal';
+import { nativePaymentsSupported } from '../../utils/capabilities';
 import { formatPaymentStartError, PAYMENT_CONFIRMING_MESSAGE } from '../../utils/checkout-helpers';
 import ItemSituationHelpModal from '../../components/ItemSituationHelpModal';
 import { MainStackParamList, MainStackNavigationProp } from '../../navigation/types';
@@ -115,6 +116,13 @@ export default function OrderDetailScreen() {
 
   const handleStartRazorpayPayment = async () => {
     if (!order || isRetryingPayment) return;
+    if (!nativePaymentsSupported) {
+      Alert.alert(
+        'Development Build Required',
+        'Push notifications and in-app payments need the full app build.',
+      );
+      return;
+    }
     if (!isAuthenticated || isGuest || profile?.isGuest) {
       Alert.alert(
         'Sign In Required',

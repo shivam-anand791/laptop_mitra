@@ -49,9 +49,9 @@ export default function TicketListScreen() {
         <Text style={styles.authTitle}>Sign in to view your tickets</Text>
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => navigation.navigate('MainTabs')}
+          onPress={() => navigation.navigate('Auth' as any)}
         >
-          <Text style={styles.primaryButtonText}>Go to Account</Text>
+          <Text style={styles.primaryButtonText}>Sign In / Register</Text>
         </TouchableOpacity>
       </View>
     );

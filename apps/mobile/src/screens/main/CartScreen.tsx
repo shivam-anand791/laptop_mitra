@@ -190,7 +190,9 @@ export default function CartScreen() {
           setDiscountCode('');
           return;
         }
-      } catch {}
+      } catch {
+        // Referral code attempt failed, fall through to primary coupon error
+      }
       Alert.alert('Invalid Code', err?.message || 'Invalid or expired coupon code.');
     }
   };
@@ -218,7 +220,7 @@ export default function CartScreen() {
         </Text>
         <Button
           title="Login / Register"
-          onPress={() => navigation.navigate('MainTabs')}
+          onPress={() => navigation.navigate('Auth' as any)}
           variant="primary"
           size="md"
           style={{ marginTop: spacing.md }}

@@ -22,6 +22,7 @@ import SectionHeader from '../../components/ui/SectionHeader';
 import TrustStrip from '../../components/ui/TrustStrip';
 import Button from '../../components/ui/Button';
 import CorporateQuoteModal from '../../components/CorporateQuoteModal';
+import { DataErrorView } from '../../components/DataErrorView';
 import { colors, radius, shadows, spacing, typography } from '../../theme/tokens';
 
 export default function HomeScreen() {
@@ -35,6 +36,7 @@ export default function HomeScreen() {
   const {
     data: featuredData,
     isLoading: featuredLoading,
+    error: featuredError,
     refetch: refetchFeatured,
     isRefetching: isRefetchingFeatured,
   } = useProducts({ featured: true, limit: 10 });
@@ -42,6 +44,7 @@ export default function HomeScreen() {
   const {
     data: newArrivalsData,
     isLoading: newArrivalsLoading,
+    error: newArrivalsError,
     refetch: refetchNewArrivals,
     isRefetching: isRefetchingNewArrivals,
   } = useProducts({ newArrival: true, limit: 10 });
@@ -49,6 +52,7 @@ export default function HomeScreen() {
   const {
     data: categoriesData,
     isLoading: categoriesLoading,
+    error: categoriesError,
     refetch: refetchCategories,
     isRefetching: isRefetchingCategories,
   } = useCategories();
@@ -61,7 +65,7 @@ export default function HomeScreen() {
     if (!isAuthenticated) {
       Alert.alert('Login Required', 'Please login to add items to your cart.', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Login', onPress: () => navigation.navigate('MainTabs') },
+        { text: 'Login', onPress: () => navigation.navigate('Auth' as any) },
       ]);
       return;
     }
@@ -91,8 +95,10 @@ export default function HomeScreen() {
     <TouchableOpacity
       style={styles.categoryCard}
       onPress={() => {
-        // Navigate to store tab
-        navigation.navigate('MainTabs');
+        navigation.navigate('MainTabs', {
+          screen: 'Store',
+          params: { categoryId: item.id, categoryName: item.name },
+        } as any);
       }}
       activeOpacity={0.7}
     >
@@ -139,6 +145,22 @@ export default function HomeScreen() {
             ))}
           </ScrollView>
         </View>
+      </View>
+    );
+  }
+
+  const hasDataError = Boolean(featuredError || newArrivalsError || categoriesError);
+  if (hasDataError && featuredProducts.length === 0 && newArrivals.length === 0 && categories.length === 0) {
+    return (
+      <View style={[styles.root, { paddingTop: insets.top, justifyContent: 'center', flex: 1 }]}>
+        <DataErrorView
+          error={featuredError || newArrivalsError || categoriesError}
+          onRetry={() => {
+            void refetchFeatured();
+            void refetchNewArrivals();
+            void refetchCategories();
+          }}
+        />
       </View>
     );
   }
@@ -214,7 +236,7 @@ export default function HomeScreen() {
           <View style={styles.heroActions}>
             <Button
               title="Explore Laptops"
-              onPress={() => navigation.navigate('MainTabs')}
+              onPress={() => navigation.navigate('MainTabs', { screen: 'Store' } as any)}
               variant="primary"
               size="sm"
               icon={<Ionicons name="arrow-forward" size={14} color="#FFF" />}

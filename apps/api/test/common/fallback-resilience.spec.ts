@@ -333,6 +333,37 @@ describe('Production Database Resilience & Fallback Prevention', () => {
       expect(res.message).toBe('Device token registered successfully');
     });
 
+    it('NotificationService.registerDeviceToken tolerates missing and Expo Go placeholder tokens idempotently', async () => {
+      const prisma = {
+        deviceToken: {
+          findFirst: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+        },
+      } as any;
+
+      const service = new NotificationService(prisma);
+      const emptyRes = await service.registerDeviceToken('user-1', '');
+      expect(emptyRes.message).toContain('skipped');
+      expect(prisma.deviceToken.findFirst).not.toHaveBeenCalled();
+
+      const placeholderRes = await service.registerDeviceToken('user-1', 'expo-go');
+      expect(placeholderRes.message).toContain('skipped');
+      expect(prisma.deviceToken.create).not.toHaveBeenCalled();
+
+      prisma.deviceToken.findFirst.mockResolvedValueOnce(null);
+      prisma.deviceToken.create.mockResolvedValueOnce({ id: 'tok-1', token: 'ExponentPushToken[valid]' });
+      const validRes = await service.registerDeviceToken('user-1', 'ExponentPushToken[valid]', 'android');
+      expect(validRes.message).toBe('Device token registered successfully');
+      expect(prisma.deviceToken.create).toHaveBeenCalled();
+
+      prisma.deviceToken.findFirst.mockResolvedValueOnce({ id: 'tok-1', token: 'ExponentPushToken[valid]' });
+      prisma.deviceToken.update.mockResolvedValueOnce({ id: 'tok-1' });
+      const duplicateRes = await service.registerDeviceToken('user-1', 'ExponentPushToken[valid]', 'android');
+      expect(duplicateRes.message).toBe('Device token already registered');
+      expect(prisma.deviceToken.update).toHaveBeenCalled();
+    });
+
     it('SupportService.createTicket does not fabricate a ticket when persistence fails', async () => {
       const tx = {
         supportTicket: { create: jest.fn().mockRejectedValue(new Error('Database unavailable')) },

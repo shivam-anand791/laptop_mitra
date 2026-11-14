@@ -2,8 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { onIdTokenChanged, signOut as firebaseSignOut, User as FirebaseUser } from 'firebase/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { pushSupported, getNotificationsModule } from '../utils/capabilities';
 import { LaptopMitraApiClient } from '@laptopmitra/api-client';
 import { User } from '@laptopmitra/types';
 import { API_BASE_URL } from '../config';
@@ -115,6 +115,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let active = true;
 
     void (async () => {
+      const isDev = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) : process.env.NODE_ENV !== 'production';
+      if (!pushSupported) {
+        if (isDev) {
+          console.log('[AuthProvider] Push registration skipped in Expo Go / unsupported runtime.');
+        }
+        return;
+      }
+
+      const Notifications = getNotificationsModule();
+      if (!Notifications) return;
+
       const currentPermission = await Notifications.getPermissionsAsync();
       const permission = currentPermission.granted
         ? currentPermission
@@ -125,9 +136,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: token } = await Notifications.getExpoPushTokenAsync(
         projectId ? { projectId } : undefined,
       );
-      if (active) await getClient().registerDeviceToken(token, Platform.OS);
+      if (active && token) {
+        await getClient().registerDeviceToken(token, Platform.OS);
+      }
     })().catch((error: unknown) => {
-      console.warn('Push notification registration failed', error);
+      const isDev = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) : process.env.NODE_ENV !== 'production';
+      if (isDev) {
+        console.warn('[AuthProvider] Push notification registration failed:', error);
+      }
     });
 
     return () => {

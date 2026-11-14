@@ -24,9 +24,14 @@ const queryClient = new QueryClient({
       refetchOnReconnect: true,
       refetchOnMount: true,
       retry: (failureCount, error: any) => {
-        if (error?.status === 401 || error?.status === 403) return false;
-        return failureCount < 3;
+        // Never retry client errors (4xx: 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found)
+        const status = error?.status ?? error?.statusCode ?? error?.response?.status;
+        if (typeof status === 'number' && status >= 400 && status < 500) {
+          return false;
+        }
+        return failureCount < 2;
       },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 8000),
     },
   },
 });

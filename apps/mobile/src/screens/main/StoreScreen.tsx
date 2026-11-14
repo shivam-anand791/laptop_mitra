@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,20 +10,23 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useProducts, useAddToCart, useProductFilters, useCartSyncState, MOBILE_CART_ERROR_MESSAGE } from '../../hooks/useApi';
 import { useAuth } from '../../providers/AuthProvider';
 
 import { Product } from '@laptopmitra/types';
-import { MainStackNavigationProp } from '../../navigation/types';
+import { MainTabParamList, MainStackNavigationProp } from '../../navigation/types';
+
+type StoreRouteProp = RouteProp<MainTabParamList, 'Store'>;
 import ProductCard from '../../components/ProductCard';
 import FilterModal, { FilterState } from '../../components/FilterModal';
 import Button from '../../components/ui/Button';
+import { DataErrorView } from '../../components/DataErrorView';
 import { colors, radius, shadows, spacing, typography } from '../../theme/tokens';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 50;
 
 type SortOption = 'newest' | 'price_asc' | 'price_desc';
 
@@ -94,10 +97,23 @@ function getProductStorage(product: Product): string {
 
 export default function StoreScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
+  const route = useRoute<StoreRouteProp>();
   const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuth();
   const addToCart = useAddToCart();
   const { retryCartSync } = useCartSyncState();
+
+  const [selectedCategory, setSelectedCategory] = useState<{ id: string; name?: string | undefined } | null>(
+    route.params?.categoryId ? { id: route.params.categoryId, name: route.params.categoryName } : null,
+  );
+
+  useEffect(() => {
+    if (route.params?.categoryId) {
+      setSelectedCategory({ id: route.params.categoryId, name: route.params.categoryName });
+      setOffset(0);
+      setAllProducts([]);
+    }
+  }, [route.params?.categoryId, route.params?.categoryName]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
@@ -120,6 +136,9 @@ export default function StoreScreen() {
     offset,
   };
 
+  if (selectedCategory?.id && selectedCategory.id !== 'all') {
+    params.categoryId = selectedCategory.id;
+  }
   if (filters.stockOnly) {
     params.stockOnly = true;
   }
@@ -130,10 +149,12 @@ export default function StoreScreen() {
     params.maxPrice = Number(filters.maxPrice);
   }
   if (appliedSearch) {
-    params.search = appliedSearch;
+    params.search = filters.brand ? `${appliedSearch} ${filters.brand}` : appliedSearch;
+  } else if (filters.brand) {
+    params.search = filters.brand;
   }
 
-  const { data, isLoading, isRefetching, refetch } = useProducts(params);
+  const { data, isLoading, isRefetching, refetch, error } = useProducts(params);
   const { data: filterFacets } = useProductFilters();
 
   const total = data?.total ?? 0;
@@ -227,7 +248,10 @@ export default function StoreScreen() {
 
   const handleQuickAddToCart = (product: Product) => {
     if (!isAuthenticated) {
-      Alert.alert('Login Required', 'Please login to add items to your cart.');
+      Alert.alert('Login Required', 'Please login to add items to your cart.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Login', onPress: () => navigation.navigate('Auth' as any) },
+      ]);
       return;
     }
     addToCart.mutate(
@@ -244,6 +268,7 @@ export default function StoreScreen() {
   };
 
   const activeFilterCount =
+    (selectedCategory ? 1 : 0) +
     (filters.minPrice ? 1 : 0) +
     (filters.maxPrice ? 1 : 0) +
     (filters.stockOnly ? 1 : 0) +
@@ -252,6 +277,7 @@ export default function StoreScreen() {
     (filters.storage ? 1 : 0);
 
   const clearAllFilters = () => {
+    setSelectedCategory(null);
     setFilters({
       minPrice: '',
       maxPrice: '',
@@ -289,6 +315,18 @@ export default function StoreScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading laptops...</Text>
         </View>
+      );
+    }
+    if (error) {
+      return (
+        <DataErrorView
+          error={error}
+          onRetry={() => {
+            setOffset(0);
+            void refetch();
+          }}
+          style={{ marginTop: 40 }}
+        />
       );
     }
     return (
@@ -381,6 +419,26 @@ export default function StoreScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Active Category Pill if routed from Category */}
+      {selectedCategory && (
+        <View style={styles.activeCategoryPill}>
+          <Ionicons name="folder-outline" size={13} color={colors.primary} />
+          <Text style={styles.activeCategoryText} numberOfLines={1}>
+            Category: {selectedCategory.name || selectedCategory.id}
+          </Text>
+          <TouchableOpacity
+            onPress={() => {
+              setSelectedCategory(null);
+              setOffset(0);
+              setAllProducts([]);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Sort Options Strip */}
       {showSortPicker && (
@@ -594,6 +652,26 @@ const styles = StyleSheet.create({
   sortOptionTextActive: {
     color: colors.primary,
     fontWeight: '700',
+  },
+  activeCategoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.xs,
+    gap: 6,
+  },
+  activeCategoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+    maxWidth: 220,
   },
   resultsRow: {
     flexDirection: 'row',

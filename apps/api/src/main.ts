@@ -22,6 +22,11 @@ async function bootstrap() {
     throw new Error('Missing required configuration: CORS_ORIGINS must be set in production');
   }
 
+  // Refuse startup if in-memory fallback is attempted in production
+  if (isProduction && configService.get<string>('ALLOW_IN_MEMORY_FALLBACK') === 'true') {
+    throw new Error('FATAL CONFIGURATION ERROR: ALLOW_IN_MEMORY_FALLBACK cannot be enabled in production.');
+  }
+
   // Fallback defaults for local development if not explicitly configured
   const effectiveOrigins = configuredOrigins.length > 0
     ? configuredOrigins
