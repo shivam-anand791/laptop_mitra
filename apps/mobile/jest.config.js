@@ -7,6 +7,7 @@ module.exports = {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
   },
   moduleNameMapper: {
+    '^react-native$': '<rootDir>/src/__mocks__/react-native.ts',
     '^@expo/vector-icons$': '<rootDir>/src/__mocks__/expo-vector-icons.ts',
     '^expo-constants$': '<rootDir>/src/__mocks__/expo-constants.ts',
     '^expo-device$': '<rootDir>/src/__mocks__/expo-device.ts',

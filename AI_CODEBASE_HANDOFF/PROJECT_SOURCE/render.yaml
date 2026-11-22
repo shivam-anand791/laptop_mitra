@@ -1,0 +1,60 @@
+services:
+  - type: web
+    name: laptopmitra-api
+    runtime: node
+    # --prod=false ensures devDependencies (nest, prisma, tsc, turbo) are installed even when NODE_ENV=production
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter api exec prisma generate && pnpm --filter api build
+    preDeployCommand: corepack enable && pnpm --filter api exec prisma migrate deploy
+    startCommand: corepack enable && pnpm --filter api exec prisma migrate deploy && node apps/api/dist/main
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DEPLOYMENT_ENV
+        value: production
+      - key: PRODUCTION_DATABASE_HOST
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: APP_PUBLIC_URL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_SECURE
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: MAIL_DRIVER
+        value: smtp
+      - key: ALLOW_REAL_EMAILS
+        value: "true"
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: PAYMENT_ENCRYPTION_KEY
+        sync: false
+      - key: STORAGE_DRIVER
+        value: local
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

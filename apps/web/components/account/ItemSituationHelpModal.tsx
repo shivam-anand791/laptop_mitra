@@ -152,6 +152,9 @@ export function ItemSituationHelpModal({
         }
       });
 
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, orderItemId]);
 
   if (!isOpen) return null;

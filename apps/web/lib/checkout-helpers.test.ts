@@ -95,5 +95,31 @@ describe('checkout-helpers (auth 401 classification, idempotency reuse & gateway
     assert.match(gatewayErr.message, /req-42/);
     assert.match(PAYMENT_CONFIRMING_MESSAGE, /We're confirming your payment/);
   });
+
+  it('isolates Buy Now direct single-item checkout signature from the full persistent cart signature', () => {
+    const fullCartItems = [
+      { productId: 'prod-macbook', variantId: 'm2', quantity: 1, purchaseMode: 'sell' as const },
+      { productId: 'prod-asus', variantId: 'g14', quantity: 1, purchaseMode: 'sell' as const },
+      { productId: 'prod-air', variantId: 'm1', quantity: 1, purchaseMode: 'sell' as const },
+    ];
+    const buyNowSingleItem = [
+      { productId: 'prod-macbook', variantId: 'm2', quantity: 1, purchaseMode: 'sell' as const },
+    ];
+
+    const fullCartSig = buildCheckoutSignature({
+      userId: 'user-demo',
+      paymentMethod: 'razorpay',
+      items: fullCartItems,
+    });
+    const buyNowSig = buildCheckoutSignature({
+      userId: 'user-demo',
+      paymentMethod: 'razorpay',
+      items: buyNowSingleItem,
+    });
+
+    assert.notEqual(fullCartSig, buyNowSig);
+    assert.equal(typeof buyNowSig, 'string');
+    assert.ok(buyNowSig.length > 0);
+  });
 });
 

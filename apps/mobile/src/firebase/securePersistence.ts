@@ -1,5 +1,7 @@
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
+const isWeb = Platform.OS === 'web';
 const CHUNK_SIZE = 1400;
 
 interface StoredValueIndex {
@@ -16,7 +18,17 @@ function chunkKey(key: string, generation: string, index: number): string {
 }
 
 async function readIndex(key: string): Promise<StoredValueIndex | null> {
-  const raw = await SecureStore.getItemAsync(indexKey(key));
+  let raw: string | null = null;
+  if (isWeb) {
+    try {
+      raw = typeof localStorage !== 'undefined' ? localStorage.getItem(indexKey(key)) : null;
+    } catch {
+      return null;
+    }
+  } else {
+    raw = await SecureStore.getItemAsync(indexKey(key));
+  }
+
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as StoredValueIndex;
@@ -31,6 +43,13 @@ async function readIndex(key: string): Promise<StoredValueIndex | null> {
 /** Firebase Auth persistence backed by the platform keychain/keystore. */
 export const securePersistenceStorage = {
   async getItem(key: string): Promise<string | null> {
+    if (isWeb) {
+      try {
+        return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+      } catch {
+        return null;
+      }
+    }
     const index = await readIndex(key);
     if (!index) return null;
     const chunks = await Promise.all(
@@ -43,6 +62,12 @@ export const securePersistenceStorage = {
   },
 
   async setItem(key: string, value: string): Promise<void> {
+    if (isWeb) {
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
+      } catch {}
+      return;
+    }
     const previous = await readIndex(key);
     const generation = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const pieces = value.match(new RegExp(`.{1,${CHUNK_SIZE}}`, 'gs')) ?? [];
@@ -58,6 +83,12 @@ export const securePersistenceStorage = {
   },
 
   async removeItem(key: string): Promise<void> {
+    if (isWeb) {
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
+      } catch {}
+      return;
+    }
     const index = await readIndex(key);
     await SecureStore.deleteItemAsync(indexKey(key));
     if (index) {

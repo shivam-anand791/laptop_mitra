@@ -8,9 +8,9 @@ import { useAuth } from './auth-context';
 interface WishlistContextType {
   items: Product[];
   count: number;
-  toggleWishlist: (product: Product) => void;
+  toggleWishlist: (product: Product) => Promise<boolean>;
   isInWishlist: (productId: string) => boolean;
-  removeItem: (productId: string) => void;
+  removeItem: (productId: string) => Promise<boolean>;
 }
 
 const WishlistContext = createContext<WishlistContextType | undefined>(undefined);
@@ -70,20 +70,35 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
     return items.some(i => i.id === productId);
   };
 
-  const toggleWishlist = (product: Product) => {
-    if (isInWishlist(product.id)) {
-      removeItem(product.id);
-    } else {
-      const updated = [...items, product];
-      saveWishlist(updated);
-      api.addToWishlist(product.id).catch(() => {});
+  const toggleWishlist = async (product: Product): Promise<boolean> => {
+    try {
+      if (isInWishlist(product.id)) {
+        await removeItem(product.id);
+        return false;
+      } else {
+        const updated = [...items, product];
+        saveWishlist(updated);
+        if (firebaseUser) {
+          await api.addToWishlist(product.id).catch(() => {});
+        }
+        return true;
+      }
+    } catch {
+      return false;
     }
   };
 
-  const removeItem = (productId: string) => {
-    const updated = items.filter(i => i.id !== productId);
-    saveWishlist(updated);
-    api.removeWishlistItem(productId).catch(() => {});
+  const removeItem = async (productId: string): Promise<boolean> => {
+    try {
+      const updated = items.filter((i) => i.id !== productId);
+      saveWishlist(updated);
+      if (firebaseUser) {
+        await api.removeWishlistItem(productId).catch(() => {});
+      }
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   return (

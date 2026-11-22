@@ -1,6 +1,6 @@
 import React from 'react';
 
-type SpecType = 'ram' | 'storage' | 'processor' | 'display' | 'gpu' | 'default';
+type SpecType = 'ram' | 'storage' | 'processor' | 'display' | 'gpu' | 'battery' | 'default';
 
 interface SpecTagProps {
   variant?: SpecType;
@@ -34,6 +34,11 @@ const variantStyles: Record<SpecType, { bg: string; text: string; border: string
     text: '#E11D48',
     border: '#FECDD3',
   },
+  battery: {
+    bg: '#F0FDF4',
+    text: '#15803D',
+    border: '#BBF7D0',
+  },
   default: {
     bg: '#F1F5F9',
     text: '#475569',
@@ -45,11 +50,13 @@ export default function SpecTag({ variant = 'default', value, className = '' }: 
   const style = variantStyles[variant] || variantStyles.default;
 
   // Shorten common values for compact display
-  const displayValue = value
-    .replace(/GB/gi, '')
-    .replace(/SSD/gi, ' SSD')
-    .replace(/NVMe/gi, '')
-    .trim();
+  const displayValue = variant === 'battery'
+    ? (value.includes('🔋') ? value : `🔋 ${value}`)
+    : value
+        .replace(/GB/gi, '')
+        .replace(/SSD/gi, ' SSD')
+        .replace(/NVMe/gi, '')
+        .trim();
 
   return (
     <span

@@ -21,6 +21,7 @@ import {
   Check,
   ShieldCheck,
   User,
+  Paperclip,
 } from 'lucide-react';
 
 interface MessageItem {
@@ -338,6 +339,24 @@ export default function TicketDetailPage() {
                   </div>
 
                   <p className="whitespace-pre-wrap">{msg.body}</p>
+
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className={`pt-2 flex flex-wrap gap-2 border-t ${isCustomer ? 'border-white/20' : 'border-slate-200'} mt-2`}>
+                      {msg.attachments.map((att) => (
+                        <div
+                          key={att.id}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${
+                            isCustomer
+                              ? 'bg-white/20 text-white'
+                              : 'bg-white text-slate-700 border border-slate-200'
+                          }`}
+                        >
+                          <Paperclip className="w-3 h-3 shrink-0" />
+                          <span className="truncate max-w-[140px]">{att.fileName}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );

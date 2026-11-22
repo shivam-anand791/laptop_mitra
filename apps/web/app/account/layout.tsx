@@ -26,6 +26,7 @@ import {
   Tag,
   Laptop,
   Wrench,
+  LayoutDashboard,
 } from 'lucide-react';
 
 interface NavGroup {
@@ -85,6 +86,12 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
 
   const navGroups: NavGroup[] = [
     {
+      title: 'Overview',
+      items: [
+        { href: '/account', label: 'Dashboard Overview', icon: LayoutDashboard },
+      ],
+    },
+    {
       title: 'Orders & Hardware',
       items: [
         { href: '/account/orders', label: 'My Orders', icon: Package },
@@ -132,7 +139,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
   if (isLoading) {
     return (
       <CustomerLayout>
-        <div className="min-h-[60vh] bg-[#F8FAFC] flex items-center justify-center p-6 text-slate-500 text-xs font-semibold">
+        <div className="min-h-[60vh] bg-[#F7F4EE] flex items-center justify-center p-6 text-slate-500 text-xs font-semibold">
           Loading your account...
         </div>
       </CustomerLayout>
@@ -169,9 +176,9 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
 
   return (
     <CustomerLayout>
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div className="min-h-screen bg-[#F7F4EE] text-slate-900">
       {/* ── Compact Sub-Header / Breadcrumbs (No giant gradient!) ── */}
-      <div className="bg-white border-b border-[#E2E8F0] px-4 sm:px-6 lg:px-8 py-3.5">
+      <div className="bg-[#FFFDF9] border-b border-[#E6DFD5] px-4 sm:px-6 lg:px-8 py-3.5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <nav className="flex items-center gap-2 text-xs font-semibold text-slate-500">
             <Link href="/" className="hover:text-slate-900 transition">
@@ -183,8 +190,12 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
             </Link>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
             <span className="text-[#2563EB]">
-              {pathname === '/account/orders'
+              {pathname === '/account'
+                ? 'Dashboard Overview'
+                : pathname === '/account/orders'
                 ? 'Orders'
+                : pathname === '/account/laptops'
+                ? 'My Laptops & Service'
                 : pathname === '/account/profile'
                 ? 'Profile'
                 : pathname === '/account/addresses'
@@ -231,7 +242,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
             }`}
           >
             {/* Compact Profile Header (No gradient) */}
-            <div className="bg-white rounded-2xl p-4 border border-[#E2E8F0] shadow-2xs">
+            <div className="bg-[#FFFDF9] rounded-2xl p-4 border border-[#E6DFD5] shadow-2xs">
               <div className="flex items-center gap-3.5">
                 <div className="w-12 h-12 rounded-xl bg-[#2563EB] text-white flex items-center justify-center font-bold text-lg flex-shrink-0">
                   {avatarInitial}
@@ -251,7 +262,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
             </div>
 
             {/* Grouped Left Account Menu */}
-            <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xs divide-y divide-slate-100 overflow-hidden">
+            <div className="bg-[#FFFDF9] rounded-2xl border border-[#E6DFD5] shadow-2xs divide-y divide-slate-100 overflow-hidden">
               {navGroups.map((group) => (
                 <div key={group.title} className="p-2 space-y-0.5">
                   <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">

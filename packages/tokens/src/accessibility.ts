@@ -30,6 +30,7 @@ export const accessibility = {
     width: 2,
     offset: 2,
     color: '#2563EB',
+    offsetColor: '#F7F4EE',
     style: 'solid',
   },
 
@@ -39,5 +40,14 @@ export const accessibility = {
   textScaling: {
     maxMultiplier: 1.5,
     allowFontScaling: true,
+  },
+
+  /**
+   * Reduced motion preferences for users requesting minimal transitions
+   */
+  reducedMotion: {
+    duration: 0.01,
+    durationMs: '0.01ms',
+    easing: 'linear',
   },
 } as const;

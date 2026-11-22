@@ -1,17 +1,20 @@
 /**
  * LaptopMitra Design System Tokens (apps/web)
- * Plain TypeScript object representation matching Image 1 art direction.
+ * Plain TypeScript object representation matching LaptopMitra visual & motion direction.
  * Portable across web and mobile platforms without external runtime dependencies.
  */
 
+import { motion as sharedMotion } from '@laptopmitra/tokens';
+
 export const colors = {
   // Brand & Accents
-  primary: '#1D6FF2',
-  primaryHover: '#1558C0',
-  primaryLight: '#EBF2FF',
-  primaryBorder: '#C2D9FD',
+  primary: '#2563EB',
+  primaryHover: '#1D4ED8',
+  primaryActive: '#1E40AF',
+  primaryLight: '#EFF6FF',
+  primaryBorder: '#BFDBFE',
 
-  // Deep Enterprise Navy (Hero & Footer Anchors)
+  // Deep Tech Navy (Hero & Footer Anchors, Refurbished Badges)
   navy: {
     DEFAULT: '#0B1F4B',
     50: '#F0F4FC',
@@ -25,46 +28,50 @@ export const colors = {
     950: '#040B1D',
   },
 
-  // Surfaces & Canvas
+  // Surfaces & Canvas (Cream & Off-White Identity)
   canvas: {
-    page: '#F5F7FA',
-    card: '#FFFFFF',
-    elevated: '#F8FAFC',
-    subtle: '#F1F5F9',
+    page: '#F7F4EE',
+    card: '#FFFDF9',
+    elevated: '#FAF6EF',
+    subtle: '#F2ECE2',
+    cream: '#F7F4EE',
+    ivory: '#FFFDF9',
+    pureWhite: '#FFFFFF',
   },
 
   // Borders & Dividers
   border: {
-    default: '#E4E9F2',
-    subtle: '#EEF2F6',
+    default: '#E6DFD5',
+    subtle: '#F0EAE1',
     strong: '#CBD5E1',
-    active: '#1D6FF2',
+    active: '#2563EB',
   },
 
   // Typography Colors
   text: {
-    primary: '#0F172A',
+    primary: '#111827',
     secondary: '#475569',
-    muted: '#64748B',
+    muted: '#94A3B8',
     white: '#FFFFFF',
+    navy: '#0B1F4B',
     inverseMuted: '#94A3B8',
   },
 
   // Status & Feedback Badges
   status: {
     success: '#16A34A',
-    successBg: '#DCFCE7',
+    successBg: '#F0FDF4',
     successBorder: '#BBF7D0',
-    warning: '#F59E0B',
-    warningBg: '#FEF3C7',
+    warning: '#D97706',
+    warningBg: '#FFFBEB',
     warningBorder: '#FDE68A',
-    danger: '#EF4444',
-    dangerBg: '#FEE2E2',
+    danger: '#DC2626',
+    dangerBg: '#FEF2F2',
     dangerBorder: '#FECACA',
-    orange: '#F97316',
+    orange: '#EA580C',
     orangeBg: '#FFF7ED',
     orangeBorder: '#FFEDD5',
-    info: '#3B82F6',
+    info: '#2563EB',
     infoBg: '#EFF6FF',
     infoBorder: '#BFDBFE',
   },
@@ -133,36 +140,47 @@ export const radius = {
   none: '0px',
   xs: '4px',
   sm: '6px',
-  md: '10px',
-  lg: '14px',
-  xl: '20px',
-  '2xl': '28px',
+  md: '8px',
+  lg: '12px',
+  xl: '16px',
+  '2xl': '24px',
   full: '9999px',
 } as const;
 
 export const shadows = {
   none: 'none',
   xs: '0 1px 2px 0 rgba(11, 31, 75, 0.04)',
-  sm: '0 1px 3px 0 rgba(11, 31, 75, 0.06), 0 1px 2px 0 rgba(11, 31, 75, 0.04)',
-  md: '0 4px 12px -2px rgba(11, 31, 75, 0.08), 0 2px 6px -1px rgba(11, 31, 75, 0.04)',
-  lg: '0 10px 25px -3px rgba(11, 31, 75, 0.10), 0 4px 10px -2px rgba(11, 31, 75, 0.04)',
-  xl: '0 20px 40px -4px rgba(11, 31, 75, 0.12), 0 8px 16px -4px rgba(11, 31, 75, 0.04)',
-  glow: '0 0 24px 0 rgba(29, 111, 242, 0.20)',
+  sm: '0 1px 3px 0 rgba(11, 31, 75, 0.05), 0 1px 2px 0 rgba(11, 31, 75, 0.03)',
+  md: '0 4px 12px -2px rgba(11, 31, 75, 0.06), 0 2px 4px -1px rgba(11, 31, 75, 0.03)',
+  lg: '0 8px 24px -3px rgba(11, 31, 75, 0.08), 0 4px 6px -2px rgba(11, 31, 75, 0.04)',
+  xl: '0 16px 40px -4px rgba(11, 31, 75, 0.10), 0 8px 16px -4px rgba(11, 31, 75, 0.04)',
+  card: '0 1px 3px rgba(11, 31, 75, 0.04), 0 1px 2px rgba(11, 31, 75, 0.02)',
+  cardHover: '0 10px 25px -5px rgba(11, 31, 75, 0.08), 0 8px 10px -6px rgba(11, 31, 75, 0.04)',
+  glow: '0 0 20px 0 rgba(37, 99, 235, 0.12)',
 } as const;
 
 export const motionTokens = {
   duration: {
-    fast: '150ms',
-    normal: '250ms',
-    slow: '400ms',
+    micro: sharedMotion.durationsMs.micro,       // 120ms
+    hover: sharedMotion.durationsMs.hover,       // 180ms
+    dropdown: sharedMotion.durationsMs.dropdown, // 220ms
+    modal: sharedMotion.durationsMs.modal,       // 250ms
+    reveal: sharedMotion.durationsMs.reveal,     // 500ms
+    hero: sharedMotion.durationsMs.hero,         // 750ms
+    // Backward compatibility
+    fast: sharedMotion.durationsMs.micro,
+    normal: sharedMotion.durationsMs.dropdown,
+    slow: sharedMotion.durationsMs.reveal,
     counter: '1800ms',
-    marquee: '28s',
+    marquee: '52s',
   },
   easing: {
-    default: 'cubic-bezier(0.4, 0, 0.2, 1)',
-    spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
-    springOut: 'cubic-bezier(0.16, 1, 0.3, 1)',
-    hover: 'cubic-bezier(0.2, 0, 0, 1)',
-    smooth: 'cubic-bezier(0.25, 1, 0.5, 1)',
+    default: sharedMotion.easings.default,       // cubic-bezier(0.16, 1, 0.3, 1)
+    enter: sharedMotion.easings.enter,
+    exit: sharedMotion.easings.exit,
+    spring: sharedMotion.easings.spring,
+    springOut: sharedMotion.easings.default,
+    hover: sharedMotion.easings.default,
+    smooth: sharedMotion.easings.default,
   },
 } as const;

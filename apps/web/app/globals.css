@@ -9,28 +9,35 @@
   /* ── LaptopMitra Core Palette (Light Mode Default) ── */
   --lm-blue: #2563EB;
   --lm-blue-hover: #1D4ED8;
+  --lm-blue-active: #1E40AF;
   --lm-blue-light: #EFF6FF;
   --lm-navy: #0B1F4B;
+  --lm-navy-hover: #071433;
   --lm-navy-light: #132E6B;
-  --lm-page-bg: #F8FAFC;
-  --lm-card-bg: #FFFFFF;
-  --lm-border: #E2E8F0;
-  --lm-border-subtle: #F1F5F9;
+  --lm-page-bg: #F7F4EE;
+  --lm-card-bg: #FFFDF9;
+  --lm-surface-elevated: #FAF6EF;
+  --lm-surface-subtle: #F2ECE2;
+  --lm-border: #E6DFD5;
+  --lm-border-subtle: #F0EAE1;
+  --lm-pure-white: #FFFFFF;
 
-  --bg-deep: #F8FAFC;
-  --bg-surface: #FFFFFF;
-  --bg-elevated: #F1F5F9;
-  --bg-subtle: #F8FAFC;
+  --bg-deep: #F7F4EE;
+  --bg-surface: #FFFDF9;
+  --bg-elevated: #FAF6EF;
+  --bg-subtle: #F2ECE2;
 
-  --border-default: #E2E8F0;
-  --border-subtle: #F1F5F9;
+  --border-default: #E6DFD5;
+  --border-subtle: #F0EAE1;
 
   --text-primary: #111827;
   --text-secondary: #475569;
   --text-muted: #94A3B8;
+  --text-navy: #0B1F4B;
 
   --accent: #2563EB;
   --accent-dim: #1D4ED8;
+  --accent-active: #1E40AF;
   --accent-bg: rgba(37, 99, 235, 0.08);
 
   --warning: #D97706;
@@ -72,19 +79,32 @@
   --radius-full: 9999px;
 
   /* ── Shadows (Tailored for clean light surfaces) ── */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
-  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12);
-  --shadow-glow: 0 0 20px rgba(29, 111, 242, 0.15);
+  --shadow-xs: 0 1px 2px rgba(11, 31, 75, 0.04);
+  --shadow-sm: 0 1px 3px rgba(11, 31, 75, 0.05), 0 1px 2px rgba(11, 31, 75, 0.03);
+  --shadow-md: 0 4px 12px rgba(11, 31, 75, 0.06), 0 2px 4px rgba(11, 31, 75, 0.03);
+  --shadow-lg: 0 8px 24px rgba(11, 31, 75, 0.08), 0 4px 6px rgba(11, 31, 75, 0.04);
+  --shadow-xl: 0 16px 40px rgba(11, 31, 75, 0.1), 0 8px 16px rgba(11, 31, 75, 0.04);
+  --shadow-glow: 0 0 20px rgba(37, 99, 235, 0.12);
   --shadow-card: 0 1px 3px rgba(11, 31, 75, 0.04), 0 1px 2px rgba(11, 31, 75, 0.02);
   --shadow-card-hover: 0 10px 25px -5px rgba(11, 31, 75, 0.08), 0 8px 10px -6px rgba(11, 31, 75, 0.04);
 
-  /* ── Animation Tokens ── */
-  --duration-fast: 150ms;
-  --duration-normal: 250ms;
-  --duration-slow: 400ms;
-  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  /* ── Standardized Motion Tokens ── */
+  --motion-micro: 120ms;
+  --motion-hover: 180ms;
+  --motion-dropdown: 220ms;
+  --motion-modal: 250ms;
+  --motion-reveal: 500ms;
+  --motion-hero: 750ms;
+
+  --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* ── Legacy duration aliases ── */
+  --duration-fast: 120ms;
+  --duration-normal: 220ms;
+  --duration-slow: 500ms;
+  --ease-default: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
 
@@ -247,7 +267,7 @@ body {
   animation: fade-in-up var(--duration-slow) var(--ease-out) forwards;
 }
 
-/* ── Stagger children ── */
+/* ── Stagger children (legacy & standardized) ── */
 .stagger-children > * {
   opacity: 0;
   animation: fade-in-up var(--duration-slow) var(--ease-out) forwards;
@@ -258,6 +278,104 @@ body {
 .stagger-children > *:nth-child(4) { animation-delay: 180ms; }
 .stagger-children > *:nth-child(5) { animation-delay: 240ms; }
 .stagger-children > *:nth-child(6) { animation-delay: 300ms; }
+
+/* ── Standardized Motion Utility Classes ── */
+.animate-fade-in {
+  animation: fade-in var(--motion-reveal) var(--motion-ease) forwards;
+}
+
+.animate-fade-up {
+  animation: fade-up var(--motion-reveal) var(--motion-ease) forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in var(--motion-dropdown) var(--motion-ease) forwards;
+}
+
+.animate-slide-in {
+  animation: slide-in var(--motion-modal) var(--motion-ease) forwards;
+}
+
+.animate-modal-in {
+  animation: modal-in var(--motion-modal) var(--motion-ease) forwards;
+}
+
+/* ── Dropdown & Drawer Motion (Phase 2) ── */
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-dropdown-in {
+  animation: dropdown-in var(--motion-dropdown) var(--motion-ease) forwards;
+}
+
+@keyframes drawer-slide-in {
+  from {
+    transform: translate3d(100%, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-drawer-in {
+  animation: drawer-slide-in var(--motion-modal) var(--motion-ease) forwards;
+}
+
+.animate-hero-entrance {
+  animation: hero-entrance var(--motion-hero) var(--motion-ease) forwards;
+}
+
+.animate-accordion-down {
+  animation: accordion-down var(--motion-dropdown) var(--motion-ease) forwards;
+}
+
+.animate-accordion-up {
+  animation: accordion-up var(--motion-dropdown) var(--motion-ease) forwards;
+}
+
+/* Staggered reveal container */
+.stagger-reveal > * {
+  opacity: 0;
+  animation: fade-up var(--motion-reveal) var(--motion-ease) forwards;
+}
+.stagger-reveal > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-reveal > *:nth-child(2) { animation-delay: 40ms; }
+.stagger-reveal > *:nth-child(3) { animation-delay: 80ms; }
+.stagger-reveal > *:nth-child(4) { animation-delay: 120ms; }
+.stagger-reveal > *:nth-child(5) { animation-delay: 160ms; }
+.stagger-reveal > *:nth-child(6) { animation-delay: 200ms; }
+.stagger-reveal > *:nth-child(7) { animation-delay: 240ms; }
+.stagger-reveal > *:nth-child(8) { animation-delay: 280ms; }
+
+/* Smooth calm hover elevation for cards & surfaces */
+.hover-elevation {
+  transition: transform var(--motion-hover) var(--motion-ease),
+              box-shadow var(--motion-hover) var(--motion-ease),
+              border-color var(--motion-hover) var(--motion-ease);
+  will-change: transform;
+}
+.hover-elevation:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.hover-scale-subtle {
+  transition: transform var(--motion-hover) var(--motion-ease);
+}
+.hover-scale-subtle:hover {
+  transform: scale(1.02);
+}
+.hover-scale-subtle:active {
+  transform: scale(0.98);
+}
 
 /* ── Success checkmark bounce ── */
 @keyframes check-bounce {
@@ -355,6 +473,18 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .hover-elevation:hover,
+  .hover-scale-subtle:hover,
+  .hover-scale-subtle:active {
+    transform: none !important;
+  }
+
+  .stagger-children > *,
+  .stagger-reveal > * {
+    opacity: 1 !important;
+    animation: none !important;
   }
 
   .skeleton-shimmer {
@@ -641,3 +771,209 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* ============================================================
+   MOTION DESIGN SYSTEM (Phase 5 Polish)
+   ============================================================ */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  70% {
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes heartBeat {
+  0% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.28);
+  }
+  50% {
+    transform: scale(0.96);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmerPulse {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes cartBounce {
+  0%, 100% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.35) rotate(-10deg);
+  }
+  65% {
+    transform: scale(0.9) rotate(5deg);
+  }
+}
+
+/* Utility Animation Classes */
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-fade-in-down {
+  animation: fadeInDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pop-in {
+  animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-heart-beat {
+  animation: heartBeat 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-cart-bounce {
+  animation: cartBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-float {
+  animation: floatSlow 3.5s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, #F5F1EA 25%, #FAF7F2 50%, #F5F1EA 75%);
+  background-size: 200% 100%;
+  animation: shimmerPulse 1.8s infinite;
+}
+
+/* Stagger Entrance Classes */
+.stagger-1 { animation-delay: 50ms; }
+.stagger-2 { animation-delay: 100ms; }
+.stagger-3 { animation-delay: 150ms; }
+.stagger-4 { animation-delay: 200ms; }
+.stagger-5 { animation-delay: 250ms; }
+.stagger-6 { animation-delay: 300ms; }
+
+/* Micro-Interaction Classes */
+.interactive-lift {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
+}
+.interactive-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -6px rgba(11, 31, 75, 0.08), 0 4px 8px -2px rgba(11, 31, 75, 0.04);
+}
+.interactive-lift:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.button-press {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.button-press:active {
+  transform: scale(0.96);
+}
+
+/* ── Cart item removal ── */
+@keyframes cart-item-exit {
+  0% { opacity: 1; transform: translateX(0) scaleY(1); max-height: 200px; }
+  40% { opacity: 0; transform: translateX(32px) scaleY(1); }
+  100% { opacity: 0; transform: translateX(32px) scaleY(0); max-height: 0; padding-top: 0; padding-bottom: 0; margin-bottom: 0; }
+}
+.animate-cart-exit {
+  animation: cart-item-exit 300ms cubic-bezier(0.4, 0, 0.6, 1) forwards;
+  overflow: hidden;
+}
+
+/* ── Payment processing overlay ── */
+@keyframes processing-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+.animate-processing {
+  animation: processing-pulse 1.6s ease-in-out infinite;
+}
+
+/* ── Order success checkmark draw ── */
+@keyframes check-draw {
+  0% { stroke-dashoffset: 48; opacity: 0; }
+  30% { opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 1; }
+}
+.animate-check-draw {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: check-draw 500ms cubic-bezier(0.16, 1, 0.3, 1) 200ms forwards;
+}
+
+/* ── Step stepper connector ── */
+@keyframes step-fill {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+.animate-step-fill {
+  animation: step-fill 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── Hero Spotlight Auto-Switch Progress ── */
+@keyframes spotlight-progress {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+.animate-spotlight-progress {
+  animation: spotlight-progress 4000ms linear forwards;
+}
+
+/* Accessibility: Strict Prefers Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

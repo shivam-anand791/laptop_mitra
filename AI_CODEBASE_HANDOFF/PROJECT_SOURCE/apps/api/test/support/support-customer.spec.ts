@@ -1,0 +1,601 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { SupportService } from '../../src/modules/support/support.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { ForbiddenException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import { PaymentEncryptionService } from '../../src/common/encryption/payment-encryption.service';
+import { NotificationService } from '../../src/modules/notifications/notification.service';
+
+describe('SupportService (Customer Experience & IDOR Enforcement)', () => {
+  let service: SupportService;
+  let prisma: any;
+  let notifications: { dispatchSupportNotification: jest.Mock };
+
+  const mockUserA = { id: 'usr-user-a', name: 'User A', email: 'a@example.com' };
+  const mockUserB = { id: 'usr-user-b', name: 'User B', email: 'b@example.com' };
+
+  const mockTicketA = {
+    id: 'tkt-123',
+    ticketNumber: 'LM-T-1001',
+    userId: mockUserA.id,
+    subject: 'Broken screen on delivery',
+    category: 'RETURN_REFUND',
+    issueType: 'DAMAGED_ON_ARRIVAL',
+    type: 'QUERY',
+    status: 'NEW',
+    priority: 'HIGH',
+    isArchived: false,
+    reopenCount: 0,
+    csatScore: null,
+    csatComment: null,
+    resolvedAt: null,
+    customerLastReadAt: new Date(),
+    staffLastReadAt: null,
+    messages: [],
+    events: [],
+    attachments: [],
+    order: null,
+    orderItem: null,
+  };
+
+  beforeEach(async () => {
+    prisma = {
+      $transaction: jest.fn((cb) => cb(prisma)),
+      $queryRaw: jest.fn().mockResolvedValue([{ nextval: 1001 }]),
+      supportTicket: {
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      ticketMessage: {
+        create: jest.fn(),
+      },
+      ticketEvent: {
+        create: jest.fn(),
+      },
+      ticketAttachment: {
+        create: jest.fn(),
+      },
+      order: {
+        findUnique: jest.fn(),
+      },
+      returnRequest: {
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      returnItem: {
+        create: jest.fn(),
+      },
+      supportSettings: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      helpCategory: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      helpArticle: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+    };
+    notifications = { dispatchSupportNotification: jest.fn().mockResolvedValue({ sent: 0, failed: 0 }) };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SupportService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: NotificationService, useValue: notifications },
+        {
+          provide: PaymentEncryptionService,
+          useValue: {
+            encrypt: jest.fn((val: string) => `enc:${val}`),
+            decrypt: jest.fn((val: string) => val.replace('enc:', '')),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get<SupportService>(SupportService);
+  });
+
+  it('returns customer support policy values from SupportSettings', async () => {
+    prisma.supportSettings.findUnique.mockResolvedValue({
+      supportHoursText: 'Weekdays, 9 AM to 5 PM',
+      firstResponseSlaMinutes: 180,
+      autoCloseDays: 12,
+      reopenWindowDays: 4,
+      returnWindowDays: 10,
+      standardWarrantyDays: 365,
+    });
+
+    const config = await service.getSupportConfig();
+
+    expect(prisma.supportSettings.findUnique).toHaveBeenCalledWith({ where: { id: 'default' } });
+    expect(config).toMatchObject({
+      supportHoursText: 'Weekdays, 9 AM to 5 PM',
+      firstResponseSlaHours: 3,
+      autoCloseDays: 12,
+      reopenWindowDays: 4,
+      returnWindowDays: 10,
+      standardWarrantyDays: 365,
+    });
+  });
+
+  it('searches and filters fallback help articles when the knowledge base is unseeded', async () => {
+    prisma.supportSettings.findUnique.mockResolvedValue({
+      returnWindowDays: 11,
+      standardWarrantyDays: 240,
+    });
+
+    const searchResults = await service.getHelpArticles('240-Day');
+    const popularTopicResults = await service.getHelpArticles('Returns & Replacements');
+    const categoryResults = await service.getHelpArticles(undefined, 'warranty-repair');
+
+    expect(searchResults).toHaveLength(1);
+    expect(searchResults[0].content).toContain('240-Day');
+    expect(popularTopicResults).toHaveLength(1);
+    expect(categoryResults).toHaveLength(1);
+    expect(categoryResults[0].title).toContain('Standard Hardware Warranty');
+  });
+
+  it('uses configured policy values in published policy articles', async () => {
+    prisma.helpArticle.findMany.mockResolvedValue([{
+      slug: '7-day-replacement-return-policy',
+      title: '7-Day Replacement Policy',
+      summary: 'The 7-day delivery window applies.',
+      content: 'Eligible in the 7-day delivery window; refunds take 5-7 business days.',
+      category: { id: 'cat-returns', slug: 'returns-refunds', title: 'Returns' },
+    }]);
+    prisma.supportSettings.findUnique.mockResolvedValue({
+      returnWindowDays: 11,
+      standardWarrantyDays: 240,
+    });
+
+    const [article] = await service.getHelpArticles();
+
+    expect(article.title).toBe('11-Day Replacement Policy');
+    expect(article.content).toContain('11-day delivery window');
+    expect(article.content).toContain('5-7 business days');
+  });
+
+  describe('IDOR Security Checks on Tickets', () => {
+    it('allows ticket owner to view their own ticket', async () => {
+      prisma.supportTicket.findUnique.mockResolvedValue(mockTicketA);
+      prisma.supportTicket.update.mockResolvedValue(mockTicketA);
+
+      const result = await service.getTicketById(mockTicketA.id, mockUserA.id, false);
+      expect(result).toBeDefined();
+      expect(result.id).toBe(mockTicketA.id);
+    });
+
+    it('rejects another user (User B) from viewing User A ticket with ForbiddenException (IDOR)', async () => {
+      prisma.supportTicket.findUnique.mockResolvedValue(mockTicketA);
+
+      await expect(service.getTicketById(mockTicketA.id, mockUserB.id, false)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('allows staff (Admin or Support) to view any ticket', async () => {
+      prisma.supportTicket.findUnique.mockResolvedValue(mockTicketA);
+
+      const result = await service.getTicketById(mockTicketA.id, 'admin-id', true);
+      expect(result).toBeDefined();
+      expect(prisma.supportTicket.update).toHaveBeenCalledWith({
+        where: { id: mockTicketA.id },
+        data: { staffLastReadAt: expect.any(Date) },
+      });
+    });
+
+    it('marks a customer ticket read and returns unread status from read timestamps', async () => {
+      prisma.supportTicket.findMany.mockResolvedValue([
+        {
+          ...mockTicketA,
+          customerLastReadAt: new Date('2026-10-28T10:00:00Z'),
+          staffLastReadAt: new Date('2026-10-28T10:01:00Z'),
+          messages: [],
+          _count: { messages: 0, attachments: 0 },
+        },
+        {
+          ...mockTicketA,
+          id: 'tkt-read',
+          staffLastReadAt: new Date('2026-10-28T10:01:00Z'),
+          customerLastReadAt: new Date('2026-10-28T10:02:00Z'),
+          messages: [],
+          _count: { messages: 0, attachments: 0 },
+        },
+      ]);
+
+      const result = await service.getUserTickets(mockUserA.id);
+
+      expect(result.map((ticket) => ticket.hasUnread)).toEqual([true, false]);
+    });
+
+    it('blocks User B from adding a reply to User A ticket (IDOR)', async () => {
+      prisma.supportTicket.findUnique.mockResolvedValue(mockTicketA);
+
+      await expect(
+        service.addMessage(mockTicketA.id, mockUserB.id, 'Malicious reply', undefined, 'CUSTOMER'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('blocks User B from rating User A ticket (IDOR)', async () => {
+      prisma.supportTicket.findUnique.mockResolvedValue(mockTicketA);
+
+      await expect(service.rateTicket(mockTicketA.id, mockUserB.id, 5)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('blocks User B from reopening User A ticket (IDOR)', async () => {
+      prisma.supportTicket.findUnique.mockResolvedValue({
+        ...mockTicketA,
+        status: 'RESOLVED',
+        resolvedAt: new Date(),
+      });
+
+      await expect(service.reopenTicket(mockTicketA.id, mockUserB.id)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+  });
+
+  describe('Ticket Creation & Sequence Number', () => {
+    it('creates ticket with formatted LM-T- sequence number', async () => {
+      prisma.$queryRaw.mockResolvedValue([{ nextval: 1042 }]);
+      prisma.supportSettings.findUnique.mockResolvedValue({ firstResponseSlaMinutes: 60 });
+      prisma.supportTicket.create.mockImplementation(({ data }: any) => ({
+        id: 'tkt-new',
+        ...data,
+      }));
+      prisma.ticketMessage.create.mockResolvedValue({ id: 'msg-1' });
+      prisma.ticketEvent.create.mockResolvedValue({ id: 'evt-1' });
+
+      const requestStartedAt = Date.now();
+      const ticket = await service.createTicket(mockUserA.id, {
+        subject: 'Keyboard not working',
+        category: 'WARRANTY_REPAIR',
+        message: 'Several keys on the top row do not respond.',
+      });
+
+      expect(ticket.ticketNumber).toBe('LM-T-1042');
+      expect(ticket.status).toBe('NEW');
+      const firstResponseDueAt = prisma.supportTicket.create.mock.calls[0][0].data.firstResponseDueAt.getTime();
+      expect(firstResponseDueAt).toBeGreaterThanOrEqual(requestStartedAt + 60 * 60 * 1000);
+      expect(firstResponseDueAt).toBeLessThanOrEqual(Date.now() + 60 * 60 * 1000);
+      expect(notifications.dispatchSupportNotification).toHaveBeenCalledWith(
+        mockUserA.id,
+        expect.objectContaining({ type: 'ticket-created', ticketNumber: 'LM-T-1042' }),
+      );
+      expect(prisma.supportTicket.create).toHaveBeenCalled();
+      expect(prisma.ticketMessage.create).toHaveBeenCalled();
+      expect(prisma.ticketEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ eventType: 'CREATED' }),
+        }),
+      );
+    });
+
+    it('rejects ticket creation with empty message or subject', async () => {
+      await expect(
+        service.createTicket(mockUserA.id, {
+          subject: '',
+          category: 'ORDER_DELIVERY',
+          message: 'Help please',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.createTicket(mockUserA.id, {
+          subject: 'Valid Subject',
+          category: 'ORDER_DELIVERY',
+          message: '',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('fails closed when the ticket sequence is unavailable', async () => {
+      prisma.$queryRaw.mockRejectedValue(new Error('Sequence unavailable'));
+
+      await expect(service.createTicket(mockUserA.id, {
+        subject: 'Sequence failure',
+        category: 'OTHER',
+        message: 'Must not create a random ticket number',
+      })).rejects.toThrow(ServiceUnavailableException);
+      expect(prisma.supportTicket.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Reopen Window (7 Days)', () => {
+    it('allows reopening when ticket is RESOLVED within 7 days', async () => {
+      const recentResolved = {
+        ...mockTicketA,
+        status: 'RESOLVED',
+        resolvedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+      };
+      prisma.supportTicket.findUnique.mockResolvedValue(recentResolved);
+      prisma.supportTicket.update.mockResolvedValue({ ...recentResolved, status: 'REOPENED', reopenCount: 1 });
+      prisma.ticketEvent.create.mockResolvedValue({ id: 'evt-2' });
+
+      const reopened = await service.reopenTicket(mockTicketA.id, mockUserA.id);
+      expect(reopened.status).toBe('REOPENED');
+      expect(reopened.reopenCount).toBe(1);
+    });
+
+    it('rejects reopening when ticket resolution is older than 7 days', async () => {
+      const oldResolved = {
+        ...mockTicketA,
+        status: 'RESOLVED',
+        resolvedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), // 10 days ago
+      };
+      prisma.supportTicket.findUnique.mockResolvedValue(oldResolved);
+
+      await expect(service.reopenTicket(mockTicketA.id, mockUserA.id)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('rejects reopening if ticket is not currently in RESOLVED status', async () => {
+      prisma.supportTicket.findUnique.mockResolvedValue({
+        ...mockTicketA,
+        status: 'OPEN',
+      });
+
+      await expect(service.reopenTicket(mockTicketA.id, mockUserA.id)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('CSAT Rating Validation', () => {
+    it('accepts valid CSAT rating (1 to 5) with feedback', async () => {
+      prisma.supportTicket.findUnique.mockResolvedValue(mockTicketA);
+      prisma.supportTicket.update.mockResolvedValue({
+        ...mockTicketA,
+        csatScore: 5,
+        csatComment: 'Super fast resolution!',
+      });
+      prisma.ticketEvent.create.mockResolvedValue({ id: 'evt-3' });
+
+      const rated = await service.rateTicket(mockTicketA.id, mockUserA.id, 5, 'Super fast resolution!');
+      expect(rated.csatScore).toBe(5);
+      expect(prisma.ticketEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ eventType: 'CSAT_RATING', newValue: '5' }),
+        }),
+      );
+    });
+
+    it('rejects invalid CSAT scores (< 1 or > 5)', async () => {
+      await expect(service.rateTicket(mockTicketA.id, mockUserA.id, 0)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.rateTicket(mockTicketA.id, mockUserA.id, 6)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('Returns & Refunds Management (COD & IDOR)', () => {
+    const mockOrderA = {
+      id: 'ord-100',
+      userId: mockUserA.id,
+      status: 'DELIVERED',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      shippingAddress: { city: 'Bengaluru', address: '123 Tech Park' },
+      items: [
+        { id: 'item-1', price: 32000, quantity: 1 },
+      ],
+    };
+
+    it('creates return request with formatted LM-R- sequence number', async () => {
+      prisma.order.findUnique.mockResolvedValue(mockOrderA);
+      prisma.$queryRaw.mockResolvedValue([{ nextval: 2005 }]);
+      prisma.returnRequest.create.mockImplementation(({ data }: any) => ({
+        id: 'ret-new',
+        ...data,
+      }));
+      prisma.returnItem.create.mockResolvedValue({ id: 'ri-1' });
+
+      const returnReq = await service.createReturnRequest(mockUserA.id, {
+        orderId: mockOrderA.id,
+        reason: 'Display flickering on dark backgrounds',
+        items: [{ orderItemId: 'item-1', quantity: 1 }],
+      });
+
+      expect(returnReq.returnNumber).toBe('LM-R-2005');
+      expect(returnReq.status).toBe('REQUESTED');
+    });
+
+    it('fails closed when the return sequence is unavailable', async () => {
+      prisma.order.findUnique.mockResolvedValue(mockOrderA);
+      prisma.$queryRaw.mockRejectedValue(new Error('Sequence unavailable'));
+
+      await expect(service.createReturnRequest(mockUserA.id, {
+        orderId: mockOrderA.id,
+        reason: 'Sequence failure',
+        items: [{ orderItemId: 'item-1', quantity: 1 }],
+      })).rejects.toThrow(ServiceUnavailableException);
+      expect(prisma.returnRequest.create).not.toHaveBeenCalled();
+    });
+
+    it('validates matching account number and valid Indian IFSC code for COD bank details', async () => {
+      prisma.order.findUnique.mockResolvedValue(mockOrderA);
+
+      // Mismatched account numbers
+      await expect(
+        service.createReturnRequest(mockUserA.id, {
+          orderId: mockOrderA.id,
+          reason: 'Defective charger',
+          items: [{ orderItemId: 'item-1', quantity: 1 }],
+          refundDetails: {
+            accountNumber: '1234567890',
+            confirmAccountNumber: '9876543210',
+            ifscCode: 'HDFC0001234',
+            accountHolderName: 'User A',
+          },
+        }),
+      ).rejects.toThrow('Bank account numbers do not match');
+
+      // Invalid IFSC format
+      await expect(
+        service.createReturnRequest(mockUserA.id, {
+          orderId: mockOrderA.id,
+          reason: 'Defective charger',
+          items: [{ orderItemId: 'item-1', quantity: 1 }],
+          refundDetails: {
+            accountNumber: '1234567890',
+            confirmAccountNumber: '1234567890',
+            ifscCode: 'INVALID_IFSC',
+            accountHolderName: 'User A',
+          },
+        }),
+      ).rejects.toThrow('Invalid Indian Bank IFSC Code format');
+    });
+
+    it('allows updating refund details before return is processed', async () => {
+      const mockReturn = {
+        id: 'ret-101',
+        userId: mockUserA.id,
+        status: 'APPROVED',
+        refundAccountMasked: '••••••••1234',
+        refundIfscMasked: 'HDFC••••234',
+        refundUpiMasked: null,
+      };
+      prisma.returnRequest.findUnique.mockResolvedValue(mockReturn);
+      prisma.returnRequest.update.mockImplementation(({ data }: any) => ({
+        ...mockReturn,
+        ...data,
+      }));
+
+      const updated = await service.updateRefundDetails(mockReturn.id, mockUserA.id, {
+        accountNumber: '998877665544',
+        confirmAccountNumber: '998877665544',
+        ifscCode: 'SBIN0001234',
+        accountHolderName: 'User A Updated',
+      });
+
+      expect(updated.refundAccountMasked).toBe('••••••••5544');
+      expect(updated.refundIfscMasked).toBe('SBIN••••234');
+    });
+
+    it('blocks updating refund details if return status is already REFUNDED', async () => {
+      prisma.returnRequest.findUnique.mockResolvedValue({
+        id: 'ret-101',
+        userId: mockUserA.id,
+        status: 'REFUNDED',
+      });
+
+      await expect(
+        service.updateRefundDetails('ret-101', mockUserA.id, {
+          upiId: 'user@okaxis',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('protects return request with IDOR check against unauthorized users', async () => {
+      prisma.returnRequest.findUnique.mockResolvedValue({
+        id: 'ret-101',
+        userId: mockUserA.id,
+        status: 'REQUESTED',
+      });
+
+      await expect(
+        service.getReturnRequestById('ret-101', mockUserB.id, false),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.updateRefundDetails('ret-101', mockUserB.id, { upiId: 'b@okaxis' }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('blocks self-serve returns for leased items and routes to support', async () => {
+      const leasedOrder = {
+        ...mockOrderA,
+        id: 'ord-lease-1',
+        items: [
+          { id: 'item-leased', price: 1800, quantity: 1, purchaseMode: 'lease' },
+        ],
+        deliveries: [{ deliveredAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }],
+      };
+      prisma.order.findUnique.mockResolvedValue(leasedOrder);
+
+      await expect(
+        service.createReturnRequest(mockUserA.id, {
+          orderId: 'ord-lease-1',
+          reason: 'Defective screen',
+          items: [{ orderItemId: 'item-leased', quantity: 1 }],
+        }),
+      ).rejects.toThrow(/Leased items cannot be returned through self-serve returns/i);
+    });
+
+    it('anchors return window to Delivery.deliveredAt so editing order notes later cannot move window', async () => {
+      // Delivered 10 days ago, but order notes were updated 5 minutes ago (updatedAt is fresh)
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      const orderWithEditedNotes = {
+        ...mockOrderA,
+        id: 'ord-edited-notes',
+        updatedAt: new Date(), // Notes updated just now
+        deliveries: [{ deliveredAt: tenDaysAgo }],
+      };
+      prisma.order.findUnique.mockResolvedValue(orderWithEditedNotes);
+
+      await expect(
+        service.createReturnRequest(mockUserA.id, {
+          orderId: 'ord-edited-notes',
+          reason: 'Defective unit',
+          items: [{ orderItemId: 'item-1', quantity: 1 }],
+        }),
+      ).rejects.toThrow(/7-day return policy window has expired/i);
+    });
+
+    it('boundary check: day 7 is eligible while day 8 is rejected in IST calendar time', async () => {
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+      const now = Date.now();
+
+      // Day 7: 6 days and 20 hours ago -> within calendar 7 days in IST
+      const day7DeliveredAt = new Date(now - (6 * 24 + 20) * 60 * 60 * 1000);
+      const day7Order = {
+        ...mockOrderA,
+        id: 'ord-day-7',
+        deliveries: [{ deliveredAt: day7DeliveredAt }],
+      };
+      prisma.order.findUnique.mockResolvedValueOnce(day7Order);
+      prisma.$queryRaw.mockResolvedValueOnce([{ nextval: 9001 }]);
+      prisma.returnRequest.create.mockResolvedValueOnce({
+        id: 'ret-day-7',
+        returnNumber: 'LM-R-9001',
+        status: 'REQUESTED',
+      });
+      prisma.returnItem.create.mockResolvedValueOnce({ id: 'ri-7' });
+
+      const day7Res = await service.createReturnRequest(mockUserA.id, {
+        orderId: 'ord-day-7',
+        reason: 'Fault on day 7',
+        items: [{ orderItemId: 'item-1', quantity: 1 }],
+      });
+      expect(day7Res.returnNumber).toBe('LM-R-9001');
+
+      // Day 8: 8 days ago -> past calendar 7 days in IST
+      const day8DeliveredAt = new Date(now - 8 * 24 * 60 * 60 * 1000);
+      const day8Order = {
+        ...mockOrderA,
+        id: 'ord-day-8',
+        deliveries: [{ deliveredAt: day8DeliveredAt }],
+      };
+      prisma.order.findUnique.mockResolvedValueOnce(day8Order);
+
+      await expect(
+        service.createReturnRequest(mockUserA.id, {
+          orderId: 'ord-day-8',
+          reason: 'Fault on day 8',
+          items: [{ orderItemId: 'item-1', quantity: 1 }],
+        }),
+      ).rejects.toThrow(/7-day return policy window has expired/i);
+    });
+  });
+});

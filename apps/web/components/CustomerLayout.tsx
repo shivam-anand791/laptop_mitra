@@ -8,9 +8,9 @@ import { CartSyncBanner } from './CartSyncBanner';
 
 export default function CustomerLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex flex-col bg-[#F5F7FA] text-[#0F172A] selection:bg-blue-100 selection:text-blue-900 relative">
+    <div className="min-h-screen flex flex-col bg-[#F7F4EE] text-[#0F172A] selection:bg-blue-100 selection:text-blue-900 relative">
       <Navbar />
-      <main className="flex-1 pb-20 md:pb-0">
+      <main className="flex-1">
         <CartSyncBanner />
         {children}
       </main>

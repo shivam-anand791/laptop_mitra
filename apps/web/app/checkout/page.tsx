@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -20,7 +20,7 @@ import {
   rotateCheckoutAttemptKey,
   savePendingOrderAttempt,
 } from '../../lib/checkout-helpers';
-import { Address, CreateAddressDto, Order, PincodeVerificationResult } from '../../lib/types';
+import { Address, CreateAddressDto, Order, PincodeVerificationResult, CartItem } from '../../lib/types';
 import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../lib/config';
 import { useSupportConfig } from '../../lib/support-config';
 import { CouponOffersModal } from '../../components/CouponOffersModal';
@@ -35,8 +35,105 @@ declare global {
 export default function CheckoutPage() {
   const router = useRouter();
   const { data: supportConfig } = useSupportConfig();
-  const { items, subtotal, itemCount, clearCart, isSyncing: cartSyncing, syncError: cartSyncError } = useCart();
+  const {
+    items: cartItems,
+    subtotal: cartSubtotal,
+    itemCount: cartItemCount,
+    clearCart,
+    removeItem,
+    isSyncing: cartSyncing,
+    syncError: cartSyncError,
+  } = useCart();
   const { user, isLoading: authLoading } = useAuth();
+
+  // Buy Now (Single-product direct checkout without altering full cart)
+  const [buyNowItem, setBuyNowItem] = useState<CartItem | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('buyNow') === '1') {
+        const stored = window.sessionStorage.getItem('lm_buy_now_item');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.productId) return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  });
+
+  const [isBuyNow, setIsBuyNow] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('buyNow') === '1' && !!window.sessionStorage.getItem('lm_buy_now_item');
+    } catch {}
+    return false;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('buyNow') === '1') {
+      try {
+        const stored = window.sessionStorage.getItem('lm_buy_now_item');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.productId) {
+            setBuyNowItem(parsed);
+            setIsBuyNow(true);
+            return;
+          }
+        }
+      } catch {}
+    }
+    setIsBuyNow(false);
+    setBuyNowItem(null);
+  }, []);
+
+  const items = useMemo(() => {
+    if (isBuyNow && buyNowItem) {
+      return [buyNowItem];
+    }
+    return cartItems;
+  }, [isBuyNow, buyNowItem, cartItems]);
+
+  const subtotal = useMemo(() => {
+    if (isBuyNow && buyNowItem) {
+      const base = Number(buyNowItem.priceAtAdd) * buyNowItem.quantity;
+      const warranty = buyNowItem.hasWarranty && buyNowItem.warrantyPrice ? buyNowItem.warrantyPrice : 0;
+      return base + warranty;
+    }
+    return cartSubtotal;
+  }, [isBuyNow, buyNowItem, cartSubtotal]);
+
+  const itemCount = useMemo(() => {
+    if (isBuyNow && buyNowItem) {
+      return buyNowItem.quantity;
+    }
+    return cartItemCount;
+  }, [isBuyNow, buyNowItem, cartItemCount]);
+
+  const handleOrderSuccessCleanup = useCallback(() => {
+    if (isBuyNow) {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem('lm_buy_now_item');
+      }
+      if (buyNowItem) {
+        const matching = cartItems.find(
+          (ci) =>
+            ci.productId === buyNowItem.productId &&
+            (ci.variantId || null) === (buyNowItem.variantId || null) &&
+            (ci.purchaseMode || 'sell') === (buyNowItem.purchaseMode || 'sell'),
+        );
+        if (matching) {
+          void removeItem(matching.id);
+        }
+      }
+    } else {
+      void clearCart();
+    }
+  }, [isBuyNow, buyNowItem, cartItems, removeItem, clearCart]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -299,7 +396,7 @@ export default function CheckoutPage() {
         if (!active) return;
         if (existing.paymentStatus === 'COMPLETED' || existing.status === 'CONFIRMED') {
           clearCheckoutAttempt(window.sessionStorage);
-          clearCart();
+          handleOrderSuccessCleanup();
           setCompletedOrder(existing);
           return;
         }
@@ -330,7 +427,7 @@ export default function CheckoutPage() {
     completedOrder,
     confirmingOrder,
     pendingPaymentOrder?.id,
-    clearCart,
+    handleOrderSuccessCleanup,
   ]);
 
   // Poll order status automatically when client verification is uncertain (non-401 verify error)
@@ -346,7 +443,7 @@ export default function CheckoutPage() {
         if (!active) return;
         if (latest.paymentStatus === 'COMPLETED' || latest.status === 'CONFIRMED') {
           if (typeof window !== 'undefined') clearCheckoutAttempt(window.sessionStorage);
-          clearCart();
+          handleOrderSuccessCleanup();
           setConfirmingOrder(null);
           setCompletedOrder(latest);
           return;
@@ -613,7 +710,7 @@ export default function CheckoutPage() {
             setRazorpayFeedback(null);
             setConfirmingOrder(null);
             setPendingPaymentOrder(null);
-            clearCart();
+            handleOrderSuccessCleanup();
             setCompletedOrder({ ...order, paymentStatus: 'COMPLETED' as any, status: 'CONFIRMED' as any });
           } catch (verifyErr: any) {
             if (isAuthGuard401(verifyErr?.status, verifyErr?.data)) {
@@ -776,7 +873,7 @@ export default function CheckoutPage() {
       } else {
         // COD (Cash on Delivery)
         if (typeof window !== 'undefined') clearCheckoutAttempt(window.sessionStorage);
-        clearCart();
+        handleOrderSuccessCleanup();
         setCompletedOrder(order);
       }
     } catch (error: unknown) {
@@ -812,68 +909,86 @@ export default function CheckoutPage() {
   if (completedOrder) {
     return (
       <CustomerLayout>
-        <div className="bg-[#F8FAFC] min-h-screen py-12 px-4">
-          <div className="max-w-2xl mx-auto bg-white rounded-3xl border border-[#E4E9F2] shadow-sm p-6 sm:p-10 text-center space-y-6">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl mx-auto">
-              ✓
-            </div>
-
-            <div className="space-y-2">
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-[#F0FDF4] text-[#15803D] border border-[#BBF7D0]">
-                Order Confirmed &amp; In Process
-              </span>
-              <h1 className="text-2xl sm:text-3xl font-bold text-[#111827] tracking-tight">
-                Thank You for Choosing LaptopMitra!
-              </h1>
-              <p className="text-xs text-[#475569]">
-                Order Reference: <strong className="text-[#111827] font-mono text-sm">{completedOrder.orderNumber}</strong>
-              </p>
-            </div>
-
-            <div className="p-5 rounded-2xl bg-[#F8FAFC] border border-[#E4E9F2] text-left text-xs space-y-3">
-              <div className="flex justify-between border-b border-[#E4E9F2] pb-2 font-bold text-[#0B1F4B]">
-                <span>Delivery Summary</span>
-                <span className="text-[#1D6FF2]">Express Insured BlueDart</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-slate-600">
-                <div>
-                  <span className="text-slate-400 block text-[10px]">Recipient</span>
-                  <span className="font-bold text-slate-800">{formData.fullName}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px]">Contact Phone</span>
-                  <span className="font-bold text-slate-800 font-mono">{formData.phone}</span>
-                </div>
-                <div className="col-span-2">
-                  <span className="text-slate-400 block text-[10px]">Shipping Destination</span>
-                  <span className="font-medium text-slate-800">
-                    {formData.address}, {formData.city}, {formData.state} - {formData.pincode}
-                  </span>
-                </div>
+        <div className="bg-[#F7F4EE] min-h-screen py-10 px-4">
+          <div className="max-w-2xl mx-auto space-y-6">
+            {/* Step progress indicator - Completed */}
+            <div className="p-4 rounded-2xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-2xs">
+              <div className="flex items-center justify-between text-xs font-bold text-emerald-700 px-4">
+                <span className="flex items-center gap-1.5">✓ 1. Cart</span>
+                <span className="h-0.5 w-12 bg-emerald-500 rounded-full" />
+                <span className="flex items-center gap-1.5">✓ 2. Delivery</span>
+                <span className="h-0.5 w-12 bg-emerald-500 rounded-full" />
+                <span className="flex items-center gap-1.5">✓ 3. Payment</span>
+                <span className="h-0.5 w-12 bg-emerald-500 rounded-full" />
+                <span className="flex items-center gap-1.5 text-[#0B1F4B]">4. Confirmed</span>
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              <Link
-                href="/profile"
-                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs shadow-xs transition-all"
-              >
-                📦 View Order in Account
-              </Link>
-              <Link
-                href="/products"
-                className="w-full sm:w-auto px-6 py-3 rounded-xl border border-[#E4E9F2] hover:bg-[#F8FAFC] text-slate-700 font-bold text-xs transition-all"
-              >
-                Continue Shopping
-              </Link>
-              <a
-                href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra,%20I%20just%20placed%20Order%20${completedOrder.orderNumber}.%20Please%20send%20tracking%20updates.`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
-              >
-                <span>WhatsApp Updates</span>
-              </a>
+            <div className="bg-[#FFFDF9] rounded-3xl border border-[#E6DFD5] shadow-xs p-6 sm:p-10 text-center space-y-6 animate-fade-in-up">
+              {/* Restrained checkmark animation */}
+              <div className="w-16 h-16 rounded-full bg-emerald-50 border-2 border-emerald-500 text-emerald-600 flex items-center justify-center mx-auto animate-check-bounce shadow-xs">
+                <svg className="w-8 h-8 text-emerald-600 animate-check-draw" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+
+              <div className="space-y-2">
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  Order Confirmed &amp; In Process
+                </span>
+                <h1 className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tracking-tight">
+                  Thank You for Choosing LaptopMitra!
+                </h1>
+                <p className="text-xs text-slate-500">
+                  Order Reference: <strong className="text-[#0B1F4B] font-mono text-sm">{completedOrder.orderNumber}</strong>
+                </p>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-[#FAF6EF] border border-[#E6DFD5] text-left text-xs space-y-3">
+                <div className="flex justify-between border-b border-[#E6DFD5] pb-2 font-bold text-[#0B1F4B]">
+                  <span>Delivery Summary</span>
+                  <span className="text-[#2563EB]">Express Insured BlueDart</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-slate-600">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Recipient</span>
+                    <span className="font-bold text-[#0B1F4B]">{formData.fullName}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Contact Phone</span>
+                    <span className="font-bold text-[#0B1F4B] font-mono">{formData.phone}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Shipping Destination</span>
+                    <span className="font-medium text-slate-800">
+                      {formData.address}, {formData.city}, {formData.state} - {formData.pincode}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                <Link
+                  href="/profile"
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs shadow-xs button-press transition-all cursor-pointer"
+                >
+                  📦 View Order in Account
+                </Link>
+                <Link
+                  href="/products"
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl border border-[#E6DFD5] hover:bg-[#FAF6EF] text-slate-700 font-bold text-xs button-press transition-all"
+                >
+                  Continue Shopping
+                </Link>
+                <a
+                  href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra,%20I%20just%20placed%20Order%20${completedOrder.orderNumber}.%20Please%20send%20tracking%20updates.`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs button-press transition-all"
+                >
+                  <span>WhatsApp Updates</span>
+                </a>
+              </div>
             </div>
           </div>
         </div>
@@ -884,8 +999,8 @@ export default function CheckoutPage() {
   if (confirmingOrder) {
     return (
       <CustomerLayout>
-        <div className="bg-[#F8FAFC] min-h-[70vh] flex items-center justify-center py-12 px-4">
-          <div className="max-w-lg w-full bg-white rounded-3xl border border-amber-200 shadow-sm p-6 sm:p-10 text-center space-y-5">
+        <div className="bg-[#F7F4EE] min-h-[70vh] flex items-center justify-center py-12 px-4">
+          <div className="max-w-lg w-full bg-[#FFFDF9] rounded-3xl border border-amber-200 shadow-sm p-6 sm:p-10 text-center space-y-5">
             <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl mx-auto">
               ⏳
             </div>
@@ -931,8 +1046,8 @@ export default function CheckoutPage() {
   if (authLoading || isGuestOrUnauthenticated) {
     return (
       <CustomerLayout>
-        <div className="bg-[#F8FAFC] min-h-[70vh] flex items-center justify-center py-16 px-4">
-          <div className="max-w-md w-full text-center space-y-4 bg-white p-8 rounded-3xl border border-[#E4E9F2] shadow-sm">
+        <div className="bg-[#F7F4EE] min-h-[70vh] flex items-center justify-center py-16 px-4">
+          <div className="max-w-md w-full text-center space-y-4 bg-[#FFFDF9] p-8 rounded-3xl border border-[#E6DFD5] shadow-sm">
             <h2 className="text-xl font-black text-[#0B1F4B]">Sign In Required</h2>
             <p className="text-xs text-slate-500">
               {authLoading ? 'Checking your account session…' : 'Redirecting to sign in before checkout and payment…'}
@@ -955,8 +1070,8 @@ export default function CheckoutPage() {
   if (itemCount === 0) {
     return (
       <CustomerLayout>
-        <div className="bg-[#F8FAFC] min-h-[70vh] flex items-center justify-center py-16 px-4">
-          <div className="max-w-md w-full text-center space-y-4 bg-white p-8 rounded-3xl border border-[#E4E9F2] shadow-sm">
+        <div className="bg-[#F7F4EE] min-h-[70vh] flex items-center justify-center py-16 px-4">
+          <div className="max-w-md w-full text-center space-y-4 bg-[#FFFDF9] p-8 rounded-3xl border border-[#E6DFD5] shadow-sm">
             <h2 className="text-xl font-black text-[#0B1F4B]">Your Cart is Empty</h2>
             <p className="text-xs text-slate-500">{cartSyncing ? 'Checking your saved cart…' : cartSyncError || 'Add certified laptops to your cart before proceeding to checkout.'}</p>
             {cartSyncError && <button type="button" onClick={() => window.location.reload()} className="text-xs font-bold text-blue-600">Retry cart sync</button>}
@@ -974,11 +1089,54 @@ export default function CheckoutPage() {
 
   return (
     <CustomerLayout>
-      <div className="bg-[#F8FAFC] min-h-screen py-6 sm:py-8 lg:py-10">
+      <div className="bg-[#F7F4EE] min-h-screen py-6 sm:py-8 lg:py-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h1 className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tracking-tight mb-6">
-            Secure Checkout
-          </h1>
+          {/* Header & Stepper */}
+          <div className="mb-6 space-y-4">
+            <h1 className="text-2xl sm:text-3xl font-black text-[#0B1F4B] tracking-tight">
+              Secure Checkout
+            </h1>
+
+            {/* Stepper Progress Bar */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-2xs">
+              <div className="max-w-2xl mx-auto flex items-center justify-between relative">
+                <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-[#E6DFD5] -translate-y-1/2 z-0" />
+                <div className="absolute top-1/2 left-0 w-1/2 h-0.5 bg-[#2563EB] -translate-y-1/2 z-0 transition-all duration-500" />
+
+                {/* Step 1: Cart */}
+                <Link href="/cart" className="flex flex-col items-center gap-1.5 relative z-10 group cursor-pointer">
+                  <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold shadow-xs group-hover:scale-105 transition-transform">
+                    ✓
+                  </div>
+                  <span className="text-[11px] font-bold text-[#2563EB]">1. Cart</span>
+                </Link>
+
+                {/* Step 2: Delivery & Shipping */}
+                <div className="flex flex-col items-center gap-1.5 relative z-10">
+                  <div className="w-8 h-8 rounded-full bg-[#2563EB] text-white ring-4 ring-[#2563EB]/15 flex items-center justify-center text-xs font-bold shadow-xs">
+                    2
+                  </div>
+                  <span className="text-[11px] font-bold text-[#0B1F4B]">2. Delivery</span>
+                </div>
+
+                {/* Step 3: Payment */}
+                <div className="flex flex-col items-center gap-1.5 relative z-10">
+                  <div className="w-8 h-8 rounded-full bg-[#FFFDF9] text-[#2563EB] border-2 border-[#2563EB] flex items-center justify-center text-xs font-bold shadow-xs">
+                    3
+                  </div>
+                  <span className="text-[11px] font-bold text-[#0B1F4B]">3. Payment</span>
+                </div>
+
+                {/* Step 4: Confirmation */}
+                <div className="flex flex-col items-center gap-1.5 relative z-10">
+                  <div className="w-8 h-8 rounded-full bg-[#FAF6EF] text-slate-400 border border-[#E6DFD5] flex items-center justify-center text-xs font-bold">
+                    4
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-400">4. Confirmation</span>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <form onSubmit={handlePlaceOrder}>
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
@@ -986,8 +1144,8 @@ export default function CheckoutPage() {
               {/* LEFT COLUMN: Shipping, GST & Payment (7 cols) */}
               <div className="lg:col-span-7 space-y-6">
                 {/* 1. Contact & Shipping Address */}
-                <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-4">
-                  <div className="flex items-center gap-2.5 pb-3 border-b border-[#E4E9F2]">
+                <div className="p-5 sm:p-6 rounded-3xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-sm space-y-4">
+                  <div className="flex items-center gap-2.5 pb-3 border-b border-[#E6DFD5]">
                     <span className="w-6 h-6 rounded-full bg-[#1D6FF2] text-white flex items-center justify-center text-xs font-bold font-mono">
                       1
                     </span>
@@ -1093,7 +1251,7 @@ export default function CheckoutPage() {
                         value={formData.fullName}
                         onChange={handleFormChange}
                         placeholder="e.g. Rahul Sharma"
-                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-slate-900 focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
                       />
                     </div>
 
@@ -1106,7 +1264,7 @@ export default function CheckoutPage() {
                         value={formData.phone}
                         onChange={handleFormChange}
                         placeholder="10-digit mobile number"
-                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 font-mono focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-slate-900 font-mono focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
                       />
                     </div>
 
@@ -1118,7 +1276,7 @@ export default function CheckoutPage() {
                         value={formData.email}
                         onChange={handleFormChange}
                         placeholder="you@company.com"
-                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-slate-900 focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
                       />
                     </div>
 
@@ -1131,7 +1289,7 @@ export default function CheckoutPage() {
                         value={formData.address}
                         onChange={handleFormChange}
                         placeholder="Building name, street, locality"
-                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-slate-900 focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
                       />
                     </div>
 
@@ -1144,7 +1302,7 @@ export default function CheckoutPage() {
                         value={formData.city}
                         onChange={handleFormChange}
                         placeholder="City"
-                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-slate-900 focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
                       />
                     </div>
 
@@ -1160,7 +1318,7 @@ export default function CheckoutPage() {
                         value={formData.pincode}
                         onChange={handleFormChange}
                         placeholder="PIN Code"
-                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 font-mono focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-slate-900 font-mono focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
                       />
                       <p aria-live="polite" className={`min-h-4 text-[11px] ${pincodeError ? 'text-rose-600' : 'text-emerald-700'}`}>
                         {isVerifyingPincode
@@ -1186,8 +1344,8 @@ export default function CheckoutPage() {
                 </div>
 
                 {/* 2. B2B / GST Information (Optional) */}
-                <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#E4E9F2]">
+                <div className="p-5 sm:p-6 rounded-3xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-sm space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#E6DFD5]">
                     <div className="flex items-center gap-2.5">
                       <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center text-xs font-bold font-mono">
                         2
@@ -1210,7 +1368,7 @@ export default function CheckoutPage() {
                         value={formData.companyName}
                         onChange={handleFormChange}
                         placeholder="e.g. Acme Technologies Pvt Ltd"
-                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-slate-900 focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
                       />
                     </div>
 
@@ -1223,15 +1381,15 @@ export default function CheckoutPage() {
                         value={formData.gstin}
                         onChange={handleFormChange}
                         placeholder="27AAAAA0000A1Z5"
-                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-slate-900 font-mono uppercase focus:outline-none focus:border-[#1D6FF2] focus:bg-white"
+                        className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-slate-900 font-mono uppercase focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* 3. Payment Method */}
-                <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-4">
-                  <div className="flex items-center gap-2.5 pb-3 border-b border-[#E2E8F0]">
+                <div className="p-5 sm:p-6 rounded-3xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-sm space-y-4">
+                  <div className="flex items-center gap-2.5 pb-3 border-b border-[#E6DFD5]">
                     <span className="w-6 h-6 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold font-mono">
                       3
                     </span>
@@ -1242,7 +1400,7 @@ export default function CheckoutPage() {
 
                   <div className="space-y-3">
                     <label className={`p-4 rounded-2xl border-2 flex items-center justify-between cursor-pointer transition-all ${
-                      paymentMethod === 'razorpay' ? 'border-[#1D6FF2] bg-blue-50/30' : 'border-[#E4E9F2] hover:bg-slate-50'
+                      paymentMethod === 'razorpay' ? 'border-[#2563EB] bg-blue-50/40 ring-1 ring-[#2563EB]/20' : 'border-[#E6DFD5] hover:bg-slate-50'
                     }`}>
                       <div className="flex items-center gap-3">
                         <input
@@ -1250,7 +1408,7 @@ export default function CheckoutPage() {
                           name="paymentMethod"
                           checked={paymentMethod === 'razorpay'}
                           onChange={() => setPaymentMethod('razorpay')}
-                          className="w-4 h-4 text-[#1D6FF2] focus:ring-[#1D6FF2] cursor-pointer"
+                          className="w-4 h-4 text-[#2563EB] focus:ring-[#2563EB] cursor-pointer"
                         />
                         <div>
                           <span className="font-black text-sm text-[#0B1F4B] block">
@@ -1270,7 +1428,7 @@ export default function CheckoutPage() {
 
                     {!hasRentalOrder && (
                       <label className={`p-4 rounded-2xl border-2 flex items-center justify-between transition-all ${
-                        paymentMethod === 'cod' ? 'border-[#1D6FF2] bg-blue-50/30' : 'border-[#E4E9F2] hover:bg-slate-50'
+                        paymentMethod === 'cod' ? 'border-[#2563EB] bg-blue-50/40 ring-1 ring-[#2563EB]/20' : 'border-[#E6DFD5] hover:bg-slate-50'
                       } ${(!codEligible || (appliedDiscount?.allowedPaymentMethods === 'ONLINE_ONLY' || appliedDiscount?.allowedPaymentMethods === 'PREPAID')) ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}>
                         <div className="flex items-center gap-3">
                           <input
@@ -1283,7 +1441,7 @@ export default function CheckoutPage() {
                                 setPaymentMethod('cod');
                               }
                             }}
-                            className="w-4 h-4 text-[#1D6FF2] focus:ring-[#1D6FF2] disabled:cursor-not-allowed cursor-pointer"
+                            className="w-4 h-4 text-[#2563EB] focus:ring-[#2563EB] disabled:cursor-not-allowed cursor-pointer"
                           />
                           <div>
                             <span className="font-black text-sm text-[#0B1F4B] block">
@@ -1313,7 +1471,7 @@ export default function CheckoutPage() {
                                 void submitCheckoutOrder();
                               }
                             }}
-                            className="px-4 py-2 rounded-xl bg-[#1D6FF2] text-white text-xs font-bold hover:bg-[#1759C9] disabled:opacity-50 cursor-pointer"
+                            className="px-4 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold hover:bg-[#1D4ED8] disabled:opacity-50 cursor-pointer shadow-xs button-press"
                           >
                             {isSubmitting ? 'Opening Razorpay...' : 'Retry Payment'}
                           </button>
@@ -1334,10 +1492,37 @@ export default function CheckoutPage() {
 
               {/* RIGHT COLUMN: Order Review & Total (5 cols) */}
               <div className="lg:col-span-5 space-y-6">
-                <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E4E9F2] shadow-sm space-y-5 sticky top-20">
-                  <h2 className="text-lg font-black text-[#0B1F4B] tracking-tight">
-                    Order Summary ({itemCount})
-                  </h2>
+                <div className="p-5 sm:p-6 rounded-3xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-sm space-y-5 sticky top-20">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <h2 className="text-lg font-black text-[#0B1F4B] tracking-tight">
+                      Order Summary ({itemCount})
+                    </h2>
+                    {isBuyNow && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                        ⚡ Direct Buy Now
+                      </span>
+                    )}
+                  </div>
+
+                  {isBuyNow && cartItemCount > 0 && (
+                    <div className="p-3 rounded-2xl bg-blue-50/80 border border-blue-200/80 text-xs text-blue-950 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <span className="leading-snug">
+                        Checking out this item only. Your cart (<strong>{cartItemCount} {cartItemCount === 1 ? 'item' : 'items'}</strong>) is saved.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof window !== 'undefined') window.sessionStorage.removeItem('lm_buy_now_item');
+                          setIsBuyNow(false);
+                          setBuyNowItem(null);
+                          router.replace('/checkout');
+                        }}
+                        className="text-xs font-bold text-blue-700 hover:text-blue-900 underline shrink-0 cursor-pointer text-left sm:text-right"
+                      >
+                        Switch to Full Cart
+                      </button>
+                    </div>
+                  )}
 
                   {/* Items List Mini */}
                   <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
@@ -1488,7 +1673,7 @@ export default function CheckoutPage() {
                   <button
                     type="submit"
                     disabled={isSubmitting || cartSyncing || !!cartSyncError || authLoading || (canUseSavedAddresses && savedAddressesLoading) || isVerifyingPincode || !pincodeVerification?.valid || !pincodeVerification.serviceable || hasMixedCart}
-                    className="w-full h-11 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs active:scale-95 transition-all text-center cursor-pointer"
+                    className="w-full h-11 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs button-press transition-all text-center cursor-pointer"
                   >
                     {isSubmitting ? (
                       <span className="flex items-center gap-2">
@@ -1520,6 +1705,29 @@ export default function CheckoutPage() {
               </div>
             </div>
           </form>
+
+          {/* Payment Processing Overlay */}
+          {isSubmitting && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="fixed inset-0 z-50 bg-[#0B1F4B]/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in"
+            >
+              <div className="bg-[#FFFDF9] border border-[#E6DFD5] rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center shadow-2xl space-y-4 animate-pop-in">
+                <div className="w-14 h-14 rounded-full bg-blue-50 border border-blue-200 text-[#2563EB] flex items-center justify-center mx-auto">
+                  <span className="w-7 h-7 border-3 border-[#2563EB] border-t-transparent rounded-full animate-spin" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-black text-[#0B1F4B] text-base">Securing Your Order</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    {paymentMethod === 'razorpay'
+                      ? 'Connecting to 256-bit encrypted Razorpay gateway…'
+                      : 'Registering your cash on delivery order…'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

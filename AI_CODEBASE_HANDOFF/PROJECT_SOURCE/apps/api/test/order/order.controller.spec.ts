@@ -1,0 +1,442 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { OrderController } from '../../src/modules/order/order.controller';
+import { OrderService } from '../../src/modules/order/order.service';
+import { RolesGuard } from '../../src/guards/roles.guard';
+import { Reflector } from '@nestjs/core';
+import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { createNoTaxService } from '../helpers/no-tax-service';
+
+describe('OrderController - Security Tests', () => {
+  let controller: OrderController;
+  let orderService: jest.Mocked<OrderService>;
+
+  const mockUserA = { id: 'user-a', role: 'USER' };
+  const mockAdmin = { id: 'admin-1', role: 'ADMIN' };
+
+  // Casts are intentional: controller tests verify security logic, not data shape.
+  const mockOrderA = {
+    id: 'order-1',
+    userId: 'user-a',
+    status: 'PENDING',
+    paymentStatus: 'PENDING',
+    orderNumber: 'ORD-001',
+    email: 'a@test.com',
+    phone: null,
+    paymentMethod: null,
+    paymentId: null,
+    razorpayOrderId: null,
+    razorpaySignature: null,
+    subtotal: 0,
+    discountAmount: 0,
+    discountType: null,
+    finalAmount: 0,
+    shippingAddress: null,
+    notes: null,
+    referralCode: null,
+    referralDiscount: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    user: { id: 'user-a', name: 'A', email: 'a@test.com', role: 'USER' },
+    items: [],
+    deliveries: [],
+    payments: [],
+  } as any;
+
+  const mockOrderB = {
+    ...mockOrderA,
+    id: 'order-2',
+    userId: 'user-b',
+    status: 'CONFIRMED',
+    paymentStatus: 'COMPLETED',
+    orderNumber: 'ORD-002',
+    user: { id: 'user-b', name: 'B', email: 'b@test.com', role: 'USER' },
+  } as any;
+
+  beforeEach(async () => {
+    const mockOrderService = {
+      findOne: jest.fn(),
+      updateStatus: jest.fn(),
+      cancelOrder: jest.fn(),
+      findByUser: jest.fn(),
+      createOrder: jest.fn(),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [OrderController],
+      providers: [
+        {
+          provide: OrderService,
+          useValue: mockOrderService,
+        },
+        {
+          provide: RolesGuard,
+          useValue: { canActivate: jest.fn(() => true) },
+        },
+        {
+          provide: Reflector,
+          useValue: { getAllAndMerge: jest.fn(() => []) },
+        },
+      ],
+    }).compile();
+
+    controller = module.get<OrderController>(OrderController);
+    orderService = module.get(OrderService);
+  });
+
+  it('passes the selected saved address ID to the order service', async () => {
+    const body = {
+      addressId: 'address-a',
+      shippingAddress: { address: '12 Main Street', pincode: '110019' },
+      phone: '+919876543210',
+      email: 'a@test.com',
+      paymentMethod: 'razorpay',
+    };
+    orderService.createOrder.mockResolvedValue(mockOrderA);
+
+    await controller.createOrder(mockUserA, body, 'request-key');
+
+    expect(orderService.createOrder).toHaveBeenCalledWith(
+      'user-a', undefined, undefined, body.shippingAddress, body.phone, undefined,
+      body.email, mockUserA, 'razorpay', 'request-key', 'address-a', undefined,
+    );
+  });
+
+  it('rejects GUEST users before placing an order via metadata and controller guard', async () => {
+    const rolesMetadata = Reflect.getMetadata('roles', OrderController.prototype.createOrder);
+    expect(rolesMetadata).toEqual(['CUSTOMER', 'ADMIN']);
+    expect(Reflect.getMetadata('roles', OrderController)).toBeUndefined();
+
+    await expect(
+      controller.createOrder({ id: 'guest-1', role: 'GUEST', isGuest: true }, { paymentMethod: 'razorpay' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(orderService.createOrder).not.toHaveBeenCalled();
+  });
+
+  describe('GET /orders/:id (findOne)', () => {
+    it('should return order when user owns it', async () => {
+      orderService.findOne.mockResolvedValue(mockOrderA);
+      const result = await controller.getOrder(mockUserA, 'order-1');
+      expect(result).toEqual(mockOrderA);
+      expect(orderService.findOne).toHaveBeenCalledWith('order-1', 'user-a', 'USER');
+    });
+
+    it('should return order when admin requests any order', async () => {
+      orderService.findOne.mockResolvedValue(mockOrderB);
+      const result = await controller.getOrder(mockAdmin, 'order-2');
+      expect(result).toEqual(mockOrderB);
+      expect(orderService.findOne).toHaveBeenCalledWith('order-2', 'admin-1', 'ADMIN');
+    });
+
+    it('should throw ForbiddenException when user A tries to access user B order', async () => {
+      orderService.findOne.mockRejectedValue(new ForbiddenException('Access denied: You can only view your own orders'));
+      await expect(controller.getOrder(mockUserA, 'order-2')).rejects.toThrow(ForbiddenException);
+      expect(orderService.findOne).toHaveBeenCalledWith('order-2', 'user-a', 'USER');
+    });
+
+    it('should throw NotFoundException when order does not exist', async () => {
+      orderService.findOne.mockRejectedValue(new NotFoundException('Order with id order-999 not found'));
+      await expect(controller.getOrder(mockUserA, 'order-999')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('PUT /orders/:id/status (updateStatus) - Admin only', () => {
+    it('should allow admin to update any order status', async () => {
+      orderService.updateStatus.mockResolvedValue({ ...mockOrderA, status: 'DELIVERED', paymentStatus: 'COMPLETED' });
+      const result = await controller.updateStatus(mockAdmin, 'order-1', 'DELIVERED');
+      expect(result.status).toBe('DELIVERED');
+      expect(orderService.updateStatus).toHaveBeenCalledWith('order-1', 'DELIVERED', 'admin-1', 'ADMIN');
+    });
+
+    it('should reject non-admin user trying to update status', async () => {
+      // RolesGuard would block this before reaching controller, but we test service layer
+      orderService.updateStatus.mockRejectedValue(new ForbiddenException('Insufficient permissions'));
+      await expect(controller.updateStatus(mockUserA, 'order-1', 'DELIVERED')).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('PATCH /orders/:id/cancel (cancelOrder)', () => {
+    it('should allow user to cancel their own PENDING order', async () => {
+      const cancelledOrder = {
+        ...mockOrderA,
+        status: 'CANCELLED',
+        paymentStatus: 'REFUNDED',
+        refundRequired: false,
+        refundMessage: null,
+      };
+      orderService.cancelOrder.mockResolvedValue(cancelledOrder);
+      const result = await controller.cancelOrder(mockUserA, 'order-1');
+      expect(result.status).toBe('CANCELLED');
+      expect(result.refundRequired).toBe(false);
+      expect(orderService.cancelOrder).toHaveBeenCalledWith('order-1', 'user-a', 'USER');
+    });
+
+    it('should allow user to cancel their own CONFIRMED order', async () => {
+      const confirmedOrder = { ...mockOrderA, status: 'CONFIRMED' };
+      const cancelledOrder = {
+        ...confirmedOrder,
+        status: 'CANCELLED',
+        paymentStatus: 'REFUNDED',
+        refundRequired: false,
+        refundMessage: null,
+      };
+      orderService.cancelOrder.mockResolvedValue(cancelledOrder);
+      const result = await controller.cancelOrder(mockUserA, 'order-1');
+      expect(result.status).toBe('CANCELLED');
+    });
+
+    it('should allow admin to cancel any order', async () => {
+      const cancelledOrder = {
+        ...mockOrderB,
+        status: 'CANCELLED',
+        paymentStatus: 'REFUNDED',
+        refundRequired: true,
+        refundMessage: 'Payment was completed - refund needs to be processed via Razorpay',
+      };
+      orderService.cancelOrder.mockResolvedValue(cancelledOrder);
+      const result = await controller.cancelOrder(mockAdmin, 'order-2');
+      expect(result.status).toBe('CANCELLED');
+      expect(result.refundRequired).toBe(true);
+    });
+
+    it('should throw ForbiddenException when user A tries to cancel user B order', async () => {
+      orderService.cancelOrder.mockRejectedValue(new ForbiddenException('Access denied: You can only cancel your own orders'));
+      await expect(controller.cancelOrder(mockUserA, 'order-2')).rejects.toThrow(ForbiddenException);
+      expect(orderService.cancelOrder).toHaveBeenCalledWith('order-2', 'user-a', 'USER');
+    });
+
+    it('should throw BadRequestException when trying to cancel SHIPPING order', async () => {
+      orderService.cancelOrder.mockRejectedValue(new BadRequestException('Cannot cancel order in status "SHIPPING". Orders can only be cancelled when PENDING or CONFIRMED.'));
+      await expect(controller.cancelOrder(mockUserA, 'order-3')).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw NotFoundException when order does not exist', async () => {
+      orderService.cancelOrder.mockRejectedValue(new NotFoundException('Order with id order-999 not found'));
+      await expect(controller.cancelOrder(mockUserA, 'order-999')).rejects.toThrow(NotFoundException);
+    });
+  });
+});
+
+describe('OrderService - Security Logic', () => {
+  let orderService: OrderService;
+  let prisma: any;
+  let pincodeService: { validateOrderShipping: jest.Mock };
+
+  beforeEach(() => {
+    prisma = {
+      address: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      $transaction: jest.fn((callback: any) => (typeof callback === 'function' ? callback(prisma) : Promise.all(callback))),
+      order: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      product: {
+        update: jest.fn(),
+      },
+      payment: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      discountRedemption: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        delete: jest.fn().mockResolvedValue({}),
+      },
+      referralRedemption: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      discountCode: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+    pincodeService = { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) };
+    orderService = new OrderService(
+      prisma,
+      {} as any,
+      {} as any,
+      { dispatchOrderUpdate: jest.fn() } as any,
+      { validateDiscountCode: jest.fn(), restoreOrderDiscount: jest.fn().mockResolvedValue(true) } as any,
+      pincodeService as any,
+      createNoTaxService(),
+    );
+  });
+
+  it('rejects a saved delivery address that does not belong to the ordering customer', async () => {
+    await expect(orderService.createOrder(
+      'user-a', undefined, undefined,
+      { fullName: 'Forged Recipient', address: 'Forged address', pincode: '110019' },
+      '+919876543210', undefined, 'customer@example.com', { id: 'user-a' },
+      'razorpay', undefined, 'address-user-b',
+    )).rejects.toThrow(NotFoundException);
+
+    expect(prisma.address.findFirst).toHaveBeenCalledWith({
+      where: { id: 'address-user-b', userId: 'user-a' },
+    });
+  });
+
+  it('uses the owned database address as the order shipping source', async () => {
+    const savedAddress = {
+      id: 'address-a', userId: 'user-a', fullName: 'Saved Name', phone: '+919999999999',
+      address: 'Saved Street', landmark: 'Saved Landmark', city: 'Saved City',
+      state: 'Saved State', pincode: '110019',
+    };
+    prisma.address.findFirst.mockResolvedValue(savedAddress);
+    const stopBeforeOrderCreation = new Error('stop after address validation');
+    pincodeService.validateOrderShipping.mockRejectedValue(stopBeforeOrderCreation);
+
+    await expect(orderService.createOrder(
+      'user-a', undefined, undefined,
+      { fullName: 'Forged Name', phone: '+910000000000', address: 'Forged Street', pincode: '560001' },
+      '+910000000000', undefined, 'customer@example.com', { id: 'user-a' },
+      'razorpay', undefined, 'address-a',
+    )).rejects.toBe(stopBeforeOrderCreation);
+
+    expect(pincodeService.validateOrderShipping).toHaveBeenCalledWith({
+      fullName: 'Saved Name', phone: '+919999999999', address: 'Saved Street',
+      landmark: 'Saved Landmark', city: 'Saved City', state: 'Saved State', pincode: '110019',
+    }, 'razorpay');
+  });
+
+  describe('findOne', () => {
+    it('returns order when user owns it', async () => {
+      prisma.order.findUnique.mockResolvedValue({ id: 'o1', userId: 'user-a' });
+      const result = await orderService.findOne('o1', 'user-a', 'USER');
+      expect(result.userId).toBe('user-a');
+    });
+
+    it('returns order when admin requests it', async () => {
+      prisma.order.findUnique.mockResolvedValue({ id: 'o2', userId: 'user-b' });
+      const result = await orderService.findOne('o2', 'admin-1', 'ADMIN');
+      expect(result.userId).toBe('user-b');
+    });
+
+    it('throws ForbiddenException when user requests another user order', async () => {
+      prisma.order.findUnique.mockResolvedValue({ id: 'o2', userId: 'user-b' });
+      await expect(orderService.findOne('o2', 'user-a', 'USER')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('throws NotFoundException when order does not exist', async () => {
+      prisma.order.findUnique.mockResolvedValue(null);
+      await expect(orderService.findOne('o999', 'user-a', 'USER')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('updateStatus', () => {
+    it('allows admin to update any order status', async () => {
+      prisma.order.findUnique.mockResolvedValue({ id: 'o1', userId: 'user-a', status: 'SHIPPING' });
+      prisma.order.updateMany.mockResolvedValue({ count: 1 });
+      const result = await orderService.updateStatus('o1', 'DELIVERED', 'admin-1', 'ADMIN');
+      expect(result.status).toBe('DELIVERED');
+    });
+
+    it('throws ForbiddenException when non-admin tries to update another user order', async () => {
+      prisma.order.findUnique.mockResolvedValue({ id: 'o2', userId: 'user-b', status: 'PENDING' });
+      await expect(orderService.updateStatus('o2', 'DELIVERED', 'user-a', 'USER')).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('cancelOrder', () => {
+    it('allows user to cancel their own PENDING order', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'o1',
+        userId: 'user-a',
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        items: [],
+        payments: [],
+      });
+      prisma.order.update.mockResolvedValue({ id: 'o1', status: 'CANCELLED', paymentStatus: 'REFUNDED', items: [] });
+      const result = await orderService.cancelOrder('o1', 'user-a', 'USER');
+      expect(result.status).toBe('CANCELLED');
+      expect(result.refundRequired).toBe(false);
+    });
+
+    it('allows user to cancel their own CONFIRMED order', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'o2',
+        userId: 'user-a',
+        status: 'CONFIRMED',
+        paymentStatus: 'PENDING',
+        items: [],
+        payments: [],
+      });
+      prisma.order.update.mockResolvedValue({ id: 'o2', status: 'CANCELLED', paymentStatus: 'REFUNDED', items: [] });
+      const result = await orderService.cancelOrder('o2', 'user-a', 'USER');
+      expect(result.status).toBe('CANCELLED');
+    });
+
+    it('throws BadRequestException when trying to cancel SHIPPING order', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'o3',
+        userId: 'user-a',
+        status: 'SHIPPING',
+        paymentStatus: 'COMPLETED',
+        items: [],
+        payments: [],
+      });
+      await expect(orderService.cancelOrder('o3', 'user-a', 'USER')).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws ForbiddenException when user tries to cancel another user order', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'o2',
+        userId: 'user-b',
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        items: [],
+        payments: [],
+      });
+      await expect(orderService.cancelOrder('o2', 'user-a', 'USER')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('flags refundRequired when payment was completed', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'o4',
+        userId: 'user-a',
+        status: 'PENDING',
+        paymentStatus: 'COMPLETED',
+        paymentId: 'pay-1',
+        items: [],
+        payments: [{ id: 'pay-1' }],
+      });
+      prisma.order.update.mockResolvedValue({ id: 'o4', status: 'CANCELLED', paymentStatus: 'REFUNDED', items: [] });
+      const result = await orderService.cancelOrder('o4', 'user-a', 'USER');
+      expect(result.refundRequired).toBe(true);
+      expect(result.refundMessage).toContain('refund');
+    });
+
+    it('rejects GUEST users in OrderService.createOrder', async () => {
+      await expect(
+        orderService.createOrder(
+          'guest-1',
+          undefined,
+          undefined,
+          { fullName: 'Guest', address: '12 Main St', pincode: '110019' },
+          '+919876543210',
+          undefined,
+          'guest@example.com',
+          { id: 'guest-1', role: 'GUEST', isGuest: true },
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('restores product stock on cancellation', async () => {
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'o5',
+        userId: 'user-a',
+        status: 'PENDING',
+        paymentStatus: 'PENDING',
+        inventoryStatus: 'RESERVED',
+        items: [{ productId: 'prod-1', quantity: 2 }],
+        payments: [],
+      });
+      prisma.order.update.mockResolvedValue({ id: 'o5', status: 'CANCELLED', paymentStatus: 'REFUNDED', items: [{ productId: 'prod-1', quantity: 2 }] });
+      await orderService.cancelOrder('o5', 'user-a', 'USER');
+      expect(prisma.product.update).toHaveBeenCalledWith({
+        where: { id: 'prod-1' },
+        data: { stock: { increment: 2 } },
+      });
+    });
+  });
+});

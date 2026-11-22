@@ -705,9 +705,10 @@ export default function ReferralPage() {
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {stats.payoutHistory && stats.payoutHistory.length > 0 ? (
                     stats.payoutHistory.map((payout) => {
-                      const isPending = payout.status === 'PENDING';
-                      const isApproved = payout.status === 'APPROVED';
-                      const isRejected = payout.status === 'REJECTED';
+                      const statusUpper = (payout.status || '').toUpperCase();
+                      const isApproved = statusUpper === 'APPROVED' || statusUpper === 'PAID' || statusUpper === 'COMPLETED';
+                      const isRejected = statusUpper === 'REJECTED' || statusUpper === 'FAILED';
+                      const isPending = !isApproved && !isRejected;
 
                       return (
                         <div key={payout.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

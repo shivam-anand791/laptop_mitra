@@ -142,8 +142,8 @@ function LoginForm() {
     !canAccessPath(redirectParam, user.role)
   ) {
     return (
-      <div className="bg-[#F8FAFC] min-h-[75vh] flex items-center justify-center py-12 sm:py-16 px-4">
-        <div className="max-w-md w-full bg-white p-8 sm:p-10 rounded-3xl border border-rose-200 shadow-sm space-y-6 text-center">
+      <div className="bg-[#F7F4EE] min-h-[75vh] flex items-center justify-center py-12 sm:py-16 px-4">
+        <div className="max-w-md w-full bg-[#FFFDF9] p-8 sm:p-10 rounded-3xl border border-rose-200 shadow-sm space-y-6 text-center">
           <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
             <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path
@@ -182,8 +182,8 @@ function LoginForm() {
   }
 
   return (
-    <div className="bg-[#F8FAFC] min-h-[75vh] flex items-center justify-center py-12 sm:py-16 px-4">
-      <div className="max-w-md w-full bg-white p-8 sm:p-10 rounded-3xl border border-[#E4E9F2] shadow-sm space-y-6">
+    <div className="bg-[#F7F4EE] min-h-[75vh] flex items-center justify-center py-12 sm:py-16 px-4">
+      <div className="max-w-md w-full bg-[#FFFDF9] p-8 sm:p-10 rounded-3xl border border-[#E6DFD5] shadow-sm space-y-6">
         <div className="text-center space-y-3">
           <Link href="/" className="inline-block transition-opacity hover:opacity-90">
             <Image
@@ -251,7 +251,7 @@ function LoginForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@company.com"
-              className="h-11 w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E4E9F2] rounded-xl focus:border-[#1D6FF2] focus:bg-white text-slate-900 outline-none transition-colors disabled:opacity-60"
+              className="h-11 w-full px-3.5 py-2.5 bg-[#FAF6EF] border border-[#E6DFD5] rounded-xl focus:border-[#1D6FF2] focus:bg-[#FFFDF9] text-slate-900 outline-none transition-colors disabled:opacity-60"
             />
           </div>
 
@@ -275,7 +275,7 @@ function LoginForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="h-11 w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E4E9F2] rounded-xl focus:border-[#1D6FF2] focus:bg-white text-slate-900 outline-none transition-colors pr-10 disabled:opacity-60"
+                className="h-11 w-full px-3.5 py-2.5 bg-[#FAF6EF] border border-[#E6DFD5] rounded-xl focus:border-[#1D6FF2] focus:bg-[#FFFDF9] text-slate-900 outline-none transition-colors pr-10 disabled:opacity-60"
               />
               <button
                 type="button"

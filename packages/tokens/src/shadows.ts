@@ -1,17 +1,19 @@
 /**
  * Laptop Mitra Design Tokens — Elevation & Shadows
- * Restrained elevation tailored for clean light surfaces (avoiding heavy dark drop shadows)
+ * Restrained elevation tailored for clean cream & off-white light surfaces
+ * (avoiding heavy dark drop shadows, utilizing warm navy low-alpha diffusion)
  */
 
 export const webShadows = {
   none: 'none',
-  xs: '0 1px 2px rgba(17, 24, 39, 0.04)',
-  sm: '0 1px 3px rgba(17, 24, 39, 0.06), 0 1px 2px rgba(17, 24, 39, 0.04)',
-  md: '0 4px 6px -1px rgba(17, 24, 39, 0.08), 0 2px 4px -2px rgba(17, 24, 39, 0.04)',
-  lg: '0 10px 15px -3px rgba(17, 24, 39, 0.08), 0 4px 6px -4px rgba(17, 24, 39, 0.03)',
-  xl: '0 20px 25px -5px rgba(17, 24, 39, 0.08), 0 8px 10px -6px rgba(17, 24, 39, 0.03)',
+  xs: '0 1px 2px rgba(11, 31, 75, 0.04)',
+  sm: '0 1px 3px rgba(11, 31, 75, 0.05), 0 1px 2px rgba(11, 31, 75, 0.03)',
+  md: '0 4px 12px rgba(11, 31, 75, 0.06), 0 2px 4px rgba(11, 31, 75, 0.03)',
+  lg: '0 8px 24px rgba(11, 31, 75, 0.08), 0 4px 6px rgba(11, 31, 75, 0.04)',
+  xl: '0 16px 40px rgba(11, 31, 75, 0.1), 0 8px 16px rgba(11, 31, 75, 0.04)',
   card: '0 1px 3px rgba(11, 31, 75, 0.04), 0 1px 2px rgba(11, 31, 75, 0.02)',
   cardHover: '0 10px 25px -5px rgba(11, 31, 75, 0.08), 0 8px 10px -6px rgba(11, 31, 75, 0.04)',
+  glow: '0 0 20px rgba(37, 99, 235, 0.12)',
 } as const;
 
 export const mobileShadows = {
@@ -23,14 +25,14 @@ export const mobileShadows = {
     elevation: 0,
   },
   xs: {
-    shadowColor: '#111827',
+    shadowColor: '#0B1F4B',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
-    shadowRadius: 1.5,
+    shadowRadius: 2,
     elevation: 1,
   },
   sm: {
-    shadowColor: '#111827',
+    shadowColor: '#0B1F4B',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 3,
@@ -39,15 +41,15 @@ export const mobileShadows = {
   md: {
     shadowColor: '#0B1F4B',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.07,
     shadowRadius: 6,
     elevation: 3,
   },
   lg: {
     shadowColor: '#0B1F4B',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
+    shadowOpacity: 0.09,
+    shadowRadius: 12,
     elevation: 5,
   },
   card: {
@@ -56,5 +58,12 @@ export const mobileShadows = {
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+  },
+  cardHover: {
+    shadowColor: '#0B1F4B',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.09,
+    shadowRadius: 10,
+    elevation: 4,
   },
 } as const;

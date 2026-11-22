@@ -124,13 +124,13 @@ export default function HelpCenterPage() {
     : null;
 
   return (
-    <div className="bg-[#F8FAFC] text-slate-900 pb-16">
+    <div className="bg-[#F7F4EE] text-slate-900 pb-16">
       <HelpBreadcrumbs />
       {/* ── Hero Search Banner ── */}
-      <section className="relative bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white py-16 px-4 sm:px-6 lg:px-8 overflow-hidden">
+      <section className="relative bg-gradient-to-br from-[#0B1F4B] via-[#0F296B] to-[#1E3A8A] text-white py-16 px-4 sm:px-6 lg:px-8 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:24px_24px] opacity-15 pointer-events-none" />
         <div className="relative max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-400/20 text-blue-200 text-xs font-semibold uppercase tracking-wider mb-4">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 text-blue-200 text-xs font-semibold uppercase tracking-wider mb-4">
             <LifeBuoy className="w-3.5 h-3.5" />
             LaptopMitra Help &amp; Support
           </div>
@@ -138,13 +138,13 @@ export default function HelpCenterPage() {
           <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white mb-4">
             How can we assist you today?
           </h1>
-          <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto mb-8">
+          <p className="text-sm sm:text-base text-blue-100 max-w-2xl mx-auto mb-8">
             Get help with orders, return eligibility, warranty coverage{warrantyMonths ? ` of up to ${warrantyMonths} months` : ''}, and buyback.
           </p>
 
           {/* Search Input Box */}
           <form onSubmit={handleSearch} className="max-w-2xl mx-auto relative">
-            <div className="relative flex items-center shadow-2xl rounded-2xl overflow-hidden bg-white">
+            <div className="relative flex items-center shadow-xl rounded-2xl overflow-hidden bg-white border border-[#E6DFD5]">
               <Search className="w-5 h-5 text-slate-400 ml-4 pointer-events-none" />
               <input
                 type="text"
@@ -155,7 +155,7 @@ export default function HelpCenterPage() {
               />
               <button
                 type="submit"
-                className="absolute right-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition shadow-md"
+                className="absolute right-2 px-5 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs rounded-xl transition shadow-xs button-press cursor-pointer"
               >
                 {searching ? 'Searching...' : 'Search'}
               </button>
@@ -164,7 +164,7 @@ export default function HelpCenterPage() {
 
           {/* Popular Search Shortcuts */}
           <div className="mt-4 flex flex-wrap justify-center items-center gap-2 text-xs text-slate-300">
-            <span className="text-slate-400">Popular:</span>
+            <span className="text-blue-200">Popular:</span>
             {['Returns & Replacements', 'Warranty Claim', 'Bank Refund', 'Buyback'].map((tag) => (
               <button
                 key={tag}
@@ -172,7 +172,7 @@ export default function HelpCenterPage() {
                 onClick={() => {
                   void searchPopularTopic(tag);
                 }}
-                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 transition"
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white transition button-press cursor-pointer"
               >
                 {tag}
               </button>
@@ -185,10 +185,10 @@ export default function HelpCenterPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 space-y-10">
         {/* Search Results Display (if active query) */}
         {searchQuery.trim() && (
-          <section className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+          <section className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-8 border border-[#E6DFD5] shadow-xs">
+            <div className="flex items-center justify-between pb-4 border-b border-[#E6DFD5] mb-6">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">
+                <h2 className="text-lg font-bold text-[#0B1F4B]">
                   Search Results for &quot;{searchQuery}&quot;
                 </h2>
                 <p className="text-xs text-slate-500">
@@ -197,7 +197,7 @@ export default function HelpCenterPage() {
               </div>
               <button
                 onClick={clearSearch}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+                className="text-xs font-semibold text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer"
               >
                 Clear Search
               </button>
@@ -212,7 +212,7 @@ export default function HelpCenterPage() {
                 </p>
                 <Link
                   href={guidedFlowUrl}
-                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-xl text-xs font-bold transition shadow-xs button-press"
                 >
                   Start Guided Support Flow <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
@@ -223,15 +223,15 @@ export default function HelpCenterPage() {
                   <Link
                     key={art.id}
                     href={`/help/${art.category?.slug || 'general'}/${art.slug}`}
-                    className="p-4 rounded-2xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 transition group flex items-start gap-3"
+                    className="p-4 rounded-2xl border border-[#E6DFD5] bg-white hover:border-[#2563EB]/40 hover:bg-blue-50/30 transition group flex items-start gap-3 shadow-2xs"
                   >
-                    <BookOpen className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                    <BookOpen className="w-5 h-5 text-[#2563EB] shrink-0 mt-0.5" />
                     <div>
-                      <h3 className="text-sm font-bold text-slate-900 group-hover:text-blue-700 transition">
+                      <h3 className="text-sm font-bold text-[#0B1F4B] group-hover:text-[#2563EB] transition">
                         {art.title}
                       </h3>
                       {art.summary && (
-                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                        <p className="text-xs text-slate-600 mt-1 line-clamp-2">
                           {art.summary}
                         </p>
                       )}
@@ -246,8 +246,8 @@ export default function HelpCenterPage() {
           </section>
         )}
 
-        {/* ── Guided Flow Promotion Banner (Flipkart/Myntra Pattern) ── */}
-        <section className="bg-[#0B1F4B] text-white rounded-2xl p-6 sm:p-8 shadow-xl">
+        {/* ── Guided Flow Promotion Banner ── */}
+        <section className="bg-[#0B1F4B] text-white rounded-2xl p-6 sm:p-8 shadow-md">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-blue-100 text-xs font-bold tracking-wide uppercase mb-3">
               Guided help
@@ -261,14 +261,14 @@ export default function HelpCenterPage() {
             <div className="flex flex-wrap items-center gap-3">
               <Link
                 href={guidedFlowUrl}
-                className="inline-flex items-center gap-2 px-5 py-3 bg-white hover:bg-blue-50 text-[#0B1F4B] font-bold text-sm rounded-2xl shadow-lg transition transform hover:-translate-y-0.5"
+                className="inline-flex items-center gap-2 px-5 py-3 bg-white hover:bg-blue-50 text-[#0B1F4B] font-bold text-sm rounded-2xl shadow-sm transition transform hover:-translate-y-0.5 button-press"
               >
                 Start Guided Flow
-                <ArrowRight className="w-4 h-4 text-blue-600" />
+                <ArrowRight className="w-4 h-4 text-[#2563EB]" />
               </Link>
               <Link
                 href={ticketsUrl}
-                className="inline-flex items-center gap-2 px-4 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-sm rounded-2xl border border-white/20 transition"
+                className="inline-flex items-center gap-2 px-4 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-sm rounded-2xl border border-white/20 transition button-press"
               >
                 View My Tickets
               </Link>
@@ -279,18 +279,18 @@ export default function HelpCenterPage() {
         {/* ── Help Categories Grid ── */}
         <section id="topics" className="scroll-mt-36">
           <div className="mb-6">
-            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <h2 className="text-xl font-bold text-[#0B1F4B] flex items-center gap-2">
               Browse by Category
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600">
               Select a help topic to view detailed policies, walkthroughs, and solutions.
             </p>
           </div>
 
           {loading ? (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Loading help topics…</p>
+            <p className="rounded-xl border border-[#E6DFD5] bg-[#FFFDF9] p-5 text-sm text-slate-600">Loading help topics…</p>
           ) : categories.length === 0 ? (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-600">
+            <p className="rounded-xl border border-[#E6DFD5] bg-[#FFFDF9] p-5 text-sm text-slate-600">
               Help topics are temporarily unavailable. Please try again or contact our support team.
             </p>
           ) : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -299,13 +299,13 @@ export default function HelpCenterPage() {
               return (
                 <div
                   key={cat.id}
-                  className="bg-white rounded-2xl p-5 border border-slate-200 hover:border-blue-500/50 hover:shadow-md transition group flex flex-col justify-between"
+                  className="bg-[#FFFDF9] rounded-2xl p-5 border border-[#E6DFD5] hover:border-[#2563EB]/40 hover:shadow-md transition group flex flex-col justify-between"
                 >
                   <div>
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition">
+                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#2563EB] border border-blue-200/50 flex items-center justify-center mb-4 group-hover:bg-[#2563EB] group-hover:text-white transition">
                       <IconComp className="w-5 h-5" />
                     </div>
-                    <h3 className="font-bold text-slate-900 text-base mb-1 group-hover:text-blue-700 transition">
+                    <h3 className="font-bold text-[#0B1F4B] text-base mb-1 group-hover:text-[#2563EB] transition">
                       {cat.title}
                     </h3>
                     <p className="text-xs text-slate-500">
@@ -313,10 +313,10 @@ export default function HelpCenterPage() {
                     </p>
                   </div>
 
-                  <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <div className="mt-4 pt-4 border-t border-[#E6DFD5] flex items-center justify-between">
                     <Link
                       href={`/help/guided-flow?category=${cat.slug}`}
-                      className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                      className="text-xs font-bold text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1"
                     >
                       Browse Topic <ChevronRight className="w-3.5 h-3.5" />
                     </Link>
@@ -328,21 +328,21 @@ export default function HelpCenterPage() {
         </section>
 
         {/* ── Popular Articles Section ── */}
-        <section className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
+        <section className="bg-[#FFFDF9] rounded-3xl p-6 sm:p-8 border border-[#E6DFD5] shadow-xs">
           <div className="mb-6">
-            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-blue-600" />
+            <h2 className="text-xl font-bold text-[#0B1F4B] flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-[#2563EB]" />
               Frequently Asked Help Articles
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600">
               Top questions answered by our certified technicians and support specialists.
             </p>
           </div>
 
           {loading ? (
-            <p className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">Loading articles…</p>
+            <p className="rounded-xl border border-[#E6DFD5] bg-white p-5 text-sm text-slate-600">Loading articles…</p>
           ) : popularArticles.length === 0 ? (
-            <p className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+            <p className="rounded-xl border border-[#E6DFD5] bg-white p-5 text-sm text-slate-600">
               Articles are temporarily unavailable. Browse topics or contact our support team.
             </p>
           ) : <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -350,21 +350,21 @@ export default function HelpCenterPage() {
               <Link
                 key={art.id}
                 href={`/help/${art.category?.slug || 'general'}/${art.slug}`}
-                className="p-4 rounded-2xl bg-slate-50/70 hover:bg-blue-50/50 border border-slate-100 hover:border-blue-200 transition group flex items-start gap-3.5"
+                className="p-4 rounded-2xl bg-white hover:bg-blue-50/50 border border-[#E6DFD5] hover:border-blue-200 transition group flex items-start gap-3.5"
               >
-                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 mt-0.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#2563EB] border border-blue-200/50 flex items-center justify-center shrink-0 mt-0.5">
                   <HelpCircle className="w-4 h-4" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900 group-hover:text-blue-700 transition">
+                  <h3 className="text-sm font-bold text-[#0B1F4B] group-hover:text-[#2563EB] transition">
                     {art.title}
                   </h3>
                   {art.summary && (
-                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                    <p className="text-xs text-slate-600 mt-1 line-clamp-2">
                       {art.summary}
                     </p>
                   )}
-                  <span className="inline-block mt-2 text-[11px] font-semibold text-blue-600 group-hover:underline">
+                  <span className="inline-block mt-2 text-[11px] font-semibold text-[#2563EB] group-hover:underline">
                     Read Full Policy →
                   </span>
                 </div>
@@ -382,7 +382,7 @@ export default function HelpCenterPage() {
             { href: warrantyUrl, label: 'Warranty Support' },
             { href: '/buyback-guarantee', label: 'Buyback' },
           ].map((item) => (
-            <Link key={item.label} href={item.href} className="rounded-xl border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-800 hover:border-blue-300 hover:text-blue-700">
+            <Link key={item.label} href={item.href} className="rounded-xl border border-[#E6DFD5] bg-[#FFFDF9] p-4 text-sm font-semibold text-[#0B1F4B] hover:border-[#2563EB]/40 hover:text-[#2563EB] transition shadow-2xs">
               {item.label} <ArrowRight className="inline h-4 w-4" />
             </Link>
           ))}

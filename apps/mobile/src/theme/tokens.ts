@@ -5,12 +5,14 @@ import {
   mobileShadows,
   typography as sharedTypography,
   accessibility as sharedAccessibility,
+  motion as sharedMotion,
 } from '@laptopmitra/tokens';
 
 export const colors = {
   // Brand — Restrained blue #2563EB & Tech Navy
   primary: sharedColors.brand.primary,
   primaryHover: sharedColors.brand.primaryHover,
+  primaryActive: sharedColors.brand.primaryActive,
   primaryLight: sharedColors.brand.primaryLight,
   primaryBorder: sharedColors.brand.primaryBorder,
 
@@ -18,17 +20,25 @@ export const colors = {
   navyHover: sharedColors.brand.navyHover,
   navyLight: sharedColors.brand.navyLight,
 
-  // Canvas & Surfaces — Light canvas #F8FAFC & Clean Cards
+  // Canvas & Surfaces — Warm Cream & Warm Cards (Cream & Off-White Identity)
   pageBg: sharedColors.canvas.pageBg,
   cardBg: sharedColors.canvas.cardBg,
   cardBorder: sharedColors.border.default,
   cardBorderLight: sharedColors.border.subtle,
+  creamDarker: sharedColors.canvas.surfaceElevated,
+  surfaceElevated: sharedColors.canvas.surfaceElevated,
+  surfaceSubtle: sharedColors.canvas.surfaceSubtle,
+  pureWhite: sharedColors.canvas.pureWhite,
 
   // Text Hierarchy — Primary #111827
   textPrimary: sharedColors.text.primary,
   textSecondary: sharedColors.text.secondary,
   textMuted: sharedColors.text.muted,
   textWhite: sharedColors.text.inverse,
+  textNavy: sharedColors.text.navy,
+
+  // Interactive States
+  states: sharedColors.states,
 
   // Semantic Status & Feedback
   green: sharedColors.semantic.success.main,
@@ -77,10 +87,19 @@ export const radius = {
 
 export const shadows = {
   none: mobileShadows.none,
+  xs: mobileShadows.xs,
   sm: mobileShadows.sm,
   md: mobileShadows.md,
   lg: mobileShadows.lg,
   card: mobileShadows.card,
+  cardHover: mobileShadows.cardHover,
+} as const;
+
+export const motion = {
+  durations: sharedMotion.durations,
+  durationsMs: sharedMotion.durationsMs,
+  easings: sharedMotion.easings,
+  bezier: sharedMotion.bezier,
 } as const;
 
 export const typography = {
@@ -130,6 +149,14 @@ export const typography = {
 export const accessibility = {
   minTouchTarget: sharedAccessibility.minTouchTargetMobile,
   maxFontMultiplier: sharedAccessibility.textScaling.maxMultiplier,
+  reducedMotion: sharedAccessibility.reducedMotion,
 } as const;
 
-export { sharedColors, sharedSpacing, sharedRadius, sharedTypography, sharedAccessibility };
+export {
+  sharedColors,
+  sharedSpacing,
+  sharedRadius,
+  sharedTypography,
+  sharedAccessibility,
+  sharedMotion,
+};

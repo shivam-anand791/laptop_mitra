@@ -80,7 +80,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const pendingOpsRef = useRef<PendingCartOp[]>([]);
   const items = cartState.key === storageKey ? cartState.items : [];
   const itemsRef = useRef<CartItem[]>(items);
-  itemsRef.current = items;
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const saveCart = useCallback(
     (newItems: CartItem[]) => {

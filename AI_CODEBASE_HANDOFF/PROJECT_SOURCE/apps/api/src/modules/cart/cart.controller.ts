@@ -1,0 +1,81 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  BadRequestException,
+} from '@nestjs/common';
+import { CartService } from './cart.service';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { GetUser } from '../../decorators/get-user.decorator';
+import { RequiresSchema } from '../../common/guards/schema-gate.guard';
+import { AddCartItemDto, UpdateCartItemDto } from './dto/cart.dto';
+
+@ApiTags('cart')
+@ApiBearerAuth()
+@RequiresSchema('cart')
+@Controller('cart')
+export class CartController {
+  constructor(private readonly cartService: CartService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Get cart for authenticated user' })
+  @ApiResponse({ status: 200 })
+  async getCart(@GetUser() user: any) {
+    return this.cartService.getCart(user.id);
+  }
+
+  @Post('items')
+  @ApiOperation({ summary: 'Add item to cart with purchaseMode, configuration, and warranty' })
+  @ApiResponse({ status: 201 })
+  async addItem(@GetUser() user: any, @Body() body: AddCartItemDto) {
+    const result = await this.cartService.addItem(
+      user.id,
+      body.productId,
+      body.quantity ?? 1,
+      body.purchaseMode,
+      body.configuration,
+      body.hasWarranty,
+      body.variantId,
+      body.tenureMonths,
+    );
+    return { cartItem: result, message: 'Item added to cart' };
+  }
+
+  @Put('items/:itemId')
+  @ApiOperation({ summary: 'Update cart item quantity and warranty' })
+  @ApiResponse({ status: 200 })
+  async updateQuantity(
+    @GetUser() user: any,
+    @Param('itemId') itemId: string,
+    @Body() body: UpdateCartItemDto,
+  ) {
+    if (body.quantity === undefined && body.hasWarranty === undefined) {
+      throw new BadRequestException('Provide quantity or hasWarranty to update');
+    }
+    const result = await this.cartService.updateItem(user.id, itemId, {
+      quantity: body.quantity,
+      hasWarranty: body.hasWarranty,
+    });
+    return { cartItem: result, message: 'Cart item updated' };
+  }
+
+  @Delete('items/:itemId')
+  @ApiOperation({ summary: 'Remove item from cart' })
+  @ApiResponse({ status: 200 })
+  async removeItem(@GetUser() user: any, @Param('itemId') itemId: string) {
+    await this.cartService.removeItem(user.id, itemId);
+    return { message: 'Item removed from cart' };
+  }
+
+  @Delete()
+  @ApiOperation({ summary: 'Clear cart' })
+  @ApiResponse({ status: 200 })
+  async clearCart(@GetUser() user: any) {
+    await this.cartService.clearCart(user.id);
+    return { message: 'Cart cleared' };
+  }
+}

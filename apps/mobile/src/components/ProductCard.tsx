@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle, StyleProp, DimensionValue } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +10,7 @@ interface ProductCardProps {
   product: Product;
   onPress: () => void;
   onAddToCart?: () => void;
+  onBuyNow?: () => void;
   width?: DimensionValue;
   style?: StyleProp<ViewStyle>;
 }
@@ -17,9 +19,11 @@ export default function ProductCard({
   product,
   onPress,
   onAddToCart,
+  onBuyNow,
   width = '48%',
   style,
 }: ProductCardProps) {
+  const [isAdded, setIsAdded] = useState(false);
   const formatPrice = (price: number | string) => {
     const num = typeof price === 'string' ? parseFloat(price) : price;
     return `₹${Math.round(num).toLocaleString('en-IN')}`;
@@ -136,22 +140,51 @@ export default function ProductCard({
           )}
         </View>
 
-        {/* Quick Add Button */}
-        {onAddToCart && product.stock > 0 && (
-          <TouchableOpacity
-            style={styles.quickAddButton}
-            onPress={(e) => {
-              e.stopPropagation?.();
-              onAddToCart();
-            }}
-            activeOpacity={0.7}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel={`Add ${product.name} to cart`}
-          >
-            <Ionicons name="cart-outline" size={16} color={colors.primary} />
-            <Text style={styles.quickAddText}>Add</Text>
-          </TouchableOpacity>
+        {/* Action Row: Add to Cart + Buy Now */}
+        {product.stock > 0 && (onAddToCart || onBuyNow) && (
+          <View style={styles.actionRow}>
+            {onAddToCart && (
+              <TouchableOpacity
+                style={[styles.quickAddButton, isAdded && styles.addedButton]}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  setIsAdded(true);
+                  onAddToCart();
+                  setTimeout(() => setIsAdded(false), 1500);
+                }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                accessibilityRole="button"
+                accessibilityLabel={isAdded ? 'Added to cart' : `Add ${product.name} to cart`}
+              >
+                <Ionicons
+                  name={isAdded ? 'checkmark-circle' : 'cart-outline'}
+                  size={13}
+                  color={isAdded ? '#FFFFFF' : colors.primary}
+                />
+                <Text style={[styles.quickAddText, isAdded && styles.addedText]}>
+                  {isAdded ? 'Added' : 'Cart'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {onBuyNow && (
+              <TouchableOpacity
+                style={styles.buyNowButton}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  onBuyNow();
+                }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Buy ${product.name} now`}
+              >
+                <Text style={styles.buyNowText}>Buy</Text>
+                <Ionicons name="arrow-forward" size={12} color="#FFFFFF" />
+              </TouchableOpacity>
+            )}
+          </View>
         )}
       </View>
     </TouchableOpacity>
@@ -277,21 +310,50 @@ const styles = StyleSheet.create({
     color: colors.primary,
     marginTop: 1,
   },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
   quickAddButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: colors.primaryLight,
-    borderWidth: 1,
-    borderColor: colors.primaryBorder,
-    borderRadius: radius.sm,
-    paddingVertical: 6,
-    marginTop: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 7,
+  },
+  addedButton: {
+    backgroundColor: '#16A34A',
+    borderColor: '#16A34A',
   },
   quickAddText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.primary,
+  },
+  addedText: {
+    color: '#FFFFFF',
+  },
+  buyNowButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 7,
+    ...shadows.sm,
+  },
+  buyNowText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

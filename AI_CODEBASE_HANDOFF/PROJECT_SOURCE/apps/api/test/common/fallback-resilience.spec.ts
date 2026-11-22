@@ -1,0 +1,428 @@
+import { ServiceUnavailableException, BadRequestException } from '@nestjs/common';
+import { allowInMemoryFallback } from '../../src/common/fallback';
+import { AddressService } from '../../src/modules/address/address.service';
+import { NotificationService } from '../../src/modules/notifications/notification.service';
+import { SupportService } from '../../src/modules/support/support.service';
+import { OrderService } from '../../src/modules/order/order.service';
+import { createNoTaxService } from '../helpers/no-tax-service';
+
+describe('Production Database Resilience & Fallback Prevention', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env = { ...originalEnv };
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  describe('allowInMemoryFallback helper', () => {
+    it('returns false when NODE_ENV is production regardless of ALLOW_IN_MEMORY_FALLBACK', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.ALLOW_IN_MEMORY_FALLBACK = 'true';
+      expect(allowInMemoryFallback()).toBe(false);
+    });
+
+    it('returns false when ALLOW_IN_MEMORY_FALLBACK is unset or false in development', () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.ALLOW_IN_MEMORY_FALLBACK;
+      expect(allowInMemoryFallback()).toBe(false);
+
+      process.env.ALLOW_IN_MEMORY_FALLBACK = 'false';
+      expect(allowInMemoryFallback()).toBe(false);
+    });
+
+    it('returns true only when NODE_ENV !== production AND ALLOW_IN_MEMORY_FALLBACK === "true"', () => {
+      process.env.NODE_ENV = 'development';
+      process.env.ALLOW_IN_MEMORY_FALLBACK = 'true';
+      expect(allowInMemoryFallback()).toBe(true);
+
+      process.env.NODE_ENV = 'test';
+      process.env.ALLOW_IN_MEMORY_FALLBACK = 'true';
+      expect(allowInMemoryFallback()).toBe(true);
+    });
+  });
+
+  describe('Production mode (NODE_ENV=production): database failures must throw clear errors', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'production';
+      process.env.ALLOW_IN_MEMORY_FALLBACK = 'false';
+    });
+
+    describe('AddressService', () => {
+      it('findAll rejects with ServiceUnavailableException when Prisma throws', async () => {
+        const prisma = {
+          address: {
+            findMany: jest.fn().mockRejectedValue(new Error('Connection terminated unexpectedly')),
+          },
+        } as any;
+
+        const service = new AddressService(prisma);
+        await expect(service.findAll('user-1')).rejects.toThrow(ServiceUnavailableException);
+      });
+
+      it('create rejects with ServiceUnavailableException when Prisma throws', async () => {
+        const prisma = {
+          address: {
+            create: jest.fn().mockRejectedValue(new Error('Database disk full')),
+          },
+        } as any;
+
+        const service = new AddressService(prisma);
+        await expect(
+          service.create('user-1', {
+            address: '123 Main St',
+            city: 'Bengaluru',
+            state: 'Karnataka',
+            pincode: '560001',
+          }),
+        ).rejects.toThrow(ServiceUnavailableException);
+      });
+
+      it('updates an address city and state from the verified replacement PIN', async () => {
+        const prisma = {
+          address: {
+            findFirst: jest.fn().mockResolvedValue({ id: 'addr-1', userId: 'user-1' }),
+            update: jest.fn().mockResolvedValue({
+              id: 'addr-1', userId: 'user-1', address: 'Noida address', city: 'Noida',
+              state: 'Uttar Pradesh', pincode: '201301', isDefault: false,
+            }),
+          },
+        } as any;
+        const pincodeService = {
+          verifyPincode: jest.fn().mockResolvedValue({ valid: true, serviceable: true, city: 'Noida', state: 'Uttar Pradesh' }),
+        } as any;
+        const service = new AddressService(prisma, pincodeService);
+
+        await service.update('user-1', 'addr-1', {
+          address: 'Noida address', city: 'Bengaluru', state: 'Karnataka', pincode: '201301',
+        });
+
+        expect(prisma.address.update).toHaveBeenCalledWith(expect.objectContaining({
+          data: expect.objectContaining({ city: 'Noida', state: 'Uttar Pradesh' }),
+        }));
+      });
+    });
+
+    describe('NotificationService', () => {
+      it('registerDeviceToken rejects with ServiceUnavailableException when Prisma throws', async () => {
+        const prisma = {
+          deviceToken: {
+            findFirst: jest.fn().mockRejectedValue(new Error('Prisma Client Connection Pool Timeout')),
+          },
+        } as any;
+
+        const service = new NotificationService(prisma);
+        await expect(
+          service.registerDeviceToken('user-1', 'expo-token-xyz', 'android'),
+        ).rejects.toThrow(ServiceUnavailableException);
+      });
+
+      it('getPreferences rejects with ServiceUnavailableException when Prisma throws', async () => {
+        const prisma = {
+          user: {
+            findUnique: jest.fn().mockRejectedValue(new Error('PostgreSQL server shut down')),
+          },
+        } as any;
+
+        const service = new NotificationService(prisma);
+        await expect(service.getPreferences('user-1')).rejects.toThrow(ServiceUnavailableException);
+      });
+    });
+
+    describe('SupportService', () => {
+      it('getUserTickets rejects with ServiceUnavailableException when Prisma throws', async () => {
+        const prisma = {
+          supportTicket: {
+            findMany: jest.fn().mockRejectedValue(new Error('Prisma connection lost')),
+          },
+        } as any;
+
+        const service = new SupportService(prisma);
+        await expect(service.getUserTickets('user-1')).rejects.toThrow(ServiceUnavailableException);
+      });
+
+      it('createTicket rejects with ServiceUnavailableException when ticket number allocation fails', async () => {
+        const prisma = {
+          $queryRaw: jest.fn().mockRejectedValue(new Error('Sequence unavailable')),
+        } as any;
+
+        const service = new SupportService(prisma);
+        await expect(
+          service.createTicket('user-1', {
+            subject: 'Broken screen on delivery',
+            category: 'ORDER_DELIVERY',
+            message: 'Laptop arrived damaged',
+            orderId: 'ord-123',
+          }),
+        ).rejects.toThrow(ServiceUnavailableException);
+      });
+    });
+
+    describe('OrderService', () => {
+      it('createOrder rejects with ServiceUnavailableException when prisma.$transaction fails, and does NOT clear cart', async () => {
+        const mockCart = {
+          cart: {
+            id: 'cart-1',
+            userId: 'user-1',
+            items: [
+              {
+                id: 'ci-1',
+                productId: 'prod-1',
+                quantity: 1,
+                priceAtAdd: 50000,
+                product: { id: 'prod-1', name: 'ThinkPad', price: 50000 },
+              },
+            ],
+          },
+          total: 50000,
+          itemCount: 1,
+        };
+
+        const cartService = {
+          getCart: jest.fn().mockResolvedValue(mockCart),
+          clearCart: jest.fn(),
+        } as any;
+
+        const prisma = {
+          order: { create: jest.fn().mockReturnValue({ id: 'op-1' }) },
+          orderItem: { create: jest.fn().mockReturnValue({ id: 'op-2' }) },
+          $transaction: jest.fn().mockRejectedValue(new Error('Transaction serialization conflict')),
+        } as any;
+
+        const notificationService = {
+          dispatchOrderUpdate: jest.fn(),
+        } as any;
+
+        const productService = {} as any;
+
+        const service = new OrderService(prisma, cartService, productService, notificationService, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any, createNoTaxService());
+
+        await expect(
+          service.createOrder(
+            'user-1',
+            undefined,
+            undefined,
+            { address: '123 Tech Park', city: 'Bengaluru' },
+            '+919876543210',
+            undefined,
+            'customer@example.com',
+          ),
+        ).rejects.toThrow(ServiceUnavailableException);
+
+        // Cart must NOT be cleared when order fails
+        expect(cartService.clearCart).not.toHaveBeenCalled();
+        expect(notificationService.dispatchOrderUpdate).not.toHaveBeenCalled();
+      });
+
+      it('createOrder rejects with BadRequestException (400) if email or phone is missing', async () => {
+        const mockCart = {
+          cart: {
+            id: 'cart-1',
+            userId: 'user-1',
+            items: [{ id: 'ci-1', productId: 'p1', quantity: 1, priceAtAdd: 1000 }],
+          },
+          total: 1000,
+          itemCount: 1,
+        };
+
+        const cartService = { getCart: jest.fn().mockResolvedValue(mockCart), clearCart: jest.fn() } as any;
+        const prisma = { $transaction: jest.fn() } as any;
+        const service = new OrderService(prisma, cartService, {} as any, {} as any, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any, createNoTaxService());
+
+        // Missing email
+        await expect(
+          service.createOrder('user-1', undefined, undefined, {}, '+919876543210', undefined, ''),
+        ).rejects.toThrow(BadRequestException);
+
+        // Missing phone
+        await expect(
+          service.createOrder('user-1', undefined, undefined, {}, '', undefined, 'test@example.com'),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('createOrder sets carrier and trackingNumber to null at creation time', async () => {
+        const mockCart = {
+          cart: {
+            id: 'cart-1',
+            userId: 'user-1',
+            items: [
+              {
+                id: 'ci-1',
+                productId: 'prod-1',
+                quantity: 1,
+                priceAtAdd: 50000,
+                product: { id: 'prod-1', name: 'ThinkPad', price: 50000, status: 'ACTIVE' },
+              },
+            ],
+          },
+          total: 50000,
+          itemCount: 1,
+        };
+
+        const cartService = {
+          getCart: jest.fn().mockResolvedValue(mockCart),
+          clearCart: jest.fn().mockResolvedValue(undefined),
+        } as any;
+
+        const prisma = {
+          cart: { findFirst: jest.fn().mockResolvedValue(mockCart.cart) },
+          cartItem: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
+          product: {
+            findUnique: jest.fn().mockResolvedValue({ id: 'prod-1', price: 50000, status: 'ACTIVE', stock: 10 }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          },
+          order: { create: jest.fn().mockImplementation(({ data }) => ({ id: 'ord-1', orderNumber: 'LM-ORD-ORD12345', ...data, items: data.items?.create || [] })) },
+          orderItem: { create: jest.fn().mockImplementation(({ data }) => data) },
+          $transaction: jest.fn((callback: any) => typeof callback === 'function' ? callback(prisma) : Promise.all(callback)),
+        } as any;
+
+        const notificationService = {
+          dispatchOrderUpdate: jest.fn().mockResolvedValue(undefined),
+        } as any;
+
+        const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn(), validateOrderDiscount: jest.fn().mockResolvedValue(null) } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any, createNoTaxService());
+
+        const order = await service.createOrder(
+          'user-1',
+          undefined,
+          undefined,
+          { address: '123 Tech Park', city: 'Bengaluru' },
+          '+919876543210',
+          'Leave at door',
+          'buyer@example.com',
+        );
+
+        expect(order.carrier).toBeNull();
+        expect(order.trackingNumber).toBeNull();
+        expect(order.email).toBe('buyer@example.com');
+        expect(prisma.cartItem.deleteMany).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('Development mode with fallback explicitly enabled: old fallback still works', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'development';
+      process.env.ALLOW_IN_MEMORY_FALLBACK = 'true';
+    });
+
+    it('AddressService.findAll falls back to memory without crashing', async () => {
+      const prisma = {
+        address: {
+          findMany: jest.fn().mockRejectedValue(new Error('Connection refused')),
+        },
+      } as any;
+
+      const service = new AddressService(prisma);
+      const addresses = await service.findAll('dev-user');
+      expect(Array.isArray(addresses)).toBe(true);
+    });
+
+    it('NotificationService.registerDeviceToken succeeds via fallback', async () => {
+      const prisma = {
+        deviceToken: {
+          findFirst: jest.fn().mockRejectedValue(new Error('Connection refused')),
+        },
+      } as any;
+
+      const service = new NotificationService(prisma);
+      const res = await service.registerDeviceToken('dev-user', 'dev-token', 'ios');
+      expect(res.message).toBe('Device token registered successfully');
+    });
+
+    it('NotificationService.registerDeviceToken tolerates missing and Expo Go placeholder tokens idempotently', async () => {
+      const prisma = {
+        deviceToken: {
+          findFirst: jest.fn(),
+          create: jest.fn(),
+          update: jest.fn(),
+        },
+      } as any;
+
+      const service = new NotificationService(prisma);
+      const emptyRes = await service.registerDeviceToken('user-1', '');
+      expect(emptyRes.message).toContain('skipped');
+      expect(prisma.deviceToken.findFirst).not.toHaveBeenCalled();
+
+      const placeholderRes = await service.registerDeviceToken('user-1', 'expo-go');
+      expect(placeholderRes.message).toContain('skipped');
+      expect(prisma.deviceToken.create).not.toHaveBeenCalled();
+
+      prisma.deviceToken.findFirst.mockResolvedValueOnce(null);
+      prisma.deviceToken.create.mockResolvedValueOnce({ id: 'tok-1', token: 'ExponentPushToken[valid]' });
+      const validRes = await service.registerDeviceToken('user-1', 'ExponentPushToken[valid]', 'android');
+      expect(validRes.message).toBe('Device token registered successfully');
+      expect(prisma.deviceToken.create).toHaveBeenCalled();
+
+      prisma.deviceToken.findFirst.mockResolvedValueOnce({ id: 'tok-1', token: 'ExponentPushToken[valid]' });
+      prisma.deviceToken.update.mockResolvedValueOnce({ id: 'tok-1' });
+      const duplicateRes = await service.registerDeviceToken('user-1', 'ExponentPushToken[valid]', 'android');
+      expect(duplicateRes.message).toBe('Device token already registered');
+      expect(prisma.deviceToken.update).toHaveBeenCalled();
+    });
+
+    it('SupportService.createTicket does not fabricate a ticket when persistence fails', async () => {
+      const tx = {
+        supportTicket: { create: jest.fn().mockRejectedValue(new Error('Database unavailable')) },
+      };
+      const prisma = {
+        $queryRaw: jest.fn().mockResolvedValue([{ nextval: 1234 }]),
+        supportSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+        $transaction: jest.fn((callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+      } as any;
+
+      const service = new SupportService(prisma);
+      await expect(service.createTicket('dev-user', {
+        subject: 'Dev question',
+        category: 'OTHER',
+        message: 'Testing fail-closed persistence',
+      })).rejects.toThrow('Database unavailable');
+    });
+
+    it('OrderService.createOrder fails closed with ServiceUnavailableException when DB error occurs', async () => {
+      const mockCart = {
+        cart: {
+          id: 'cart-1',
+          userId: 'dev-user',
+          items: [{ id: 'ci-1', productId: 'p1', quantity: 1, priceAtAdd: 1000 }],
+        },
+        total: 1000,
+        itemCount: 1,
+      };
+
+      const cartService = {
+        getCart: jest.fn().mockResolvedValue(mockCart),
+        clearCart: jest.fn().mockResolvedValue(undefined),
+      } as any;
+
+      const prisma = {
+        order: { create: jest.fn() },
+        orderItem: { create: jest.fn() },
+        $transaction: jest.fn().mockRejectedValue(new Error('Offline local dev')),
+      } as any;
+
+      const notificationService = {
+        dispatchOrderUpdate: jest.fn().mockResolvedValue(undefined),
+      } as any;
+
+      const service = new OrderService(prisma, cartService, {} as any, notificationService, { validateDiscountCode: jest.fn() } as any, { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) } as any, createNoTaxService());
+
+      await expect(
+        service.createOrder(
+          'dev-user',
+          undefined,
+          undefined,
+          { address: 'Local test address' },
+          '+917701993300',
+          undefined,
+          'dev@example.com',
+        ),
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      expect(cartService.clearCart).not.toHaveBeenCalled();
+    });
+  });
+});

@@ -377,7 +377,7 @@ export default function FilterSidebar({
   return (
     <div className="flex flex-col gap-5 text-sm">
       {/* Sidebar Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-[#E4E9F2]">
+      <div className="flex items-center justify-between pb-3 border-b border-[#E6DFD5]">
         <div className="flex items-center gap-2">
           <h3 className="font-black text-base text-[#0B1F4B] tracking-tight">
             Filters
@@ -403,7 +403,7 @@ export default function FilterSidebar({
         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
           Procurement Model
         </label>
-        <div className="grid grid-cols-3 gap-1 bg-[#F1F5F9] p-1 rounded-xl border border-[#E4E9F2]">
+        <div className="grid grid-cols-3 gap-1 bg-[#FAF6EF] p-1 rounded-xl border border-[#E6DFD5]">
           {(['all', 'buy', 'lease'] as const).map((type) => {
             const isSelected = filters.listingType === type;
             const label = type === 'all' ? 'All' : type === 'buy' ? 'Outright' : 'Lease';
@@ -414,7 +414,7 @@ export default function FilterSidebar({
                 onClick={() => onFilterChange({ ...filters, listingType: type })}
                 className={`py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   isSelected
-                    ? 'bg-white text-[#0B1F4B] shadow-sm'
+                    ? 'bg-[#FFFDF9] text-[#0B1F4B] shadow-sm'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
@@ -436,7 +436,7 @@ export default function FilterSidebar({
             value={filters.search}
             onChange={(e) => onFilterChange({ ...filters, search: e.target.value })}
             placeholder="e.g. ThinkPad, M2, RTX..."
-            className="w-full px-3 py-2 pl-8 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-[#0F172A] text-xs placeholder:text-slate-400 focus:outline-none focus:border-[#1D6FF2] focus:bg-white transition-colors"
+            className="w-full px-3 py-2 pl-8 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-[#0F172A] text-xs placeholder:text-slate-400 focus:outline-none focus:border-[#1D6FF2] focus:bg-[#FFFDF9] transition-colors"
           />
           <svg
             className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"

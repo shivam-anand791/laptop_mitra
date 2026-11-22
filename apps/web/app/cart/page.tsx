@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import CustomerLayout from '../../components/CustomerLayout';
@@ -40,6 +40,20 @@ export default function CartPage() {
   const [promoError, setPromoError] = useState<string | null>(null);
   const [isValidatingPromo, setIsValidatingPromo] = useState(false);
   const [isOffersModalOpen, setIsOffersModalOpen] = useState(false);
+  // Track items currently animating out before removal
+  const [removingItemIds, setRemovingItemIds] = useState<Set<string>>(new Set());
+
+  const handleRemoveItem = useCallback((itemId: string) => {
+    setRemovingItemIds((prev) => new Set(prev).add(itemId));
+    setTimeout(() => {
+      removeItem(itemId);
+      setRemovingItemIds((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }, 280);
+  }, [removeItem]);
 
   const apiItems = items.map((it) => ({
     productId: it.productId,
@@ -115,7 +129,7 @@ export default function CartPage() {
   if (itemCount === 0) {
     return (
       <CustomerLayout>
-        <div className="bg-[#F8FAFC] min-h-[70vh] flex items-center justify-center py-16 px-4">
+        <div className="bg-[#F7F4EE] min-h-[70vh] flex items-center justify-center py-16 px-4">
           <div className="max-w-lg w-full">
             <EmptyState
               variant="cart"
@@ -130,10 +144,10 @@ export default function CartPage() {
 
   return (
     <CustomerLayout>
-      <div className="bg-[#F8FAFC] min-h-screen py-6 sm:py-8 lg:py-10">
+      <div className="bg-[#F7F4EE] min-h-screen py-6 sm:py-8 lg:py-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Header */}
-          <div className="flex items-center justify-between pb-5 border-b border-[#E2E8F0] mb-6">
+          <div className="flex items-center justify-between pb-5 border-b border-[#E6DFD5] mb-6">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-[#111827] tracking-tight">
                 Shopping Cart
@@ -150,10 +164,28 @@ export default function CartPage() {
             </button>
           </div>
 
+          {syncError && (
+            <div role="alert" className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-600 font-bold text-sm">⚠️</span>
+                <span>{syncError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void retrySync()}
+                disabled={isSyncing}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs disabled:opacity-50 transition-colors cursor-pointer shrink-0"
+              >
+                {isSyncing ? 'Syncing...' : 'Retry Cart Sync'}
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
             {/* ITEMS LIST (8 cols) */}
             <div className="lg:col-span-8 space-y-4">
-              {items.map((item) => {
+              {items.map((item, idx) => {
+                const isRemoving = removingItemIds.has(item.id);
                 const isLease = item.purchaseMode === 'lease';
                 const unitPrice = Number(item.priceAtAdd);
                 const warrantyAmount = (!isLease && item.hasWarranty) ? (item.warrantyPrice || 1999) : 0;
@@ -172,22 +204,24 @@ export default function CartPage() {
                 return (
                   <div
                     key={item.id || `${item.productId}-${item.variantId || item.configuration}-${item.purchaseMode}`}
-                    className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs flex flex-col sm:flex-row items-start sm:items-center gap-4 transition-all hover:border-slate-300"
+                    className={`p-4 sm:p-5 rounded-2xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-xs flex flex-col sm:flex-row items-start sm:items-center gap-4 transition-all hover:border-slate-300 ${
+                      isRemoving ? 'animate-cart-exit pointer-events-none' : `animate-fade-in-up stagger-${(idx % 6) + 1}`
+                    }`}
                   >
                     {/* Thumbnail */}
                     <Link
                       href={`/products/${item.productId}`}
-                      className="shrink-0 w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-center p-2 relative"
+                      className="shrink-0 w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-[#FAF6EF] border border-[#E6DFD5] flex items-center justify-center p-2 relative group"
                     >
                       {imgUrl.startsWith('http') ? (
                         /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={imgUrl} alt={item.product?.name || 'Laptop'} className="w-full h-full object-contain" />
+                        <img src={imgUrl} alt={item.product?.name || 'Laptop'} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300" />
                       ) : (
                         <Image
                           src={imgUrl}
                           alt={item.product?.name || 'Laptop'}
                           fill
-                          className="object-contain p-2"
+                          className="object-contain p-2 group-hover:scale-105 transition-transform duration-300"
                           sizes="112px"
                         />
                       )}
@@ -280,10 +314,10 @@ export default function CartPage() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <div className="flex items-center border border-[#CBD5E1] rounded-xl overflow-hidden bg-[#F8FAFC] h-9">
+                        <div className="flex items-center border border-[#E6DFD5] rounded-xl overflow-hidden bg-[#FAF6EF] h-9 shadow-2xs">
                           <button
-                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                            className="px-2.5 h-full text-xs font-bold hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer flex items-center justify-center"
+                            onClick={() => (item.quantity <= 1 ? handleRemoveItem(item.id) : updateQuantity(item.id, item.quantity - 1))}
+                            className="px-2.5 h-full text-xs font-bold hover:bg-slate-200 text-slate-700 transition-colors button-press cursor-pointer flex items-center justify-center active:scale-95"
                             aria-label="Decrease quantity"
                           >
                             -
@@ -293,7 +327,7 @@ export default function CartPage() {
                           </span>
                           <button
                             onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                            className="px-2.5 h-full text-xs font-bold hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer flex items-center justify-center"
+                            className="px-2.5 h-full text-xs font-bold hover:bg-slate-200 text-slate-700 transition-colors button-press cursor-pointer flex items-center justify-center active:scale-95"
                             aria-label="Increase quantity"
                           >
                             +
@@ -301,8 +335,8 @@ export default function CartPage() {
                         </div>
 
                         <button
-                          onClick={() => removeItem(item.id)}
-                          className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer flex items-center justify-center"
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 button-press transition-colors cursor-pointer flex items-center justify-center active:scale-90"
                           title="Remove item"
                           aria-label="Remove item"
                         >
@@ -317,7 +351,7 @@ export default function CartPage() {
               })}
 
               {/* Delivery Pincode Checker */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#E4E9F2] shadow-sm space-y-3">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-xs space-y-3">
                 <div className="flex items-center gap-2 text-xs font-bold text-[#0B1F4B]">
                   <span>🚚 Check Delivery Timeline to Your Location</span>
                 </div>
@@ -328,11 +362,11 @@ export default function CartPage() {
                     value={pincode}
                     onChange={(e) => setPincode(e.target.value.replace(/\D/g, ''))}
                     placeholder="Enter 6-digit Pincode"
-                    className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-xs font-mono placeholder:text-slate-400 focus:outline-none focus:border-[#1D6FF2]"
+                    className="h-10 w-full px-3.5 py-2 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-xs font-mono placeholder:text-slate-400 focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
                   />
                   <button
                     type="submit"
-                    className="h-10 px-4 rounded-xl bg-[#0B1F4B] text-white text-xs font-bold hover:bg-[#162D66] transition-colors cursor-pointer shrink-0 flex items-center justify-center"
+                    className="h-10 px-4 rounded-xl bg-[#0B1F4B] text-white text-xs font-bold hover:bg-[#162D66] button-press transition-colors cursor-pointer shrink-0 flex items-center justify-center shadow-xs active:scale-95"
                   >
                     Check
                   </button>
@@ -361,7 +395,7 @@ export default function CartPage() {
 
             {/* ORDER SUMMARY SIDEBAR (4 cols) */}
             <div className="lg:col-span-4 space-y-5">
-              <div className="p-5 sm:p-6 rounded-3xl bg-white border border-[#E2E8F0] shadow-xs space-y-5 sticky top-20">
+              <div className="p-5 sm:p-6 rounded-3xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-xs space-y-5 sticky top-20 interactive-lift">
                 <h2 className="text-lg font-bold text-[#111827] tracking-tight">
                   Order Summary
                 </h2>
@@ -461,12 +495,12 @@ export default function CartPage() {
                           value={promoCode}
                           onChange={(e) => setPromoCode(e.target.value)}
                           placeholder="Enter Coupon / Referral Code"
-                          className="h-10 w-full px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E4E9F2] text-xs uppercase placeholder:normal-case focus:outline-none focus:border-[#1D6FF2]"
+                          className="h-10 w-full px-3 py-2 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] text-xs uppercase placeholder:normal-case focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition-all"
                         />
                         <button
                           type="submit"
                           disabled={isValidatingPromo}
-                          className="h-10 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F4B] font-bold text-xs transition-colors cursor-pointer flex items-center justify-center shrink-0 disabled:opacity-50"
+                          className="h-10 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-[#0B1F4B] font-bold text-xs transition-colors cursor-pointer flex items-center justify-center shrink-0 disabled:opacity-50 active:scale-95"
                         >
                           {isValidatingPromo ? 'Checking...' : 'Apply'}
                         </button>
@@ -511,7 +545,7 @@ export default function CartPage() {
                   ) : (
                   <Link
                     href={appliedCoupon ? `/checkout?coupon=${encodeURIComponent(appliedCoupon.code)}` : '/checkout'}
-                    className="w-full h-11 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs active:scale-95 transition-all text-center"
+                    className="w-full h-11 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs button-press transition-all text-center"
                   >
                     <span>Proceed to Secure Checkout</span>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

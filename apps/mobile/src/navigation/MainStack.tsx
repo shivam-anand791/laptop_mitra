@@ -38,6 +38,15 @@ export default function MainStack() {
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
+        headerBackTitle: 'Back',
+        headerStyle: {
+          backgroundColor: '#FFFDF9',
+        },
+        headerTitleStyle: {
+          fontWeight: '700',
+          fontSize: 16,
+          color: '#0B1F4B',
+        },
       }}
     >
       <Stack.Screen name="MainTabs" component={MainTabs} />
@@ -54,7 +63,7 @@ export default function MainStack() {
       <Stack.Screen
         name="ProductDetail"
         component={ProductDetailScreen}
-        options={{ headerShown: true, title: 'Product', headerTintColor: '#2563eb' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="Checkout"

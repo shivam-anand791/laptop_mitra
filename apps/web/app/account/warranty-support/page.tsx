@@ -15,13 +15,28 @@ import {
   RotateCcw,
   Sparkles,
   Laptop,
+  ChevronDown,
+  CheckCircle2,
+  Clock,
+  Truck,
+  Wrench,
+  Check,
 } from 'lucide-react';
+
+const SERVICE_TIMELINE = [
+  { step: '01', title: 'Claim Registered', desc: 'Raise ticket with fault category & description online.', icon: ShieldCheck },
+  { step: '02', title: 'Remote Triage', desc: 'Hardware specialist runs remote diagnostic within 24h.', icon: Clock },
+  { step: '03', title: 'Doorstep Pickup', desc: 'Insured BlueDart courier pickup from your location.', icon: Truck },
+  { step: '04', title: 'Lab Bench Servicing', desc: 'Cleanroom component repair or genuine OEM part swap.', icon: Wrench },
+  { step: '05', title: 'QA & Return Delivery', desc: 'Passes full 32-point burn-in bench test & returned.', icon: CheckCircle2 },
+];
 
 export default function WarrantySupportPage() {
   const { data: supportConfig } = useSupportConfig();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [accordionOpen, setAccordionOpen] = useState<'covered' | 'excluded' | 'sla' | null>('covered');
 
   const loadOrders = async () => {
     setLoading(true);
@@ -107,6 +122,108 @@ export default function WarrantySupportPage() {
           >
             <RotateCcw className="w-3.5 h-3.5 text-slate-500" /> Return policy
           </Link>
+        </div>
+      </div>
+
+      {/* 5-Stage Service Process Timeline */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7 shadow-2xs space-y-4">
+        <div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 block">Seamless Resolution Flow</span>
+          <h2 className="text-base font-bold text-slate-900 mt-0.5">5-Stage Warranty Service Journey</h2>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {SERVICE_TIMELINE.map((item, idx) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.step} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2 relative">
+                <div className="flex items-center justify-between">
+                  <span className="w-6 h-6 rounded-lg bg-blue-600 text-white text-xs font-bold flex items-center justify-center">
+                    {item.step}
+                  </span>
+                  <Icon className="w-4 h-4 text-slate-400" />
+                </div>
+                <h3 className="text-xs font-bold text-slate-900">{item.title}</h3>
+                <p className="text-[11px] text-slate-500 leading-relaxed">{item.desc}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Interactive Warranty Coverage Accordion */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7 shadow-2xs space-y-4">
+        <div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Policy Clarity</span>
+          <h2 className="text-base font-bold text-slate-900 mt-0.5">Coverage Breakdown &amp; Exclusions</h2>
+        </div>
+
+        <div className="space-y-2.5">
+          {/* Group 1: What is Covered */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setAccordionOpen(accordionOpen === 'covered' ? null : 'covered')}
+              className="w-full p-4 text-left flex items-center justify-between bg-slate-50 hover:bg-slate-100 transition cursor-pointer"
+            >
+              <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                <span className="text-emerald-600">✓</span> What is 100% Covered Under Warranty?
+              </span>
+              <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${accordionOpen === 'covered' ? 'rotate-180' : ''}`} />
+            </button>
+            {accordionOpen === 'covered' && (
+              <div className="p-4 bg-white text-xs text-slate-600 space-y-2 border-t border-slate-200 leading-relaxed">
+                <p>• <strong>Logic Board &amp; Integrated Chips:</strong> Motherboard circuitry, CPU/GPU throttling anomalies, charging ICs, power rails.</p>
+                <p>• <strong>Display Panel:</strong> Backlight failure, dead pixel lines appearing during normal use, inverter boards.</p>
+                <p>• <strong>Internal Power Subsystem:</strong> Inability to hold charge, rapid discharge exceeding factory degradation tolerance.</p>
+                <p>• <strong>Peripherals:</strong> Keypad switch failure, trackpad sensor unresponsive, internal cooling fan motor failure.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Group 2: Exclusions */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setAccordionOpen(accordionOpen === 'excluded' ? null : 'excluded')}
+              className="w-full p-4 text-left flex items-center justify-between bg-slate-50 hover:bg-slate-100 transition cursor-pointer"
+            >
+              <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                <span className="text-rose-500">✕</span> What is Excluded from Warranty?
+              </span>
+              <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${accordionOpen === 'excluded' ? 'rotate-180' : ''}`} />
+            </button>
+            {accordionOpen === 'excluded' && (
+              <div className="p-4 bg-white text-xs text-slate-600 space-y-2 border-t border-slate-200 leading-relaxed">
+                <p>• <strong>Physical Damage:</strong> Broken screen glass from drops, cracked hinges, dented chassis.</p>
+                <p>• <strong>Liquid Damage:</strong> Water/beverage spills, chemical corrosion on internal components.</p>
+                <p>• <strong>Unauthorized Modifications:</strong> Tampering with warranty void stickers or third-party unauthorized repairs.</p>
+                <p>• <strong>Software &amp; OS:</strong> User installed viruses, malware, or operating system corruptions.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Group 3: Service Turnaround SLA */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setAccordionOpen(accordionOpen === 'sla' ? null : 'sla')}
+              className="w-full p-4 text-left flex items-center justify-between bg-slate-50 hover:bg-slate-100 transition cursor-pointer"
+            >
+              <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                <span className="text-blue-600">⏱</span> Turnaround Times &amp; Doorstep Logistics
+              </span>
+              <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${accordionOpen === 'sla' ? 'rotate-180' : ''}`} />
+            </button>
+            {accordionOpen === 'sla' && (
+              <div className="p-4 bg-white text-xs text-slate-600 space-y-2 border-t border-slate-200 leading-relaxed">
+                <p>• <strong>Remote Triage:</strong> Hardware support response within 24 business hours.</p>
+                <p>• <strong>Doorstep Pickup:</strong> Insured BlueDart transit with custom foam protective box provided.</p>
+                <p>• <strong>Lab Service Duration:</strong> Typical hardware repair / part replacement completed in 3–5 working days.</p>
+                <p>• <strong>Return Shipping:</strong> Express air shipping back to your destination with live tracking notifications.</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

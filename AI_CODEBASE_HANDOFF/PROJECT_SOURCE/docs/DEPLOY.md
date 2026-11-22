@@ -1,0 +1,140 @@
+# LaptopMitra Production Deployment Guide
+
+This document outlines the hosting configuration for deploying LaptopMitra:
+- **Backend API (`apps/api`)**: Deployed on [Render](https://render.com) using the root Blueprint [`render.yaml`](../render.yaml).
+- **Web Frontend (`apps/web`)**: Deployed on [Vercel](https://vercel.com).
+- **Database**: PostgreSQL (managed on Supabase, Neon, or Render). Local development uses a separate guarded Docker database; see [`deploy-database.md`](deploy-database.md#1-local-development-database).
+- **Authentication**: Firebase Authentication.
+- **Payments**: Razorpay.
+
+For repo hygiene, database migration history, and initial configuration context, see [`predeploy.md`](../predeploy.md).
+
+---
+
+## 1. Vercel Project Settings (`apps/web`)
+
+Configure the project in the Vercel dashboard:
+
+| Setting | Value |
+|---|---|
+| **Framework Preset** | Next.js |
+| **Root Directory** | `apps/web` *(Ensure "Include source files outside of the Root Directory in the Build Step" is enabled)* |
+| **Build Command** | Next.js default (`next build`) |
+| **Install Command** | `cd ../.. && pnpm install --frozen-lockfile` |
+| **Node.js Version** | `22.x` |
+
+### Required Environment Variables in Vercel
+
+> [!IMPORTANT]
+> All `NEXT_PUBLIC_*` variables are inlined into the client JavaScript bundle at **build time**. If you change any variable in Vercel, you **must trigger a redeploy** for the change to take effect.
+
+| Variable Name | Production Description | Example Value |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | Render API URL (HTTPS, no trailing slash) | `https://laptopmitra-api.onrender.com` |
+| `NEXT_PUBLIC_RAZORPAY_KEY_ID` | Razorpay public key ID | `rzp_live_...` (or `rzp_test_...`) |
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Firebase Web API Key | `AIzaSy...` |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Firebase Auth Domain | `laptop-mitra.firebaseapp.com` |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Firebase Project ID | `laptop-mitra` |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Firebase Storage Bucket | `laptop-mitra.appspot.com` |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Firebase Sender ID | `123456789012` |
+| `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase Web App ID | `1:123456789012:web:abcdef...` |
+| `NEXT_PUBLIC_IMAGE_HOSTS` *(Optional)* | Allowed remote image hosts (comma-separated) | `images.unsplash.com,via.placeholder.com` |
+
+*(Do NOT set `NEXT_PUBLIC_USE_FIREBASE_EMULATOR` in production).*
+
+---
+
+## 2. Render Project Settings (`apps/api`)
+
+The API service is configured via [`render.yaml`](../render.yaml) at the repository root.
+
+- **Service Name**: `laptopmitra-api`
+- **Runtime**: `node` (Node.js 22)
+- **Health Check Path**: `/health`
+- **Build Command**: `corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter api exec prisma generate && pnpm --filter api build`
+- **Start Command**: `node apps/api/dist/main` (database migrations are a separately approved deployment step; they are not run automatically on API restart)
+
+Set the following secret environment variables in the Render dashboard (marked `sync: false` in `render.yaml`):
+- `DATABASE_URL` (PostgreSQL pooled or direct connection string)
+- `PRODUCTION_DATABASE_HOST` (Hostname only; must exactly match `DATABASE_URL` and be present in the repository's protected-host list)
+- `CORS_ORIGINS` (Comma-separated allowed origins, e.g. `https://laptopmitra.vercel.app,https://laptopmitra.com`)
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_PRIVATE_KEY` (Multi-line PEM private key or literal with `\n`)
+- `RAZORPAY_KEY_ID`
+- `RAZORPAY_KEY_SECRET`
+- `RAZORPAY_WEBHOOK_SECRET`
+- `PAYMENT_ENCRYPTION_KEY` (Required: 64-char hex string for AES-256 financial data encryption. Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
+- `STORAGE_DRIVER` (Optional: defaults to `local`. If using Supabase Storage, set to `supabase` and provide `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`)
+- `SUPABASE_URL` (Required only if `STORAGE_DRIVER=supabase`)
+- `SUPABASE_SERVICE_ROLE_KEY` (Required only if `STORAGE_DRIVER=supabase`)
+
+`render.yaml` sets `DEPLOYMENT_ENV=production`. The runtime requires this value together with `NODE_ENV=production`, Render's automatic `RENDER=true`, and `IS_PULL_REQUEST` not equal to `"true"` before permitting production database access. It also requires `PRODUCTION_DATABASE_HOST` to match the actual database URL host exactly and to be listed in `.db-protected-hosts`. The application never logs database credentials.
+
+Local development must use `DEPLOYMENT_ENV=development`; Jest uses `DEPLOYMENT_ENV=test` and `NODE_ENV=test`. Both continue to reject protected hosts. Render preview or staging services must set `DEPLOYMENT_ENV=preview` or `staging` and `NONPRODUCTION_DATABASE_HOST` to their dedicated non-production database hostname; production-protected hosts are rejected in those environments.
+
+Before deployment, run `pnpm preflight:prod` in CI with the production environment variables available. It validates configuration formats and database-host policy without opening a database connection. It also requires `STORAGE_DRIVER=supabase`; the current Render configuration still says `local`, so preflight will fail until the separately noted storage policy is resolved and Render storage settings are corrected.
+
+---
+
+## 3. Firebase Authorized Domains
+
+After the Vercel project is deployed:
+1. Open the [Firebase Console](https://console.firebase.google.com).
+2. Navigate to **Authentication** > **Settings** > **Authorized domains**.
+3. Add your production frontend domain (e.g., `laptopmitra.vercel.app` and any custom apex/subdomains like `laptopmitra.com`).
+4. Without this step, Firebase Auth will block sign-ins and identity tokens originating from your web application.
+
+---
+
+## 4. Deployment Order
+
+For the full deployment schedule and verification rationale, follow [`predeploy.md` Section 5 (`Deploy order`)](../predeploy.md#5-deploy-order):
+
+1. **Push & Merge**: Ensure all pre-launch fixes from `security/prelaunch-fixes` are pushed and merged into the production branch.
+2. **Provision Database**: Create PostgreSQL instance; ensure `DATABASE_URL` is set in Render.
+3. **Deploy Render API**: Deploy the `laptopmitra-api` service; verify `GET https://<api-host>/health` returns `{"status":"ok"}`.
+4. **Seed Catalog**: Run one-time catalog seed with confirmation (see [`docs/deploy-database.md`](deploy-database.md)):
+   ```bash
+   pnpm --filter api exec prisma db seed
+   ```
+5. **Deploy Vercel Frontend**: Trigger the initial build with all `NEXT_PUBLIC_*` variables populated.
+6. **Configure CORS & Firebase**: Set `CORS_ORIGINS` on Render to match your Vercel URL and add the URL to Firebase Authorized Domains. Redeploy API if needed.
+7. **Bootstrap First Admin**: Use the CLI promotion tool or direct SQL (see [`docs/deploy-database.md`](deploy-database.md#4-admin-bootstrap)):
+   ```bash
+   pnpm --filter api run admin:promote <admin-email> --i-know-this-is-prod
+   ```
+8. **Configure Razorpay Webhook**: In Razorpay Dashboard > Webhooks, set endpoint URL to `https://<api-host>/payments/razorpay/webhook`, select payment and refund events, and enter the secret configured in `RAZORPAY_WEBHOOK_SECRET`.
+9. **Execute Smoke Test**: Run the automated validation script against your live endpoints:
+   ```bash
+   ./scripts/smoke-test.sh https://<api-host> https://<web-host>
+   ```
+
+
+---
+
+## 5. Release Checklist & Deploy-Skew Prevention
+
+> [!CRITICAL]
+> **Order of Deployment:** When introducing new endpoints or changing API contracts, **ALWAYS deploy and verify the backend API first**, and only deploy the web frontend after the API deployment succeeds and advertises required capabilities. Never deploy the web frontend ahead of the API.
+
+Before triggering production deployments, execute the following checklist:
+
+1. **CI Route Mismatch Verification**:
+   ```bash
+   node scripts/check-api-mismatches.cjs
+   ```
+   Ensure this step passes with 0 route mismatches between client fetch calls and backend controllers.
+2. **Deploy API on Render**:
+   - Wait for Render build and pre-deploy hooks to finish.
+   - Verify health check and capabilities:
+     ```bash
+     curl -s https://<api-host>/health
+     ```
+     Ensure `status: "ok"` and `capabilities` matches the expected features.
+3. **Enable Feature Flags Gradually**:
+   - Both `ENABLE_EMAIL_VERIFICATION` (API) and `NEXT_PUBLIC_ENABLE_EMAIL_VERIFICATION` (Web) default to `false`.
+   - Enable on the API first, verify `capabilities` includes `'email-verification'`, then enable in Vercel environment variables and redeploy the web build.
+4. **Deploy Web on Vercel**:
+   - Trigger Vercel build.
+   - Test key user journeys (login, checkout, account). Verify that if the backend API is ever rolled back, the web app degrades gracefully without locking out users.

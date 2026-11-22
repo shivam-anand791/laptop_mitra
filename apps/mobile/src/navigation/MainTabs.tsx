@@ -13,6 +13,27 @@ import { colors, shadows } from '../theme/tokens';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
+function TabIcon({
+  focused,
+  name,
+  focusedName,
+  size,
+  color,
+}: {
+  focused: boolean;
+  name: keyof typeof Ionicons.glyphMap;
+  focusedName: keyof typeof Ionicons.glyphMap;
+  size: number;
+  color: string;
+}) {
+  return (
+    <View style={styles.iconContainer}>
+      {focused && <View style={styles.activeDot} />}
+      <Ionicons name={focused ? focusedName : name} size={size} color={color} />
+    </View>
+  );
+}
+
 function CartIcon({ focused, color, size }: { focused: boolean; color: string; size: number }) {
   const { isAuthenticated, isGuest } = useAuth();
   const canFetch = Boolean(isAuthenticated && !isGuest);
@@ -21,7 +42,8 @@ function CartIcon({ focused, color, size }: { focused: boolean; color: string; s
     cart?.itemCount ?? cart?.items?.reduce((sum: number, item: { quantity?: number }) => sum + (item.quantity || 1), 0) ?? 0;
 
   return (
-    <View>
+    <View style={styles.iconContainer}>
+      {focused && <View style={styles.activeDot} />}
       <Ionicons name={focused ? 'cart' : 'cart-outline'} size={size} color={color} />
       {itemCount > 0 && (
         <View style={styles.badge}>
@@ -41,7 +63,8 @@ function AccountIcon({ focused, color, size }: { focused: boolean; color: string
     : 0;
 
   return (
-    <View>
+    <View style={styles.iconContainer}>
+      {focused && <View style={styles.activeDot} />}
       <Ionicons name={focused ? 'person' : 'person-outline'} size={size} color={color} />
       {unreadCount > 0 && (
         <View style={styles.unreadBadge}>
@@ -79,7 +102,7 @@ export default function MainTabs() {
         component={HomeScreen}
         options={{
           tabBarIcon: ({ focused, color, size }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} />
+            <TabIcon focused={focused} name="home-outline" focusedName="home" size={size} color={color} />
           ),
           tabBarLabel: 'Home',
         }}
@@ -89,7 +112,7 @@ export default function MainTabs() {
         component={StoreScreen}
         options={{
           tabBarIcon: ({ focused, color, size }) => (
-            <Ionicons name={focused ? 'storefront' : 'storefront-outline'} size={size} color={color} />
+            <TabIcon focused={focused} name="storefront-outline" focusedName="storefront" size={size} color={color} />
           ),
           tabBarLabel: 'Store',
         }}
@@ -99,7 +122,7 @@ export default function MainTabs() {
         component={WishlistScreen}
         options={{
           tabBarIcon: ({ focused, color, size }) => (
-            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={size} color={color} />
+            <TabIcon focused={focused} name="heart-outline" focusedName="heart" size={size} color={color} />
           ),
           tabBarLabel: 'Wishlist',
         }}
@@ -129,11 +152,25 @@ export default function MainTabs() {
 }
 
 const styles = StyleSheet.create({
+  iconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    minWidth: 28,
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
+    position: 'absolute',
+    top: -5,
+  },
   badge: {
     position: 'absolute',
     top: -4,
     right: -8,
-    backgroundColor: colors.danger,
+    backgroundColor: colors.primary,
     borderRadius: 10,
     minWidth: 18,
     height: 18,

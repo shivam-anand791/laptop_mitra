@@ -25,28 +25,37 @@ function SkeletonBlock({ className = '', rounded = 'var(--radius-md)' }: Skeleto
 export function ProductCardSkeleton() {
   return (
     <div
-      className="rounded-[var(--radius-xl)] overflow-hidden border border-[var(--border-default)] bg-[var(--bg-surface)]"
+      className="rounded-2xl overflow-hidden border border-[#E6DFD5] bg-[#FFFDF9] shadow-xs flex flex-col h-full"
       role="status"
       aria-label="Loading product"
     >
       {/* Image area */}
-      <SkeletonBlock className="w-full aspect-[4/3]" rounded="0" />
+      <SkeletonBlock className="w-full aspect-[4/3] bg-[#FAF6EF]" rounded="0" />
 
       {/* Content */}
-      <div className="p-4 space-y-3">
-        <div className="flex justify-between">
-          <SkeletonBlock className="w-20 h-3" rounded="var(--radius-full)" />
-          <SkeletonBlock className="w-12 h-3" rounded="var(--radius-full)" />
+      <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+        <div className="space-y-2">
+          <div className="flex justify-between items-center h-5">
+            <SkeletonBlock className="w-24 h-3 bg-slate-200/60" rounded="9999px" />
+            <SkeletonBlock className="w-20 h-4 bg-emerald-100/60" rounded="4px" />
+          </div>
+          <div className="min-h-[2.5rem] space-y-1">
+            <SkeletonBlock className="w-full h-4 bg-slate-200/80" rounded="4px" />
+            <SkeletonBlock className="w-2/3 h-4 bg-slate-200/80" rounded="4px" />
+          </div>
+          <div className="flex gap-1.5 min-h-[3.25rem]">
+            <SkeletonBlock className="w-14 h-5 bg-blue-100/50" rounded="6px" />
+            <SkeletonBlock className="w-16 h-5 bg-purple-100/50" rounded="6px" />
+            <SkeletonBlock className="w-20 h-5 bg-teal-100/50" rounded="6px" />
+          </div>
+          <SkeletonBlock className="w-full h-7 bg-slate-100" rounded="6px" />
         </div>
-        <SkeletonBlock className="w-3/4 h-4" />
-        <div className="flex gap-1.5">
-          <SkeletonBlock className="w-14 h-5" rounded="var(--radius-full)" />
-          <SkeletonBlock className="w-16 h-5" rounded="var(--radius-full)" />
-          <SkeletonBlock className="w-20 h-5" rounded="var(--radius-full)" />
-        </div>
-        <div className="pt-3 border-t border-[var(--border-subtle)] flex justify-between items-center">
-          <SkeletonBlock className="w-24 h-6" />
-          <SkeletonBlock className="w-20 h-9" rounded="var(--radius-md)" />
+        <div className="pt-3 border-t border-[#E6DFD5]/80 space-y-2 mt-auto">
+          <SkeletonBlock className="w-28 h-6 bg-slate-200/80" rounded="6px" />
+          <div className="grid grid-cols-2 gap-2 h-9">
+            <SkeletonBlock className="w-full h-9 bg-slate-200/60" rounded="12px" />
+            <SkeletonBlock className="w-full h-9 bg-blue-200/50" rounded="12px" />
+          </div>
         </div>
       </div>
     </div>

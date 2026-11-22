@@ -1,0 +1,1107 @@
+import type {
+  Product,
+  ProductFilterFacets,
+  Cart,
+  CartItem,
+  WishlistItem,
+  User,
+  Order,
+  OrderCounts,
+  OrderListResponse,
+  Address,
+  Category,
+  PaymentRecord,
+  SupportTicket,
+  TicketMessage,
+  CreateTicketDto,
+  AddTicketMessageDto,
+  UpdateTicketDto,
+  ReturnRequest,
+  CreateReturnRequestDto,
+  ProcessReturnDto,
+  HelpCategory,
+  HelpArticle,
+  SavedReply,
+  SupportSettings,
+  NotificationPreferences,
+  CorporateInquiry,
+  CreateCorporateInquiryDto,
+  PincodeVerificationResult,
+} from '@laptopmitra/types';
+
+
+export * from '@laptopmitra/types';
+
+export const AUTH_GUARD_ERROR_CODES = new Set([
+  'TOKEN_EXPIRED',
+  'TOKEN_INVALID',
+  'TOKEN_WRONG_PROJECT',
+]);
+
+export function isAuthGuard401(
+  status: number,
+  errorData?: { code?: unknown; [key: string]: unknown } | null,
+): boolean {
+  return (
+    status === 401 &&
+    typeof errorData?.code === 'string' &&
+    AUTH_GUARD_ERROR_CODES.has(errorData.code)
+  );
+}
+
+export class ApiClientError extends Error {
+  status: number;
+  code?: string | undefined;
+  data?: unknown;
+
+  constructor(status: number, message: string, data?: { code?: unknown; [key: string]: any }) {
+    super(message);
+    this.name = 'ApiClientError';
+    this.status = status;
+    this.code = typeof data?.code === 'string' ? data.code : undefined;
+    this.data = data;
+  }
+}
+
+export interface ApiClientConfig {
+  baseUrl: string;
+  getToken?: (() => string | null | Promise<string | null>) | undefined;
+  refreshToken?: (() => string | null | Promise<string | null>) | undefined;
+  onUnauthorized?: (() => void | Promise<void>) | undefined;
+}
+
+declare const process: any;
+
+export class LaptopMitraApiClient {
+  private baseUrl: string;
+  private getToken?: (() => string | null | Promise<string | null>) | undefined;
+  private refreshToken?: (() => string | null | Promise<string | null>) | undefined;
+  private onUnauthorized?: (() => void | Promise<void>) | undefined;
+
+  constructor(config: ApiClientConfig) {
+    this.baseUrl = config.baseUrl.replace(/\/$/, '');
+    this.getToken = config.getToken;
+    this.refreshToken = config.refreshToken;
+    this.onUnauthorized = config.onUnauthorized;
+  }
+
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {},
+    isRetry = false,
+    tokenOverride?: string | null,
+  ): Promise<T> {
+    const token = tokenOverride !== undefined ? tokenOverride : (this.getToken ? await this.getToken() : null);
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+    const headers: Record<string, string> = {
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...((options.headers as Record<string, string>) || {}),
+    };
+    if (isFormData && headers['Content-Type']) {
+      delete headers['Content-Type'];
+    }
+
+    const isDev = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
+
+    if (isDev) {
+      console.log(`[API Request] ${options.method || 'GET'} ${endpoint}`);
+    }
+
+    const res = await fetch(`${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`, {
+      ...options,
+      headers,
+    });
+
+    if (isDev) {
+      console.log(`[API Response] ${res.status} ${endpoint}`);
+    }
+
+    if (!res.ok) {
+      const errorData = (await res.json().catch(() => ({ message: res.statusText }))) as {
+        message?: string;
+        code?: string;
+      };
+      if (isAuthGuard401(res.status, errorData)) {
+        if (!isRetry && this.refreshToken) {
+          const freshToken = await Promise.resolve(this.refreshToken()).catch(() => null);
+          if (freshToken) {
+            return this.request<T>(endpoint, options, true, freshToken);
+          }
+        }
+        await this.onUnauthorized?.();
+      }
+      throw new ApiClientError(res.status, errorData.message || `API error ${res.status}`, errorData);
+    }
+
+    return (await res.json()) as T;
+  }
+
+  // Health
+  async getHealth(): Promise<{ status: string; timestamp: string; version: string }> {
+    return this.request<{ status: string; timestamp: string; version: string }>('/health');
+  }
+
+  // Products
+  async getProducts(params?: Record<string, any>): Promise<{ products: Product[]; total: number }> {
+    const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+    return this.request<{ products: Product[]; total: number }>(`/products${query}`);
+  }
+
+  async getProduct(id: string): Promise<Product> {
+    return this.request<Product>(`/products/${id}`);
+  }
+
+  async getProductFilters(): Promise<ProductFilterFacets> {
+    return this.request<ProductFilterFacets>('/products/filters');
+  }
+
+
+  // Auth
+  async syncUser(data?: { name?: string; phone?: string; referralCode?: string }): Promise<{ user: User }> {
+    return this.request<{ user: User }>('/auth/sync', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  async sendVerificationEmail(): Promise<{ sent: boolean; alreadyVerified: boolean }> {
+    return this.request<{ sent: boolean; alreadyVerified: boolean }>('/auth/email-verification', {
+      method: 'POST',
+    });
+  }
+
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async confirmPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/auth/reset-password/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  // OTP Verification & Password Reset (Option A)
+  async requestEmailVerificationOtp(): Promise<{ success: boolean; message: string; cooldownSeconds: number }> {
+    return this.request<{ success: boolean; message: string; cooldownSeconds: number }>('/auth/otp/send-verification', {
+      method: 'POST',
+    });
+  }
+
+  async verifyEmailOtp(code: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/auth/otp/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async requestPasswordResetOtp(email: string): Promise<{ success: boolean; message: string; cooldownSeconds: number }> {
+    return this.request<{ success: boolean; message: string; cooldownSeconds: number }>('/auth/otp/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async verifyPasswordResetOtp(email: string, code: string): Promise<{ success: boolean; grantToken: string }> {
+    return this.request<{ success: boolean; grantToken: string }>('/auth/otp/verify-reset-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    });
+  }
+
+  async resetPasswordWithGrant(
+    email: string,
+    grantToken: string,
+    newPassword: string,
+  ): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/auth/otp/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, grantToken, newPassword }),
+    });
+  }
+
+  async getProfile(): Promise<User> {
+    return this.request<User>('/auth/profile');
+  }
+
+  async updateProfile(data: Partial<User>): Promise<User> {
+    return this.request<User>('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async signoutEverywhere(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/signout-everywhere', {
+      method: 'POST',
+    });
+  }
+
+  async deleteAccount(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/auth/account', {
+      method: 'DELETE',
+    });
+  }
+
+  // Cart
+  async getCart(): Promise<Cart> {
+    return this.request<Cart>('/cart');
+  }
+
+  async addToCart(
+    productId: string,
+    quantity = 1,
+    purchaseMode: 'sell' | 'lease' = 'sell',
+    configuration: string = 'default',
+    hasWarranty: boolean = false,
+    variantId?: string,
+    tenureMonths?: number,
+  ): Promise<{ cartItem: CartItem; message: string }> {
+    return this.request<{ cartItem: CartItem; message: string }>('/cart/items', {
+      method: 'POST',
+      body: JSON.stringify({
+        productId,
+        quantity,
+        purchaseMode,
+        configuration,
+        hasWarranty,
+        ...(variantId ? { variantId } : {}),
+        ...(tenureMonths ? { tenureMonths } : {}),
+      }),
+    });
+  }
+
+  async removeCartItem(itemId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/cart/items/${itemId}`, { method: 'DELETE' });
+  }
+
+  async updateCartItem(
+    itemId: string,
+    data: { quantity?: number; hasWarranty?: boolean },
+  ): Promise<{ cartItem: CartItem; message: string }> {
+    return this.request<{ cartItem: CartItem; message: string }>(`/cart/items/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateCartItemQuantity(itemId: string, quantity: number): Promise<{ cartItem: CartItem; message: string }> {
+    return this.updateCartItem(itemId, { quantity });
+  }
+
+  async clearCart(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/cart', { method: 'DELETE' });
+  }
+
+  // Wishlist
+  async getWishlist(): Promise<WishlistItem[]> {
+    const res = await this.request<any>('/wishlist');
+    return Array.isArray(res) ? res : (res?.items ?? res?.wishlist?.items ?? []);
+  }
+
+  async addToWishlist(productId: string): Promise<{ wishlistItem: WishlistItem; message: string }> {
+    return this.request<{ wishlistItem: WishlistItem; message: string }>('/wishlist/items', {
+      method: 'POST',
+      body: JSON.stringify({ productId }),
+    });
+  }
+
+  async removeWishlistItem(itemId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/wishlist/items/${itemId}`, { method: 'DELETE' });
+  }
+
+  async clearWishlist(): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/wishlist', { method: 'DELETE' });
+  }
+
+  // Orders
+  async createOrder(payload: {
+    referralCode?: string;
+    discountCode?: string;
+    shippingAddress?: any;
+    phone?: string;
+    notes?: string;
+    email?: string;
+    paymentMethod?: 'razorpay' | 'cod';
+    idempotencyKey?: string;
+    addressId?: string;
+    cartItems?: any[];
+  }): Promise<Order> {
+    const headers: Record<string, string> = {};
+    if (payload.idempotencyKey) {
+      headers['Idempotency-Key'] = payload.idempotencyKey;
+    }
+    return this.request<Order>('/orders', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getOrders(params?: { status?: string; page?: number; limit?: number }): Promise<Order[] | OrderListResponse> {
+    const query = params ? `?${new URLSearchParams(params as any).toString()}` : '';
+    return this.request<Order[] | OrderListResponse>(`/orders${query}`);
+  }
+
+  async getOrderCounts(): Promise<OrderCounts> {
+    return this.request<OrderCounts>('/orders/counts');
+  }
+
+  async getOrder(id: string): Promise<Order> {
+    return this.request<Order>(`/orders/${id}`);
+  }
+
+  async cancelOrder(id: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/orders/${id}/cancel`, { method: 'PATCH' });
+  }
+
+  async requestOrderReturn(id: string, reason: string): Promise<{ message: string; returnStatus: string }> {
+    return this.request<{ message: string; returnStatus: string }>(`/orders/${id}/return`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async reorder(id: string): Promise<{ message: string; itemsAdded: number }> {
+    return this.request<{ message: string; itemsAdded: number }>(`/orders/${id}/reorder`, {
+      method: 'POST',
+    });
+  }
+
+  async getOrderInvoice(id: string): Promise<{
+    order: Order;
+    invoiceNumber: string;
+    issuedAt: string;
+    seller?: {
+      name: string;
+      gstin: string;
+      address: string;
+      phone: string;
+      email: string;
+    };
+    taxBreakdown?: {
+      taxableAmount: number;
+      cgst: number;
+      sgst: number;
+      totalTax: number;
+      grandTotal: number;
+    };
+  }> {
+    return this.request<any>(`/orders/${id}/invoice`);
+  }
+
+  async trackOrder(id: string): Promise<{
+    orderId?: string;
+    orderNumber?: string;
+    status: string;
+    carrier?: string;
+    trackingNumber?: string;
+    estimatedDelivery?: string;
+    timeline: Array<{ status: string; time: string; note: string }>;
+  }> {
+    return this.request<any>(`/orders/${id}/track`);
+  }
+
+  // Payments
+  async getPaymentHistory(): Promise<PaymentRecord[]> {
+    return this.request<PaymentRecord[]>('/payments/history');
+  }
+
+  async createRazorpayOrder(orderId: string): Promise<any> {
+    return this.request<any>('/payments/razorpay/order', {
+      method: 'POST',
+      body: JSON.stringify({ orderId }),
+    });
+  }
+
+  async verifyRazorpayPayment(payload: {
+    orderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/payments/razorpay/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // Support, Tickets & Warranty
+  async getTickets(params?: { status?: string; category?: string; page?: number; limit?: number }): Promise<SupportTicket[]> {
+    const qs = params ? `?${new URLSearchParams(params as any).toString()}` : '';
+    return this.request<SupportTicket[]>(`/support/tickets${qs}`);
+  }
+
+  async getTicket(id: string): Promise<SupportTicket> {
+    return this.request<SupportTicket>(`/support/tickets/${id}`);
+  }
+
+  async createTicket(data: CreateTicketDto): Promise<SupportTicket> {
+    return this.request<SupportTicket>('/support/tickets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async addTicketMessage(ticketId: string, data: AddTicketMessageDto | string): Promise<TicketMessage> {
+    const payload = typeof data === 'string' ? { message: data } : {
+      message: (data as any).message || (data as any).content || data.body || '',
+      attachments: (data as any).attachments || data.attachmentIds,
+      isInternal: data.isInternal,
+    };
+    return this.request<TicketMessage>(`/support/tickets/${ticketId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateTicket(ticketId: string, data: UpdateTicketDto): Promise<SupportTicket> {
+    return this.request<SupportTicket>(`/support/tickets/${ticketId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getWarrantyStatus(orderItemId: string): Promise<{ warrantyStatus: string; validUntil: string; terms: string }> {
+    return this.request<{ warrantyStatus: string; validUntil: string; terms: string }>(`/support/warranty/${orderItemId}`);
+  }
+
+  async reopenTicket(ticketId: string): Promise<SupportTicket> {
+    return this.request<SupportTicket>(`/support/tickets/${ticketId}/reopen`, {
+      method: 'POST',
+    });
+  }
+
+  async rateTicket(ticketId: string, score: number, comment?: string): Promise<SupportTicket> {
+    return this.request<SupportTicket>(`/support/tickets/${ticketId}/rate`, {
+      method: 'POST',
+      body: JSON.stringify({ score, comment }),
+    });
+  }
+
+  // Returns & Refunds
+  async getReturns(params?: { status?: string; page?: number; limit?: number }): Promise<ReturnRequest[]> {
+    const qs = params ? `?${new URLSearchParams(params as any).toString()}` : '';
+    return this.request<ReturnRequest[]>(`/support/returns${qs}`);
+  }
+
+  async getReturn(id: string): Promise<ReturnRequest> {
+    return this.request<ReturnRequest>(`/support/returns/${id}`);
+  }
+
+  async getReturnRequest(id: string): Promise<ReturnRequest> {
+    return this.getReturn(id);
+  }
+
+  async createReturn(data: CreateReturnRequestDto): Promise<ReturnRequest> {
+    return this.request<ReturnRequest>('/support/returns', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createReturnRequest(data: CreateReturnRequestDto): Promise<ReturnRequest> {
+    return this.createReturn(data);
+  }
+
+  async updateRefundDetails(id: string, data: any): Promise<ReturnRequest> {
+    return this.request<ReturnRequest>(`/support/returns/${id}/refund-details`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async processReturn(id: string, data: ProcessReturnDto): Promise<ReturnRequest> {
+    return this.request<ReturnRequest>(`/support/admin/returns/${id}/process`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Help Center
+  async getSupportConfig(): Promise<any> {
+    return this.request<any>('/support/config');
+  }
+
+  async getHelpCategories(): Promise<HelpCategory[]> {
+    return this.request<HelpCategory[]>('/support/help/categories');
+  }
+
+  async getHelpArticles(params?: { categoryId?: string; search?: string; q?: string; category?: string }): Promise<HelpArticle[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.categoryId) searchParams.set('categoryId', params.categoryId);
+    if (params?.category) searchParams.set('category', params.category);
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.q) searchParams.set('q', params.q);
+    const qs = searchParams.toString();
+    return this.request<HelpArticle[]>(`/support/help/articles${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHelpArticle(slug: string): Promise<HelpArticle> {
+    return this.request<HelpArticle>(`/support/help/articles/${slug}`);
+  }
+
+  async voteHelpArticle(id: string, helpful: boolean): Promise<{ success: boolean; helpfulCount: number; notHelpfulCount: number }> {
+    return this.request<any>(`/support/help/articles/${id}/vote`, {
+      method: 'POST',
+      body: JSON.stringify({ helpful }),
+    });
+  }
+
+  // Support Settings
+  async getSupportSettings(): Promise<SupportSettings> {
+    return this.request<SupportSettings>('/support/admin/settings');
+  }
+
+  async updateSupportSettings(data: Partial<SupportSettings>): Promise<SupportSettings> {
+    return this.request<SupportSettings>('/support/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Saved Replies (Support / Admin)
+  async getSavedReplies(): Promise<SavedReply[]> {
+    return this.request<SavedReply[]>('/support/admin/saved-replies');
+  }
+
+  // Referral / Affiliate
+  async getReferralStats(): Promise<{
+    referralCode: string;
+    referralTier: string;
+    referralEarnings: number;
+    referralReserved: number;
+    referralWithdrawn: number;
+    availableBalance: number;
+    referredUsersCount: number;
+    referralLinkClickedCount: number;
+    payoutHistory: Array<{
+      id: string;
+      amount: number;
+      date: string;
+      status: string;
+      adminNotes?: string;
+      processedAt?: string;
+    }>;
+  }> {
+    return this.request<any>('/discount/referral/stats');
+  }
+
+  // Notifications
+  async getNotificationPreferences(): Promise<NotificationPreferences> {
+    return this.request<NotificationPreferences>('/notifications/preferences');
+  }
+
+  async updateNotificationPreferences(preferences: Partial<NotificationPreferences>): Promise<NotificationPreferences> {
+    return this.request<NotificationPreferences>('/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify(preferences),
+    });
+  }
+
+  async registerDeviceToken(token: string, platform?: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/notifications/register', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform }),
+    });
+  }
+
+
+  // Shipping & Pincode Verification
+  async verifyPincode(pincode: string): Promise<PincodeVerificationResult> {
+    return this.request<PincodeVerificationResult>(`/shipping/pincode/${encodeURIComponent(pincode)}`);
+  }
+
+  // Addresses
+  async getAddresses(): Promise<Address[]> {
+    return this.request<Address[]>('/addresses');
+  }
+
+  async createAddress(data: Partial<Address>): Promise<Address> {
+    return this.request<Address>('/addresses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAddress(id: string, data: Partial<Address>): Promise<Address> {
+    return this.request<Address>(`/addresses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAddress(id: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/addresses/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Categories
+  async getCategories(params?: { parentId?: string }): Promise<Category[]> {
+    const query = params?.parentId ? `?parentId=${encodeURIComponent(params.parentId)}` : '';
+    return this.request<Category[]>(`/categories${query}`);
+  }
+
+  async getCategory(id: string): Promise<Category> {
+    return this.request<Category>(`/categories/${id}`);
+  }
+
+  async getCategoryBySlug(slug: string): Promise<Category> {
+    return this.request<Category>(`/categories/slug/${slug}`);
+  }
+
+  async validateDiscount(code: string, cartTotal: number): Promise<{
+    valid: boolean;
+    discountType: 'percentage' | 'fixed' | 'free_shipping' | null;
+    discountValue: number;
+    discountAmount: number;
+    message: string;
+  }> {
+    return this.request<{
+      valid: boolean;
+      discountType: 'percentage' | 'fixed' | 'free_shipping' | null;
+      discountValue: number;
+      discountAmount: number;
+      message: string;
+    }>('/discount/validate', {
+      method: 'POST',
+      body: JSON.stringify({ code, cartTotal }),
+    });
+  }
+
+  // Admin Endpoints
+  async getAdminDashboard(): Promise<{
+    totalUsers: number;
+    totalProducts: number;
+    totalOrders: number;
+    pendingOrders: number;
+    deliveredOrders: number;
+    revenueCompleted: number;
+    revenuePending: number;
+    revenue: { completed: number; pending: number };
+  }> {
+    return this.request<any>('/admin/dashboard');
+  }
+
+  async getAdminAnalytics(): Promise<{
+    revenue: { daily: { date: string; amount: number }[]; total: number; growth: number };
+    orders: { total: number; pending: number; completed: number; cancelled: number; conversionRate: number };
+    users: { total: number; active: number; newThisMonth: number; growth: number };
+    products: { total: number; lowStock: number; bestSellers: { name: string; sales: number }[] };
+  }> {
+    return this.request<any>('/admin/analytics');
+  }
+
+  async getAdminUsers(): Promise<User[]> {
+    return this.request<User[]>('/admin/users');
+  }
+
+  async updateAdminUserStatus(userId: string, status: string): Promise<any> {
+    return this.request<any>(`/admin/users/${userId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async getAdminProducts(): Promise<Product[]> {
+    return this.request<Product[]>('/admin/products');
+  }
+
+  async createAdminProduct(data: any): Promise<Product> {
+    return this.request<Product>('/admin/products', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAdminProduct(productId: string, data: any): Promise<Product> {
+    return this.request<Product>(`/admin/products/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAdminProduct(productId: string): Promise<{ success?: boolean }> {
+    return this.request<any>(`/admin/products/${productId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAdminOrders(): Promise<Order[]> {
+    return this.request<Order[]>('/admin/orders');
+  }
+
+  async getAdminOrder(orderId: string): Promise<Order> {
+    return this.request<Order>(`/admin/orders/${orderId}`);
+  }
+
+  async updateAdminOrderStatus(
+    orderId: string,
+    status: string,
+    trackingInfo?: { courierName?: string; trackingNumber?: string },
+  ): Promise<Order> {
+    return this.request<Order>(`/admin/orders/${orderId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        status,
+        ...(trackingInfo?.courierName ? { courierName: trackingInfo.courierName } : {}),
+        ...(trackingInfo?.trackingNumber ? { trackingNumber: trackingInfo.trackingNumber } : {}),
+      }),
+    });
+  }
+
+
+  // Support / Corporate Inquiries
+  async createCorporateInquiry(data: CreateCorporateInquiryDto): Promise<CorporateInquiry> {
+    return this.request<CorporateInquiry>('/support/corporate-inquiry', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getAdminInquiries(params?: {
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ items: CorporateInquiry[]; total: number; page: number; pageSize: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status && params.status !== 'all') searchParams.set('status', params.status);
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    const qs = searchParams.toString();
+    return this.request<{ items: CorporateInquiry[]; total: number; page: number; pageSize: number }>(
+      `/admin/inquiries${qs ? `?${qs}` : ''}`
+    );
+  }
+
+  async updateAdminInquiryStatus(
+    id: string,
+    status: string,
+    adminNotes?: string
+  ): Promise<CorporateInquiry> {
+    return this.request<CorporateInquiry>(`/admin/inquiries/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, adminNotes }),
+    });
+  }
+
+  // Affiliate & Payout Endpoints
+  async getPayoutDetails(): Promise<any> {
+    return this.request<any>('/discounts/payout-details');
+  }
+
+  async savePayoutDetails(data: any): Promise<any> {
+    return this.request<any>('/discounts/payout-details', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async requestWithdrawal(amount: number): Promise<{
+    id: string;
+    amount: number;
+    status: string;
+    createdAt: string;
+  }> {
+    return this.request<any>('/discounts/withdraw', {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    });
+  }
+
+  async uploadPayoutQr(formData: FormData): Promise<{ success: boolean; hasQrCode: boolean }> {
+    return this.request<{ success: boolean; hasQrCode: boolean }>('/discounts/payout-details/qr', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async getAdminAffiliates(params?: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+  }): Promise<{ items: any[]; total: number; page: number; pageSize: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.pageSize) searchParams.set('pageSize', String(params.pageSize));
+    if (params?.search && params.search.trim()) searchParams.set('search', params.search.trim());
+    const qs = searchParams.toString();
+    return this.request<any>(`/admin/affiliates${qs ? `?${qs}` : ''}`);
+  }
+
+  async getAdminAffiliateDetail(id: string): Promise<any> {
+    return this.request<any>(`/admin/affiliates/${id}`);
+  }
+
+  async getAdminWithdrawalPaymentDetails(id: string): Promise<any> {
+    return this.request<any>(`/admin/withdrawals/${id}/payment-details`);
+  }
+
+  async updateAdminWithdrawalStatus(
+    id: string,
+    status: 'APPROVED' | 'REJECTED',
+    adminNotes?: string,
+  ): Promise<any> {
+    return this.request<any>(`/admin/withdrawals/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, adminNotes }),
+    });
+  }
+
+  // Item-level Pre-dispatch Cancellation
+  async cancelOrderItem(orderId: string, itemId: string, reason?: string): Promise<{ message: string; cancelledItem: any; order: any }> {
+    return this.request<{ message: string; cancelledItem: any; order: any }>(`/orders/${orderId}/items/${itemId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  // Razorpay Subscriptions for Rentals
+  async createRazorpaySubscription(orderId: string): Promise<any> {
+    return this.request<any>('/payments/razorpay/subscription', {
+      method: 'POST',
+      body: JSON.stringify({ orderId }),
+    });
+  }
+
+  async verifyRentalSubscription(data: any): Promise<any> {
+    return this.request<any>('/payments/razorpay/subscription/verify', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async requestRentalTermination(subscriptionId: string, reason?: string): Promise<any> {
+    return this.request<any>(`/payments/rental/${subscriptionId}/termination-request`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  // Available Coupons & Preview
+  async getAvailableCoupons(payload?: any): Promise<{ eligible: any[]; ineligible: any[] } & any[]> {
+    const q = payload && typeof payload === 'object' ? '?' + new URLSearchParams(payload).toString() : '';
+    return this.request<{ eligible: any[]; ineligible: any[] } & any[]>(`/coupons/available${q}`);
+  }
+
+  async previewCoupon(data: { code: string; [key: string]: any } | string, subtotal?: number, categoryIds?: string[]): Promise<any> {
+    const body = typeof data === 'string' ? { code: data, subtotal, categoryIds } : data;
+    return this.request<any>('/coupons/preview', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  // Situation-aware Help & Change Requests
+  async getItemSituation(orderItemId: string): Promise<any> {
+    return this.request<any>(`/support/items/${orderItemId}/situation`);
+  }
+
+  async createChangeRequest(data: {
+    orderId: string;
+    orderItemId?: string;
+    type: string;
+    requestedData: Record<string, any>;
+  }): Promise<any> {
+    return this.request<any>('/support/change-requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getCustomerChangeRequests(orderId?: string): Promise<any[]> {
+    return this.request<any[]>(`/support/change-requests${orderId ? `?orderId=${orderId}` : ''}`);
+  }
+
+  // Buyback Engine
+  async getBuybackConfig(): Promise<{ settings: any; tiers: any[] }> {
+    return this.request<{ settings: any; tiers: any[] }>('/support/buyback/config');
+  }
+
+  async createBuybackRequest(data: {
+    orderId: string;
+    orderItemId: string;
+    unitNumber?: number;
+    conditionChecklist: any;
+    payoutDetails?: any;
+    photos?: string[];
+    pickupAddress?: any;
+  }): Promise<any> {
+    return this.request<any>('/support/buyback/requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getCustomerBuybacks(orderId?: string): Promise<any[]> {
+    return this.request<any[]>(`/support/buyback/requests${orderId ? `?orderId=${orderId}` : ''}`);
+  }
+
+  async getBuybackById(id: string): Promise<any> {
+    return this.request<any>(`/support/buyback/requests/${id}`);
+  }
+
+  async acceptRevisedBuybackOffer(id: string): Promise<any> {
+    return this.request<any>(`/support/buyback/requests/${id}/accept-revised`, {
+      method: 'POST',
+    });
+  }
+
+  async declineRevisedBuybackOffer(id: string): Promise<any> {
+    return this.request<any>(`/support/buyback/requests/${id}/decline-revised`, {
+      method: 'POST',
+    });
+  }
+
+  // Lease Contracts & Buyouts
+  async getLeaseContracts(): Promise<any[]> {
+    return this.request<any[]>('/lease/contracts');
+  }
+
+  async getLeaseContractById(id: string): Promise<any> {
+    return this.request<any>(`/lease/contracts/${id}`);
+  }
+
+  async requestLeaseBuyout(id: string, notes?: string): Promise<any> {
+    return this.request<any>(`/lease/contracts/${id}/buyout-request`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  }
+
+  // Admin Lease & Item-level actions
+  async adminCancelOrderItem(orderId: string, itemId: string, reason: string): Promise<any> {
+    return this.request<any>(`/admin/orders/${orderId}/items/${itemId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async getAdminLeaseContracts(params?: { status?: string; search?: string }): Promise<any[]> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    const qStr = query.toString();
+    return this.request<any[]>(`/admin/lease/contracts${qStr ? `?${qStr}` : ''}`);
+  }
+
+  async setAdminLeaseBuyoutQuote(id: string, data: { quoteAmount: number; expiresAt?: string; notes?: string }): Promise<any> {
+    return this.request<any>(`/admin/lease/contracts/${id}/buyout-quote`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async completeAdminLeaseBuyout(id: string, notes?: string): Promise<any> {
+    return this.request<any>(`/admin/lease/contracts/${id}/buyout-complete`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  }
+
+  async terminateAdminLease(id: string, reason: string): Promise<any> {
+    return this.request<any>(`/admin/lease/contracts/${id}/terminate`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  // Free General Service & Laptops Hub
+  async getUserLaptops(): Promise<any[]> {
+    return this.request<any[]>('/account/laptops');
+  }
+
+  async getLaptopDetails(unitId: string): Promise<any> {
+    return this.request<any>(`/account/laptops/${unitId}`);
+  }
+
+  async bookService(unitId: string, data: any): Promise<any> {
+    return this.request<any>(`/account/laptops/${unitId}/service-bookings`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getUserServiceJobs(): Promise<any[]> {
+    return this.request<any[]>('/account/service-jobs');
+  }
+
+  async getServiceJobById(id: string): Promise<any> {
+    return this.request<any>(`/account/service-jobs/${id}`);
+  }
+
+  async rescheduleService(id: string, data: { preferredDate: string; preferredSlot: string; reason?: string }): Promise<any> {
+    return this.request<any>(`/account/service-jobs/${id}/reschedule`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async cancelService(id: string, data: { reason: string }): Promise<any> {
+    return this.request<any>(`/account/service-jobs/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getServiceSettings(): Promise<any> {
+    return this.request<any>('/service/settings');
+  }
+
+  // Service Administration
+  async getAdminServiceJobs(params?: {
+    status?: string;
+    technicianId?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ items: any[]; total: number; page: number; pageSize: number; totalPages: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.technicianId) searchParams.set('technicianId', params.technicianId);
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.pageSize) searchParams.set('pageSize', params.pageSize.toString());
+    const query = searchParams.toString();
+    return this.request<{ items: any[]; total: number; page: number; pageSize: number; totalPages: number }>(
+      `/admin/service/jobs${query ? `?${query}` : ''}`
+    );
+  }
+
+  async getAdminServiceJob(id: string): Promise<any> {
+    return this.request<any>(`/admin/service/jobs/${id}`);
+  }
+
+  async updateAdminServiceJob(id: string, data: any): Promise<any> {
+    return this.request<any>(`/admin/service/jobs/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getTechnicians(): Promise<any[]> {
+    return this.request<any[]>('/admin/service/technicians');
+  }
+
+  async getAdminServiceSettings(): Promise<any> {
+    return this.request<any>('/admin/service/settings');
+  }
+
+  async updateAdminServiceSettings(data: any): Promise<any> {
+    return this.request<any>('/admin/service/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async triggerServiceReminders(): Promise<any> {
+    return this.request<any>('/admin/service/reminders/trigger', {
+      method: 'POST',
+    });
+  }
+}

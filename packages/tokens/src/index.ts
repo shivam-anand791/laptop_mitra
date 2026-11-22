@@ -4,3 +4,4 @@ export * from './radius';
 export * from './typography';
 export * from './shadows';
 export * from './accessibility';
+export * from './motion';

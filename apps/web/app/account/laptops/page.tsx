@@ -85,23 +85,6 @@ export default function CustomerLaptopsPage() {
     loadData();
   }, []);
 
-  // Handle URL query parameter ?book=unitId
-  useEffect(() => {
-    if (bookUnitId && laptops.length > 0 && !bookingModalOpen) {
-      const target = laptops.find((l) => l.id === bookUnitId);
-      if (target && target.serviceStatus === 'AVAILABLE') {
-        handleOpenBooking(target);
-      }
-    }
-  }, [bookUnitId, laptops]);
-
-  const handleCopySerial = (serial: string) => {
-    if (!serial) return;
-    navigator.clipboard.writeText(serial);
-    setCopiedSerial(serial);
-    setTimeout(() => setCopiedSerial(null), 2000);
-  };
-
   const handleOpenBooking = (unit: any) => {
     setSelectedUnit(unit);
     setBookingError(null);
@@ -116,6 +99,23 @@ export default function CustomerLaptopsPage() {
 
     setBookingModalOpen(true);
   };
+
+  const handleCopySerial = (serial: string) => {
+    if (!serial) return;
+    navigator.clipboard.writeText(serial);
+    setCopiedSerial(serial);
+    setTimeout(() => setCopiedSerial(null), 2000);
+  };
+
+  // Handle URL query parameter ?book=unitId
+  useEffect(() => {
+    if (bookUnitId && laptops.length > 0 && !bookingModalOpen) {
+      const target = laptops.find((l) => l.id === bookUnitId);
+      if (target && target.serviceStatus === 'AVAILABLE') {
+        handleOpenBooking(target);
+      }
+    }
+  }, [bookUnitId, laptops, bookingModalOpen]);
 
   const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

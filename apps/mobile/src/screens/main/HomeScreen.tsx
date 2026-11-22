@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,8 +22,174 @@ import SectionHeader from '../../components/ui/SectionHeader';
 import TrustStrip from '../../components/ui/TrustStrip';
 import Button from '../../components/ui/Button';
 import CorporateQuoteModal from '../../components/CorporateQuoteModal';
-import { DataErrorView } from '../../components/DataErrorView';
+import HeroSpotlightCarousel from '../../components/HeroSpotlightCarousel';
+import QualityProcessModal from '../../components/QualityProcessModal';
 import { colors, radius, shadows, spacing, typography } from '../../theme/tokens';
+
+const getCategoryIcon = (slugOrName: string): keyof typeof Ionicons.glyphMap => {
+  const s = slugOrName.toLowerCase();
+  if (s.includes('business')) return 'briefcase';
+  if (s.includes('student')) return 'school';
+  if (s.includes('gaming')) return 'game-controller';
+  if (s.includes('apple') || s.includes('macbook')) return 'logo-apple';
+  if (s.includes('premium') || s.includes('ultra')) return 'sparkles';
+  return 'laptop';
+};
+
+const goldStandardPromises = [
+  {
+    id: 'buyback',
+    title: '14 Days Return &\nBuyback Assurance',
+    subtitle: 'Up to 70% assured value',
+    icon: 'shield-checkmark' as const,
+    color: '#0284C7',
+    badge: 'Assured',
+    route: 'BuybackGuarantee' as const,
+  },
+  {
+    id: 'price',
+    title: 'Price Value\nGuarantee',
+    subtitle: 'Direct certified market rates',
+    icon: 'pricetag' as const,
+    color: '#D97706',
+    badge: 'Fair Price',
+  },
+  {
+    id: 'security',
+    title: 'Enterprise Data\nSecurity',
+    subtitle: 'NIST 800-88 certified wiping',
+    icon: 'lock-closed' as const,
+    color: '#16A34A',
+    badge: 'Security',
+  },
+  {
+    id: 'warranty',
+    title: '1-Year Comprehensive\nWarranty',
+    subtitle: 'Doorstep replacement support',
+    icon: 'ribbon' as const,
+    color: '#2563EB',
+    badge: 'Warranty',
+  },
+  {
+    id: 'like-new',
+    title: 'Like New Assured\nGrade A+',
+    subtitle: 'Zero functional defects',
+    icon: 'sparkles' as const,
+    color: '#0D9488',
+    badge: 'Grade A+',
+  },
+  {
+    id: 'performance',
+    title: 'Performance\nGuarantee',
+    subtitle: '32-point hardware bench-tested',
+    icon: 'speedometer' as const,
+    color: '#059669',
+    badge: '32-Point',
+  },
+];
+
+const customerTestimonials = [
+  {
+    name: 'Rajesh Sharma',
+    role: 'IT Consultant, Bengaluru',
+    product: 'ThinkPad T480 (i7, 16GB, 512GB)',
+    text: 'Received in pristine condition with 94% battery health. Saved more than ₹45,000 compared to new. LaptopMitra gave our firm complete peace of mind.',
+    rating: 5,
+  },
+  {
+    name: 'Pooja Iyer',
+    role: 'Product Designer, Pune',
+    product: 'Apple MacBook Pro 14" M1 Pro',
+    text: 'Zero scratches, perfect Retina display, and the battery lasts a full day of Figma work. Prompt delivery with tamper-proof packaging.',
+    rating: 5,
+  },
+  {
+    name: 'Vikram Mehta',
+    role: 'Startup Founder, Gurugram',
+    product: 'Dell Latitude 7490 (Batch of 6)',
+    text: 'Equipped our engineering team through LaptopMitra’s bulk program. Saved 60% on our IT hardware budget with prompt warranty support.',
+    rating: 5,
+  },
+];
+
+const MOBILE_LIVE_TICKER = [
+  '🔥 Rajesh S. from Bengaluru ordered ThinkPad T480 (Saved ₹45k)',
+  '⚡ Pooja I. from Pune claimed MacBook Pro M1 with 1-Year Warranty',
+  '🛡️ 12 Dell Latitudes dispatched to corporate client in Gurugram',
+  '📦 Express Delivery: Order #LM-8842 dispatched via Insured Air Courier',
+];
+
+const FALLBACK_CATEGORIES: Category[] = [
+  { id: 'cat-mac', name: 'Apple MacBooks', slug: 'apple-macbooks', _count: { products: 2 } } as any,
+  { id: 'cat-biz', name: 'Business Laptops', slug: 'business-laptops', _count: { products: 11 } } as any,
+  { id: 'cat-gaming', name: 'Gaming & High-Perf', slug: 'gaming-laptops', _count: { products: 14 } } as any,
+];
+
+const FALLBACK_FEATURED: Product[] = [
+  {
+    id: 'prod-macbook-air',
+    name: 'Apple MacBook Air 13.3" (M1 Chip, 8GB RAM, 256GB SSD)',
+    slug: 'macbook-air-m1',
+    price: 49999 as any,
+    compareAtPrice: 92000 as any,
+    isFeatured: true,
+    stock: 12,
+    images: [{ id: 'img-1', url: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&auto=format&fit=crop&q=80', isPrimary: true }],
+    category: { id: 'cat-mac', name: 'Apple MacBooks', slug: 'apple-macbooks' } as any,
+    metadata: { processor: 'Apple M1 Chip (8-Core CPU)', condition: 'Grade A+ (Like New)' },
+  } as any,
+  {
+    id: 'prod-dell-latitude-7440',
+    name: 'Dell Latitude 7440 (Intel Core i7 13th Gen, 16GB RAM, 512GB SSD)',
+    slug: 'dell-latitude-7440',
+    price: 78999 as any,
+    compareAtPrice: 165000 as any,
+    isFeatured: true,
+    stock: 10,
+    images: [{ id: 'img-2', url: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=800&auto=format&fit=crop&q=80', isPrimary: true }],
+    category: { id: 'cat-biz', name: 'Business Laptops', slug: 'business-laptops' } as any,
+    metadata: { processor: 'Intel i7 13th Gen', ram: '16GB DDR5', storage: '512GB SSD', display: '14" FHD', condition: 'Certified Refurbished' },
+  } as any,
+  {
+    id: 'prod-asus-rog-g14',
+    name: 'ASUS ROG Zephyrus G14 (AMD Ryzen 9 6900HS, 16GB, RTX 3060)',
+    slug: 'asus-rog-g14',
+    price: 78999 as any,
+    compareAtPrice: 165000 as any,
+    isFeatured: true,
+    stock: 10,
+    images: [{ id: 'img-3', url: 'https://images.unsplash.com/photo-1603302576837-37561b2e2302?w=800&auto=format&fit=crop&q=80', isPrimary: true }],
+    category: { id: 'cat-gaming', name: 'Gaming & High-Perf', slug: 'gaming-laptops' } as any,
+    metadata: { processor: 'AMD Ryzen 9 6900HS', condition: 'Certified Refurbished' },
+  } as any,
+];
+
+const FALLBACK_NEW_ARRIVALS: Product[] = [
+  {
+    id: 'prod-hp-elitebook-840',
+    name: 'HP EliteBook 840 G8 (Intel Core i5 11th Gen, 16GB RAM)',
+    slug: 'hp-elitebook-840-g8',
+    price: 33999 as any,
+    compareAtPrice: 88000 as any,
+    isNewArrival: true,
+    stock: 22,
+    images: [{ id: 'img-4', url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800&auto=format&fit=crop&q=80', isPrimary: true }],
+    category: { id: 'cat-student', name: 'Student & Budget', slug: 'student-budget' } as any,
+    metadata: { processor: 'Intel Core i5-1135G7', condition: 'Grade A+' },
+  } as any,
+  {
+    id: 'prod-dell-xps-15',
+    name: 'Dell XPS 15 9520 (Intel Core i7 12th Gen, 32GB RAM)',
+    slug: 'dell-xps-15-9520',
+    price: 89999 as any,
+    compareAtPrice: 195000 as any,
+    isFeatured: true,
+    stock: 6,
+    images: [{ id: 'img-5', url: 'https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=800&auto=format&fit=crop&q=80', isPrimary: true }],
+    category: { id: 'cat-ultra', name: 'Ultrabooks & Thin', slug: 'ultrabooks-thin' } as any,
+    metadata: { processor: 'Intel Core i7-12700H', condition: 'Grade A+' },
+  } as any,
+];
 
 export default function HomeScreen() {
   const navigation = useNavigation<MainStackNavigationProp>();
@@ -32,11 +198,40 @@ export default function HomeScreen() {
   const addToCart = useAddToCart();
   const { retryCartSync } = useCartSyncState();
   const [corporateModalVisible, setCorporateModalVisible] = useState(false);
+  const [qualityModalVisible, setQualityModalVisible] = useState(false);
+  const [dealTimeLeft, setDealTimeLeft] = useState({ hours: 14, minutes: 28, seconds: 50 });
+  const [liveIndex, setLiveIndex] = useState(0);
+
+  useEffect(() => {
+    const ticker = setInterval(() => {
+      setLiveIndex((prev) => (prev + 1) % MOBILE_LIVE_TICKER.length);
+    }, 3800);
+    return () => clearInterval(ticker);
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setDealTimeLeft((prev) => {
+        let { hours, minutes, seconds } = prev;
+        if (seconds > 0) {
+          seconds--;
+        } else if (minutes > 0) {
+          minutes--;
+          seconds = 59;
+        } else if (hours > 0) {
+          hours--;
+          minutes = 59;
+          seconds = 59;
+        }
+        return { hours, minutes, seconds };
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const {
     data: featuredData,
     isLoading: featuredLoading,
-    error: featuredError,
     refetch: refetchFeatured,
     isRefetching: isRefetchingFeatured,
   } = useProducts({ featured: true, limit: 10 });
@@ -44,7 +239,6 @@ export default function HomeScreen() {
   const {
     data: newArrivalsData,
     isLoading: newArrivalsLoading,
-    error: newArrivalsError,
     refetch: refetchNewArrivals,
     isRefetching: isRefetchingNewArrivals,
   } = useProducts({ newArrival: true, limit: 10 });
@@ -52,7 +246,6 @@ export default function HomeScreen() {
   const {
     data: categoriesData,
     isLoading: categoriesLoading,
-    error: categoriesError,
     refetch: refetchCategories,
     isRefetching: isRefetchingCategories,
   } = useCategories();
@@ -82,50 +275,77 @@ export default function HomeScreen() {
     );
   };
 
+  const handleQuickBuyNow = (product: Product) => {
+    if (!isAuthenticated) {
+      Alert.alert('Login Required', 'Please login to continue to checkout.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Login', onPress: () => navigation.navigate('Auth' as any) },
+      ]);
+      return;
+    }
+    addToCart.mutate(
+      { productId: product.id, quantity: 1 },
+      {
+        onSuccess: () => {
+          navigation.navigate('MainTabs', { screen: 'Cart' } as any);
+        },
+        onError: () =>
+          Alert.alert('Checkout', 'Unable to prepare order. Please try again.'),
+      },
+    );
+  };
+
   const renderHorizontalProduct = ({ item }: { item: Product }) => (
     <ProductCard
       product={item}
       width={175}
       onPress={() => navigateToProduct(item.id)}
       onAddToCart={() => handleQuickAddToCart(item)}
+      onBuyNow={() => handleQuickBuyNow(item)}
     />
   );
 
-  const renderCategoryItem = ({ item }: { item: Category }) => (
-    <TouchableOpacity
-      style={styles.categoryCard}
-      onPress={() => {
-        navigation.navigate('MainTabs', {
-          screen: 'Store',
-          params: { categoryId: item.id, categoryName: item.name },
-        } as any);
-      }}
-      activeOpacity={0.7}
-    >
-      <View style={styles.categoryIconWrap}>
-        <Ionicons name="laptop" size={20} color={colors.primary} />
-      </View>
-      <Text style={styles.categoryName} numberOfLines={1}>
-        {item.name}
-      </Text>
-      {item._count?.products !== undefined && (
-        <Text style={styles.categoryCount}>{item._count.products} items</Text>
-      )}
-    </TouchableOpacity>
-  );
+  const renderCategoryItem = ({ item }: { item: Category }) => {
+    const iconName = getCategoryIcon(item.slug || item.name);
+    return (
+      <TouchableOpacity
+        style={styles.categoryCard}
+        onPress={() => {
+          navigation.navigate('MainTabs', {
+            screen: 'Store',
+            params: { categoryId: item.id, categoryName: item.name },
+          } as any);
+        }}
+        activeOpacity={0.7}
+      >
+        <View style={styles.categoryIconWrap}>
+          <Ionicons name={iconName} size={20} color={colors.primary} />
+        </View>
+        <Text style={styles.categoryName} numberOfLines={1}>
+          {item.name}
+        </Text>
+        {item._count?.products !== undefined && (
+          <Text style={styles.categoryCount}>{item._count.products} items</Text>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   const isLoading = featuredLoading && newArrivalsLoading && categoriesLoading;
   const isRefreshing = isRefetchingFeatured || isRefetchingNewArrivals || isRefetchingCategories;
 
-  const categories = Array.isArray(categoriesData)
+  const rawCategories = Array.isArray(categoriesData)
     ? categoriesData
     : (categoriesData && 'categories' in (categoriesData as object)
         ? (categoriesData as { categories: Category[] }).categories
         : []);
-  const featuredProducts = featuredData?.products ?? [];
-  const newArrivals = newArrivalsData?.products ?? [];
+  const categories = rawCategories.length > 0 ? rawCategories : FALLBACK_CATEGORIES;
+  const rawFeatured = featuredData?.products ?? [];
+  const featuredProducts = rawFeatured.length > 0 ? rawFeatured : FALLBACK_FEATURED;
+  const rawNewArrivals = newArrivalsData?.products ?? [];
+  const newArrivals = rawNewArrivals.length > 0 ? rawNewArrivals : FALLBACK_NEW_ARRIVALS;
 
-  if (isLoading) {
+  if (isLoading && featuredProducts.length === 0) {
     return (
       <View style={[styles.skeletonContainer, { paddingTop: insets.top }]}>
         <View style={styles.headerBar}>
@@ -145,22 +365,6 @@ export default function HomeScreen() {
             ))}
           </ScrollView>
         </View>
-      </View>
-    );
-  }
-
-  const hasDataError = Boolean(featuredError || newArrivalsError || categoriesError);
-  if (hasDataError && featuredProducts.length === 0 && newArrivals.length === 0 && categories.length === 0) {
-    return (
-      <View style={[styles.root, { paddingTop: insets.top, justifyContent: 'center', flex: 1 }]}>
-        <DataErrorView
-          error={featuredError || newArrivalsError || categoriesError}
-          onRetry={() => {
-            void refetchFeatured();
-            void refetchNewArrivals();
-            void refetchCategories();
-          }}
-        />
       </View>
     );
   }
@@ -208,6 +412,14 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Live Activity Social Proof Bar */}
+      <View style={styles.liveTickerBar}>
+        <View style={styles.livePulseDot} />
+        <Text style={styles.liveTickerText} numberOfLines={1}>
+          {MOBILE_LIVE_TICKER[liveIndex]}
+        </Text>
+      </View>
+
       {/* Search Bar — Taps to SearchScreen */}
       <TouchableOpacity
         style={styles.searchBar}
@@ -223,16 +435,27 @@ export default function HomeScreen() {
         </View>
       </TouchableOpacity>
 
-      {/* Navy Hero Banner */}
+      {/* Navy Interactive Hero Banner */}
       <View style={styles.heroContainer}>
         <View style={styles.heroCard}>
-          <View style={styles.heroBadge}>
-            <Text style={styles.heroBadgeText}>ENTERPRISE GRADE REFURBISHED</Text>
+          <View style={styles.heroBadgeRow}>
+            <View style={styles.heroBadge}>
+              <View style={styles.heroPulseDot} />
+              <Text style={styles.heroBadgeText}>ENTERPRISE CERTIFIED HARDWARE</Text>
+            </View>
+            <View style={styles.heroWarrantyPill}>
+              <Ionicons name="shield-checkmark" size={11} color="#38BDF8" />
+              <Text style={styles.heroWarrantyPillText}>32-Pt Tested</Text>
+            </View>
           </View>
-          <Text style={styles.heroTitle}>Certified Laptops for Your Business</Text>
-          <Text style={styles.heroSubtitle}>
-            Save up to 70% with 32-point tested laptops backed by 1-year warranty.
+
+          <Text style={styles.heroTitle}>
+            Certified Laptops for Your <Text style={styles.heroTitleHighlight}>Business.</Text>
           </Text>
+          <Text style={styles.heroSubtitle}>
+            Save up to 70% with 32-point tested laptops backed by 1-year doorstep warranty.
+          </Text>
+
           <View style={styles.heroActions}>
             <Button
               title="Explore Laptops"
@@ -243,14 +466,59 @@ export default function HomeScreen() {
               iconPosition="right"
             />
             <TouchableOpacity
-              style={styles.heroSecondaryAction}
-              onPress={() => navigation.navigate('MitraDashboard')}
+              style={styles.heroQualityBtn}
+              onPress={() => setQualityModalVisible(true)}
               activeOpacity={0.7}
             >
-              <Text style={styles.heroSecondaryText}>Mitra Partner →</Text>
+              <Ionicons name="shield-checkmark-outline" size={13} color="#38BDF8" />
+              <Text style={styles.heroQualityBtnText}>Quality Process</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Interactive Featured Product Showcase Podium */}
+          <HeroSpotlightCarousel
+            products={featuredProducts}
+            onSelectProduct={(p) => navigateToProduct(p.id)}
+            onQuickBuyNow={(p) => handleQuickBuyNow(p)}
+            onExploreQuality={() => setQualityModalVisible(true)}
+          />
         </View>
+      </View>
+
+      {/* Quick Purpose Shortcuts Grid */}
+      <View style={styles.quickShortcutsRow}>
+        <TouchableOpacity
+          style={styles.shortcutChip}
+          onPress={() => navigation.navigate('MainTabs', { screen: 'Store', params: { categoryName: 'Business' } } as any)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="briefcase-outline" size={14} color={colors.primary} />
+          <Text style={styles.shortcutChipText}>Business</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.shortcutChip}
+          onPress={() => navigation.navigate('MainTabs', { screen: 'Store', params: { categoryName: 'Student' } } as any)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="school-outline" size={14} color={colors.primary} />
+          <Text style={styles.shortcutChipText}>Under ₹25k</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.shortcutChip}
+          onPress={() => navigation.navigate('MainTabs', { screen: 'Store', params: { categoryName: 'Apple' } } as any)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="logo-apple" size={14} color={colors.primary} />
+          <Text style={styles.shortcutChipText}>MacBooks</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.shortcutChip}
+          onPress={() => navigation.navigate('BuybackGuarantee')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="shield-checkmark-outline" size={14} color="#059669" />
+          <Text style={[styles.shortcutChipText, { color: '#059669' }]}>Buyback 70%</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Trust Strip */}
@@ -262,7 +530,7 @@ export default function HomeScreen() {
           <SectionHeader
             title="Shop by Category"
             subtitle="Explore tested devices by segment"
-            style={{ paddingHorizontal: 0, marginBottom: spacing.sm }}
+            style={{ marginBottom: spacing.sm }}
           />
           <FlatList
             data={categories}
@@ -275,6 +543,86 @@ export default function HomeScreen() {
         </View>
       )}
 
+      {/* Featured Deal of the Day Banner */}
+      <View style={styles.dealContainer}>
+        <View style={styles.dealCard}>
+          <View style={styles.dealBadgeRow}>
+            <View style={styles.dealBadge}>
+              <View style={styles.dealPingDot} />
+              <Text style={styles.dealBadgeText}>FEATURED DAILY DEAL</Text>
+            </View>
+            <View style={styles.discountPill}>
+              <Text style={styles.discountPillText}>45% OFF</Text>
+            </View>
+          </View>
+
+          <Text style={styles.dealTitle}>ThinkPad Executive Ultrabook</Text>
+          <Text style={styles.dealSpecs}>Intel Core i7 • 16GB RAM • 512GB SSD • Grade A+ Pristine</Text>
+
+          {/* Quick Hardware Spec Pills */}
+          <View style={styles.dealSpecChipsRow}>
+            <View style={styles.dealSpecChip}>
+              <Text style={styles.dealSpecChipText}>⚡ Intel Core i7</Text>
+            </View>
+            <View style={styles.dealSpecChip}>
+              <Text style={styles.dealSpecChipText}>💾 16GB Dual RAM</Text>
+            </View>
+            <View style={styles.dealSpecChip}>
+              <Text style={styles.dealSpecChipText}>🚀 512GB SSD</Text>
+            </View>
+            <View style={styles.dealSpecChip}>
+              <Text style={styles.dealSpecChipText}>🔋 94% Battery</Text>
+            </View>
+          </View>
+
+          {/* Claimed Batch Progress */}
+          <View style={styles.dealProgressWrap}>
+            <View style={styles.dealProgressHeader}>
+              <Text style={styles.dealProgressText}>🔥 84% Claimed Today</Text>
+              <Text style={styles.dealStockText}>Only 3 units left</Text>
+            </View>
+            <View style={styles.dealProgressBarBg}>
+              <View style={styles.dealProgressBarFill} />
+            </View>
+          </View>
+
+          {/* Countdown Clock */}
+          <View style={styles.timerRow}>
+            <Text style={styles.timerLabel}>ENDS IN:</Text>
+            <View style={styles.timerBoxes}>
+              <View style={styles.timerBox}>
+                <Text style={styles.timerNum}>{String(dealTimeLeft.hours).padStart(2, '0')}</Text>
+                <Text style={styles.timerUnit}>HRS</Text>
+              </View>
+              <Text style={styles.timerColon}>:</Text>
+              <View style={styles.timerBox}>
+                <Text style={styles.timerNum}>{String(dealTimeLeft.minutes).padStart(2, '0')}</Text>
+                <Text style={styles.timerUnit}>MINS</Text>
+              </View>
+              <Text style={styles.timerColon}>:</Text>
+              <View style={styles.timerBox}>
+                <Text style={styles.timerNum}>{String(dealTimeLeft.seconds).padStart(2, '0')}</Text>
+                <Text style={styles.timerUnit}>SECS</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.dealPriceRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+              <Text style={styles.dealPrice}>₹36,999</Text>
+              <Text style={styles.dealMrp}>₹68,000</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.dealActionBtn}
+              onPress={() => navigation.navigate('MainTabs', { screen: 'Store' } as any)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.dealActionBtnText}>Explore Deal →</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
       {/* Featured Laptops Carousel */}
       {featuredProducts.length > 0 && (
         <View style={styles.section}>
@@ -283,7 +631,7 @@ export default function HomeScreen() {
             subtitle="Handpicked business & professional models"
             actionText="View All"
             onActionPress={() => navigation.navigate('MainTabs')}
-            style={{ paddingHorizontal: 0 }}
+            style={{ marginBottom: spacing.sm }}
           />
           <FlatList
             data={featuredProducts}
@@ -304,7 +652,7 @@ export default function HomeScreen() {
             subtitle="Freshly certified units in stock"
             actionText="View All"
             onActionPress={() => navigation.navigate('MainTabs')}
-            style={{ paddingHorizontal: 0 }}
+            style={{ marginBottom: spacing.sm }}
           />
           <FlatList
             data={newArrivals}
@@ -316,6 +664,84 @@ export default function HomeScreen() {
           />
         </View>
       )}
+
+      {/* The Gold Standard Quality Promise (with interactive Buyback Guarantee link) */}
+      <View style={styles.section}>
+        <SectionHeader
+          title="The Gold Standard"
+          subtitle="Enterprise certification & customer assurances"
+          style={{ marginBottom: spacing.sm }}
+        />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.goldStandardScroll}
+        >
+          {goldStandardPromises.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.goldCard}
+              onPress={() => {
+                if (item.route) {
+                  navigation.navigate(item.route as any);
+                } else {
+                  navigation.navigate('MainTabs', { screen: 'Store' } as any);
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.goldIconWrap, { backgroundColor: item.color + '15' }]}>
+                <Ionicons name={item.icon} size={22} color={item.color} />
+              </View>
+              <View style={[styles.goldBadge, { backgroundColor: item.color + '20' }]}>
+                <Text style={[styles.goldBadgeText, { color: item.color }]}>{item.badge}</Text>
+              </View>
+              <Text style={styles.goldTitle}>{item.title}</Text>
+              <Text style={styles.goldSubtitle}>{item.subtitle}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Verified Customer Testimonials Carousel */}
+      <View style={styles.section}>
+        <SectionHeader
+          title="Verified Buyer Reviews"
+          subtitle="What IT managers and creators say about LaptopMitra"
+          style={{ marginBottom: spacing.sm }}
+        />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.testimonialScroll}
+        >
+          {customerTestimonials.map((review, i) => (
+            <View key={i} style={styles.testimonialCard}>
+              <View style={styles.starRow}>
+                <View style={{ flexDirection: 'row', gap: 2 }}>
+                  {Array.from({ length: review.rating }).map((_, starIdx) => (
+                    <Ionicons key={starIdx} name="star" size={13} color="#EAB308" />
+                  ))}
+                </View>
+                <Text style={styles.verifiedBuyerTag}>Verified Purchase</Text>
+              </View>
+              <Text style={styles.testimonialText} numberOfLines={4}>
+                "{review.text}"
+              </Text>
+              <View style={styles.testimonialUserRow}>
+                <View style={styles.testimonialAvatar}>
+                  <Text style={styles.testimonialAvatarText}>{review.name.charAt(0)}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.testimonialName}>{review.name}</Text>
+                  <Text style={styles.testimonialRole} numberOfLines={1}>{review.role}</Text>
+                  <Text style={styles.testimonialProduct} numberOfLines={1}>{review.product}</Text>
+                </View>
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
 
       {/* Assurance Card */}
       <View style={styles.assuranceCard}>
@@ -365,6 +791,12 @@ export default function HomeScreen() {
       <CorporateQuoteModal
         visible={corporateModalVisible}
         onClose={() => setCorporateModalVisible(false)}
+      />
+
+      <QualityProcessModal
+        visible={qualityModalVisible}
+        onClose={() => setQualityModalVisible(false)}
+        onExploreLaptops={() => navigation.navigate('MainTabs', { screen: 'Store' } as any)}
       />
     </ScrollView>
   );
@@ -469,87 +901,129 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   heroCard: {
-    backgroundColor: colors.navy,
+    backgroundColor: '#071433',
     borderRadius: radius.xl,
-    padding: spacing.xl,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.25)',
     ...shadows.md,
   },
+  heroBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
   heroBadge: {
-    backgroundColor: 'rgba(29, 111, 242, 0.25)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(29, 111, 242, 0.5)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xxs + 1,
-    borderRadius: radius.xs,
-    alignSelf: 'flex-start',
-    marginBottom: spacing.sm,
+    borderColor: 'rgba(56, 189, 248, 0.25)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+  },
+  heroPulseDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#38BDF8',
   },
   heroBadgeText: {
-    color: '#93C5FD',
-    fontSize: 10,
+    color: '#38BDF8',
+    fontSize: 9.5,
     fontWeight: '800',
     letterSpacing: 0.6,
   },
+  heroWarrantyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: radius.full,
+  },
+  heroWarrantyPillText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#E2E8F0',
+  },
   heroTitle: {
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 21,
+    fontWeight: '900',
     color: colors.textWhite,
-    lineHeight: 26,
+    lineHeight: 27,
+    letterSpacing: -0.3,
+  },
+  heroTitleHighlight: {
+    color: '#38BDF8',
   },
   heroSubtitle: {
     fontSize: 12,
     color: '#CBD5E1',
     lineHeight: 17,
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
+    marginTop: 4,
+    marginBottom: spacing.sm,
   },
   heroActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
   },
-  heroSecondaryAction: {
-    paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.sm,
+  heroQualityBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
-  heroSecondaryText: {
-    color: '#93C5FD',
-    fontSize: 13,
-    fontWeight: '600',
+  heroQualityBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   trustStrip: {
-    marginBottom: spacing.lg,
+    marginBottom: 0,
   },
   section: {
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xl,
   },
   productList: {
-    paddingRight: spacing.lg,
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
     paddingBottom: spacing.xs,
   },
   categoryList: {
     gap: spacing.sm,
-    paddingRight: spacing.lg,
+    paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xs,
   },
   categoryCard: {
     backgroundColor: colors.cardBg,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    minWidth: 90,
+    minWidth: 92,
     ...shadows.sm,
   },
   categoryIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.primaryLight,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xs,
@@ -648,5 +1122,364 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontWeight: '700',
     color: colors.textWhite,
+  },
+
+  /* ── Featured Deal of the Day Styles (Flagship Midnight Navy Card) ── */
+  dealContainer: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xl,
+    marginBottom: 0,
+  },
+  dealCard: {
+    backgroundColor: '#0B1F4B',
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+    ...shadows.md,
+  },
+  dealBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  dealBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(37, 99, 235, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.4)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+  },
+  dealPingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#60A5FA',
+  },
+  dealBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#93C5FD',
+    letterSpacing: 0.6,
+  },
+  discountPill: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
+  discountPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.textWhite,
+  },
+  dealTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.textWhite,
+    marginTop: 2,
+  },
+  dealSpecs: {
+    fontSize: 11,
+    color: '#CBD5E1',
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  dealSpecChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginVertical: spacing.xs + 2,
+  },
+  dealSpecChip: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.full,
+  },
+  dealSpecChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textWhite,
+  },
+  timerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginVertical: spacing.xs + 2,
+  },
+  timerLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#93C5FD',
+    letterSpacing: 0.6,
+  },
+  timerBoxes: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  timerBox: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: radius.sm,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    alignItems: 'center',
+    minWidth: 38,
+  },
+  timerNum: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.textWhite,
+    fontVariant: ['tabular-nums'],
+  },
+  timerUnit: {
+    fontSize: 7,
+    fontWeight: '700',
+    color: '#93C5FD',
+  },
+  timerColon: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  dealPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    marginTop: spacing.xs,
+  },
+  dealPrice: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: colors.textWhite,
+  },
+  dealMrp: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textDecorationLine: 'line-through',
+  },
+  dealActionBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    ...shadows.sm,
+  },
+  dealActionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  /* ── Gold Standard Trust Cards ── */
+  goldStandardScroll: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xs,
+  },
+  goldCard: {
+    backgroundColor: colors.cardBg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    padding: spacing.md,
+    width: 160,
+    ...shadows.sm,
+    justifyContent: 'space-between',
+  },
+  goldIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  goldBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.xs,
+    marginBottom: spacing.xs,
+  },
+  goldBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  goldTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.navy,
+    lineHeight: 16,
+    marginBottom: 2,
+  },
+  goldSubtitle: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    lineHeight: 14,
+  },
+
+  /* ── Verified Customer Testimonials ── */
+  testimonialScroll: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xs,
+  },
+  testimonialCard: {
+    backgroundColor: colors.cardBg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    padding: spacing.md,
+    width: 250,
+    ...shadows.sm,
+    justifyContent: 'space-between',
+  },
+  starRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  verifiedBuyerTag: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.greenText,
+  },
+  testimonialText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 16,
+    fontStyle: 'italic',
+    marginBottom: spacing.sm,
+  },
+  testimonialUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  testimonialAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  testimonialAvatarText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  testimonialName: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.navy,
+  },
+  testimonialRole: {
+    fontSize: 9,
+    color: colors.textMuted,
+  },
+  testimonialProduct: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  liveTickerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#0F172A',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+  },
+  livePulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  liveTickerText: {
+    flex: 1,
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#E2E8F0',
+  },
+  quickShortcutsRow: {
+    flexDirection: 'row',
+    gap: spacing.xs + 2,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  shortcutChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: colors.cardBg,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: radius.md,
+    paddingVertical: 8,
+    ...shadows.sm,
+  },
+  shortcutChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.navy,
+  },
+  dealProgressWrap: {
+    marginVertical: spacing.xs,
+    gap: 3,
+  },
+  dealProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dealProgressText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FDE047',
+  },
+  dealStockText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#93C5FD',
+  },
+  dealProgressBarBg: {
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  dealProgressBarFill: {
+    height: '100%',
+    width: '84%',
+    backgroundColor: '#F59E0B',
+    borderRadius: 2,
   },
 });

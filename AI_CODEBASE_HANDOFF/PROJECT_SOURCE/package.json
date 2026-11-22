@@ -1,0 +1,45 @@
+{
+  "name": "laptopmitra",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "dev:api": "node scripts/db-command.cjs dev api",
+    "dev:web": "node scripts/db-command.cjs dev web",
+    "db:dev:migrate": "node scripts/db-command.cjs dev migrate",
+    "db:dev:seed": "node scripts/db-command.cjs dev seed",
+    "db:dev:seed-orders": "node scripts/db-command.cjs dev seed-orders",
+    "db:dev:seed-rental": "node scripts/db-command.cjs dev seed-rental",
+    "db:dev:reset": "node scripts/db-command.cjs dev reset",
+    "db:dev:status": "node scripts/db-command.cjs dev status",
+    "db:dev:validate": "node scripts/db-command.cjs dev validate",
+    "db:dev:diff": "node scripts/db-command.cjs dev diff",
+    "db:dev:payout-concurrency": "node scripts/db-command.cjs dev payout",
+    "db:dev:support-concurrency": "node scripts/db-command.cjs dev support-concurrency",
+    "db:dev:history-check": "node scripts/db-command.cjs dev history-check",
+    "test:db": "node scripts/db-command.cjs test test",
+    "test:integration": "node scripts/db-command.cjs test integration",
+    "preflight:prod": "pnpm --filter api run preflight:prod",
+    "doctor": "node scripts/doctor.cjs",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "type-check": "turbo run type-check"
+  },
+  "devDependencies": {
+    "globals": "^17.12.0",
+    "prisma": "6.4.1",
+    "puppeteer-core": "^25.16.0",
+    "turbo": "2.10.12"
+  },
+  "packageManager": "pnpm@8.15.4",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@prisma/client": "6.4.1"
+  }
+}

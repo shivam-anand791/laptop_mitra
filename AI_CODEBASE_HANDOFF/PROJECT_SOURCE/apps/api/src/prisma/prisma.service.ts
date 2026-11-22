@@ -1,0 +1,27 @@
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+import { assertRuntimeDatabaseTarget } from '../common/database-safety';
+
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  constructor() {
+    super({
+      /* eslint-disable-next-line no-restricted-properties */
+      log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
+    });
+  }
+
+  async onModuleInit() {
+    assertRuntimeDatabaseTarget();
+
+    try {
+      await this.$connect();
+    } catch (err: any) {
+      console.warn(`[PrismaService] Database connection deferred/unavailable at startup: ${err?.message || err}`);
+    }
+  }
+
+  async onModuleDestroy() {
+    await this.$disconnect();
+  }
+}

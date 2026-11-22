@@ -331,10 +331,10 @@ export default function OrdersPage() {
       )}
 
       {/* Page Header */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-7 shadow-2xs space-y-5">
+      <div className="bg-[#FFFDF9] rounded-2xl border border-[#E6DFD5] p-6 sm:p-7 shadow-2xs space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-bold text-[#0B1F4B] tracking-tight">
               Orders &amp; Purchases
             </h1>
             <p className="text-xs text-slate-500 mt-1">
@@ -350,14 +350,14 @@ export default function OrdersPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by order ID or laptop model..."
-              className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-slate-200 text-xs focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none transition bg-slate-50/50 hover:bg-white"
+              className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-[#E6DFD5] text-xs focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB] outline-none transition bg-white"
               aria-label="Search orders"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
                 aria-label="Clear search"
               >
                 <X className="w-3.5 h-3.5" />
@@ -367,7 +367,7 @@ export default function OrdersPage() {
         </div>
 
         {/* Filter Bar: Status tabs & Date Range dropdown */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-[#E6DFD5]">
           {/* Status Chips */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             {STATUS_TABS.map((tab) => {
@@ -379,18 +379,18 @@ export default function OrdersPage() {
                   key={tab.id}
                   type="button"
                   onClick={() => setSelectedStatus(tab.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition whitespace-nowrap inline-flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition whitespace-nowrap inline-flex items-center gap-1.5 cursor-pointer button-press ${
                     isSelected
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 bg-slate-50 border border-slate-200/60'
+                      ? 'bg-[#0B1F4B] text-white shadow-xs'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 bg-white border border-[#E6DFD5]'
                   }`}
                 >
                   <span>{tab.label}</span>
                   <span
                     className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                       isSelected
-                        ? 'bg-slate-800 text-slate-200'
-                        : 'bg-slate-200/80 text-slate-600'
+                        ? 'bg-blue-900/60 text-blue-200'
+                        : 'bg-slate-100 text-slate-600'
                     }`}
                   >
                     {count}

@@ -51,7 +51,7 @@ export default function Badge({
     case 'bestSeller':
       computedLabel = label || 'Best Seller';
       containerStyle = {
-        backgroundColor: colors.orange,
+        backgroundColor: colors.primary,
       };
       computedTextStyle = {
         color: colors.textWhite,
@@ -62,7 +62,7 @@ export default function Badge({
     case 'newArrival':
       computedLabel = label || 'New Arrival';
       containerStyle = {
-        backgroundColor: colors.primary,
+        backgroundColor: colors.navy,
       };
       computedTextStyle = {
         color: colors.textWhite,

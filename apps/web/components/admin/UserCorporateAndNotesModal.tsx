@@ -45,11 +45,6 @@ export default function UserCorporateAndNotesModal({
   // 360 Customer view
   const [user360, setUser360] = useState<any>(null);
 
-  useEffect(() => {
-    if (!open || !user?.id) return;
-    loadData();
-  }, [open, user?.id]);
-
   const loadData = async () => {
     if (!user?.id) return;
     setLoading(true);
@@ -94,6 +89,11 @@ export default function UserCorporateAndNotesModal({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!open || !user?.id) return;
+    loadData();
+  }, [open, user?.id]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();

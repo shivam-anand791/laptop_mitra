@@ -90,10 +90,10 @@ export default function EmptyState({
   const href = actionHref || config.defaultActionHref;
 
   return (
-    <div className="flex flex-col items-center justify-center py-12 sm:py-16 px-4 sm:px-6 text-center rounded-2xl bg-white border border-[#E2E8F0] shadow-xs">
-      {/* Image / Icon */}
+    <div className="flex flex-col items-center justify-center py-12 sm:py-16 px-4 sm:px-6 text-center rounded-3xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-xs animate-fade-in-up">
+      {/* Image / Icon with gentle floating animation */}
       {config.image ? (
-        <div className="relative w-44 h-44 mb-4">
+        <div className="relative w-44 h-44 mb-4 animate-float">
           <Image
             src={config.image}
             alt={config.title}
@@ -103,18 +103,18 @@ export default function EmptyState({
           />
         </div>
       ) : (
-        <div className="w-16 h-16 rounded-2xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mb-4">
+        <div className="w-16 h-16 rounded-2xl bg-blue-50/80 text-[#2563EB] flex items-center justify-center mb-4 border border-blue-100 shadow-xs animate-float">
           {config.icon}
         </div>
       )}
 
       {/* Title */}
-      <h3 className="text-lg sm:text-xl font-bold text-[#111827] tracking-tight mb-2">
+      <h3 className="text-lg sm:text-xl font-bold text-[#0B1F4B] tracking-tight mb-2">
         {config.title}
       </h3>
 
       {/* Description */}
-      <p className="text-xs sm:text-sm text-[#475569] max-w-sm mb-6 leading-relaxed">
+      <p className="text-xs sm:text-sm text-slate-600 max-w-sm mb-6 leading-relaxed">
         {config.description}
       </p>
 
@@ -122,14 +122,14 @@ export default function EmptyState({
       {onAction ? (
         <button
           onClick={onAction}
-          className="inline-flex items-center justify-center min-h-[44px] px-6 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-semibold shadow-xs active:scale-98 transition-all cursor-pointer"
+          className="inline-flex items-center justify-center min-h-[44px] px-6 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-semibold shadow-xs button-press transition-all cursor-pointer"
         >
           {label}
         </button>
       ) : (
         <Link
           href={href}
-          className="inline-flex items-center justify-center min-h-[44px] px-6 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-semibold shadow-xs active:scale-98 transition-all"
+          className="inline-flex items-center justify-center min-h-[44px] px-6 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-semibold shadow-xs button-press transition-all"
         >
           {label}
         </Link>

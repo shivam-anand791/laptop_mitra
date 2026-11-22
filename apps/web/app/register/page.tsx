@@ -144,8 +144,8 @@ function RegisterForm() {
   }).toString()}`;
 
   return (
-    <div className="bg-[#F8FAFC] min-h-[80vh] flex items-center justify-center py-12 sm:py-16 px-4">
-      <div className="max-w-md w-full bg-white p-8 sm:p-10 rounded-3xl border border-[#E4E9F2] shadow-sm space-y-6">
+    <div className="bg-[#F7F4EE] min-h-[80vh] flex items-center justify-center py-12 sm:py-16 px-4">
+      <div className="max-w-md w-full bg-[#FFFDF9] p-8 sm:p-10 rounded-3xl border border-[#E6DFD5] shadow-sm space-y-6">
         <div className="text-center space-y-3">
           <Link href="/" className="inline-block transition-opacity hover:opacity-90">
             <Image
@@ -205,7 +205,7 @@ function RegisterForm() {
               value={formData.name}
               onChange={handleChange}
               placeholder="e.g. Priya Patel"
-              className="h-11 w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E4E9F2] rounded-xl focus:border-[#1D6FF2] focus:bg-white text-slate-900 outline-none transition-colors disabled:opacity-60"
+              className="h-11 w-full px-3.5 py-2.5 bg-[#FAF6EF] border border-[#E6DFD5] rounded-xl focus:border-[#1D6FF2] focus:bg-[#FFFDF9] text-slate-900 outline-none transition-colors disabled:opacity-60"
             />
           </div>
 
@@ -221,7 +221,7 @@ function RegisterForm() {
               value={formData.email}
               onChange={handleChange}
               placeholder="you@company.com"
-              className="h-11 w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E4E9F2] rounded-xl focus:border-[#1D6FF2] focus:bg-white text-slate-900 outline-none transition-colors disabled:opacity-60"
+              className="h-11 w-full px-3.5 py-2.5 bg-[#FAF6EF] border border-[#E6DFD5] rounded-xl focus:border-[#1D6FF2] focus:bg-[#FFFDF9] text-slate-900 outline-none transition-colors disabled:opacity-60"
             />
           </div>
 
@@ -236,7 +236,7 @@ function RegisterForm() {
               value={formData.phone}
               onChange={handleChange}
               placeholder="10-digit mobile number"
-              className="h-11 w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E4E9F2] rounded-xl font-mono focus:border-[#1D6FF2] focus:bg-white text-slate-900 outline-none transition-colors disabled:opacity-60"
+              className="h-11 w-full px-3.5 py-2.5 bg-[#FAF6EF] border border-[#E6DFD5] rounded-xl font-mono focus:border-[#1D6FF2] focus:bg-[#FFFDF9] text-slate-900 outline-none transition-colors disabled:opacity-60"
             />
           </div>
 
@@ -254,7 +254,7 @@ function RegisterForm() {
                 value={formData.password}
                 onChange={handleChange}
                 placeholder="At least 6 characters"
-                className="h-11 w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E4E9F2] rounded-xl focus:border-[#1D6FF2] focus:bg-white text-slate-900 outline-none transition-colors pr-10 disabled:opacity-60"
+                className="h-11 w-full px-3.5 py-2.5 bg-[#FAF6EF] border border-[#E6DFD5] rounded-xl focus:border-[#1D6FF2] focus:bg-[#FFFDF9] text-slate-900 outline-none transition-colors pr-10 disabled:opacity-60"
               />
               <button
                 type="button"
@@ -277,7 +277,7 @@ function RegisterForm() {
               value={formData.referralCode}
               onChange={handleChange}
               placeholder="e.g. MITRA4521"
-              className="h-11 w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-[#E4E9F2] rounded-xl font-mono uppercase focus:border-[#1D6FF2] focus:bg-white text-slate-900 outline-none transition-colors disabled:opacity-60"
+              className="h-11 w-full px-3.5 py-2.5 bg-[#FAF6EF] border border-[#E6DFD5] rounded-xl font-mono uppercase focus:border-[#1D6FF2] focus:bg-[#FFFDF9] text-slate-900 outline-none transition-colors disabled:opacity-60"
             />
             <span className="text-[10px] text-slate-500 mt-1 block">
               Applying a referral code gives you ₹500 instant discount on your first laptop purchase.

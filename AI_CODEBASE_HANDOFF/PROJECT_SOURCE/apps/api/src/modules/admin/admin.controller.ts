@@ -1,0 +1,456 @@
+import { Controller, Get, Post, Put, Delete, Body, UseGuards, Param, Query, Res, Header } from '@nestjs/common';
+import { Response } from 'express';
+import * as fs from 'fs';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { AdminService } from './admin.service';
+import { RolesGuard } from '../../guards/roles.guard';
+import { Roles } from '../../decorators/roles.decorator';
+import { GetUser } from '../../decorators/get-user.decorator';
+import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { TriggerRefundDto } from './dto/trigger-refund.dto';
+import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { UpdateUserRoleDto } from './dto/update-user-role.dto';
+import { AdminOrderQueryDto } from './dto/admin-order-query.dto';
+import { AdminUserQueryDto } from './dto/admin-user-query.dto';
+import { AdminProductQueryDto } from './dto/admin-product-query.dto';
+import { AdminAnalyticsQueryDto } from './dto/admin-analytics-query.dto';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { CreateRentalPriceDto, UpdateRentalPriceDto } from './dto/save-rental-price.dto';
+import { WarrantyRegisterQueryDto } from './dto/warranty-register-query.dto';
+import { UpdateUnitSerialDto } from './dto/update-unit-serial.dto';
+
+@UseGuards(RolesGuard)
+@Roles('ADMIN')
+@ApiBearerAuth()
+@ApiTags('admin')
+@Controller('admin')
+export class AdminController {
+  constructor(private readonly adminService: AdminService) {}
+
+  @Get('dashboard')
+  @ApiOperation({ summary: 'Get admin dashboard statistics' })
+  @ApiResponse({ status: 200, description: 'Dashboard metrics' })
+  async getDashboard() {
+    return this.adminService.getDashboardStats();
+  }
+
+  @Get('dashboard/stats')
+  @ApiOperation({ summary: 'Get admin dashboard statistics (alias)' })
+  @ApiResponse({ status: 200, description: 'Dashboard metrics' })
+  async getDashboardStats() {
+    return this.adminService.getDashboardStats();
+  }
+
+  @Get('analytics')
+  @ApiOperation({ summary: 'Get aggregated business analytics and sales metrics' })
+  @ApiResponse({ status: 200, description: 'Aggregated analytics metrics' })
+  async getAnalytics(@Query() query: AdminAnalyticsQueryDto) {
+    return this.adminService.getAnalytics(query);
+  }
+
+  @Get('users')
+  @ApiOperation({ summary: 'Get all users with pagination, search, and filters' })
+  @ApiResponse({ status: 200, description: 'Paginated list of users' })
+  async getAllUsers(@Query() query: AdminUserQueryDto) {
+    return this.adminService.getAllUsers(query);
+  }
+
+  @Get('users/:id/support-history')
+  @ApiOperation({ summary: 'Get read-only support history for a customer' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Customer ticket and return history' })
+  async getUserSupportHistory(@Param('id') id: string) {
+    return this.adminService.getUserSupportHistory(id);
+  }
+
+  @Get('users/:id/360')
+  @ApiOperation({ summary: 'Customer 360: Aggregated profile, orders, leases, buybacks, returns, tickets, notes' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Customer 360 details' })
+  async getUser360(@Param('id') id: string) {
+    return this.adminService.getUser360(id);
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Put('users/:id/status')
+  @ApiOperation({ summary: 'Update user account status (ACTIVE, SUSPENDED, DELETED)' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'User status updated' })
+  @ApiResponse({ status: 400, description: 'Invalid status or modification forbidden' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateUserStatus(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateUserStatusDto,
+  ) {
+    return this.adminService.updateUserStatus(id, dto.status, admin?.id);
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Put('users/:id/role')
+  @ApiOperation({ summary: 'Update user system role (ADMIN only, audited, no self-demotion)' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'User role updated' })
+  @ApiResponse({ status: 400, description: 'Invalid role or self-demotion attempted' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateUserRole(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateUserRoleDto,
+  ) {
+    return this.adminService.updateUserRole(id, dto.role, admin?.id);
+  }
+
+  @Get('products')
+  @ApiOperation({ summary: 'Get all products with pagination, search, and filters' })
+  @ApiResponse({ status: 200, description: 'Paginated list of products' })
+  async getAllProducts(@Query() query: AdminProductQueryDto) {
+    return this.adminService.getAllProducts(query);
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Post('products')
+  @ApiOperation({ summary: 'Create a new product' })
+  @ApiResponse({ status: 201, description: 'Product created' })
+  async createProduct(@Body() data: any) {
+    return this.adminService.createProduct(data);
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Put('products/:id')
+  @ApiOperation({ summary: 'Update product properties' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Product updated' })
+  async updateProduct(@Param('id') id: string, @Body() data: any, @GetUser() admin: any) {
+    return this.adminService.updateProduct(id, { ...data, adminId: admin?.id });
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Delete('products/:id')
+  @ApiOperation({ summary: 'Delete or discontinue a product' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Product deleted or discontinued' })
+  async deleteProduct(@Param('id') id: string) {
+    return this.adminService.deleteProduct(id);
+  }
+
+  @Get('products/:id/references')
+  @ApiOperation({ summary: 'Get order and lease references count for a product before deletion' })
+  async getProductReferences(@Param('id') id: string) {
+    return this.adminService.getProductReferenceSummary(id);
+  }
+
+  @Get('products/:id/price-history')
+  @ApiOperation({ summary: 'Get product price and rental price audit history' })
+  async getProductPriceHistory(@Param('id') id: string) {
+    return this.adminService.getProductPriceHistory(id);
+  }
+
+  @Post('products/:id/rental-pricing')
+  @ApiOperation({ summary: 'Save and optionally publish rental prices per tenure for a product' })
+  async saveProductRentalPricing(
+    @Param('id') id: string,
+    @Body() dto: any,
+    @GetUser() admin: any,
+  ) {
+    return this.adminService.saveProductRentalPrices(id, dto, admin?.id || 'admin');
+  }
+
+  @Post('products/bulk-pricing/preview')
+  @ApiOperation({ summary: 'Preview bulk pricing adjustment before applying' })
+  async previewBulkPricing(@Body() dto: any, @GetUser() admin: any) {
+    return this.adminService.bulkUpdatePricing(dto, admin?.id || 'admin', true);
+  }
+
+  @Post('products/bulk-pricing/apply')
+  @ApiOperation({ summary: 'Apply bulk pricing adjustment with audit logs' })
+  async applyBulkPricing(@Body() dto: any, @GetUser() admin: any) {
+    return this.adminService.bulkUpdatePricing(dto, admin?.id || 'admin', false);
+  }
+
+  @Get('products/export/csv')
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="laptopmitra-catalog.csv"')
+  @ApiOperation({ summary: 'Export catalog as CSV with rental tenures' })
+  async exportProductsCsv(@Res() res: Response) {
+    const csv = await this.adminService.exportProductsCsv();
+    return res.send(csv);
+  }
+
+  @Post('products/import/csv')
+  @ApiOperation({ summary: 'Import or dry-run validate catalog CSV' })
+  async importProductsCsv(@Body() body: { csvText: string; dryRun?: boolean }) {
+    return this.adminService.importProductsCsv(body.csvText, body.dryRun !== false);
+  }
+
+  @Get('rental-prices/drafts')
+  @ApiOperation({ summary: 'List unapproved rental pricing recommendations' })
+  async getRentalPriceDrafts() {
+    return this.adminService.getRentalPriceDrafts();
+  }
+
+  @Get('rental-prices')
+  @ApiOperation({ summary: 'List rental prices and their approval state' })
+  async getRentalPrices() {
+    return this.adminService.getRentalPrices();
+  }
+
+  @Get('rental-prices/catalog')
+  @ApiOperation({ summary: 'List active products and variants for rental price management' })
+  async getRentalPricingCatalog() {
+    return this.adminService.getRentalPricingCatalog();
+  }
+
+  @Get('rental-prices/:id/history')
+  @ApiOperation({ summary: 'Get the audit history for a rental price' })
+  async getRentalPriceHistory(@Param('id') id: string) {
+    return this.adminService.getRentalPriceHistory(id);
+  }
+
+  @Post('rental-prices')
+  @ApiOperation({ summary: 'Create a manual rental price draft' })
+  async createRentalPriceDraft(@GetUser() admin: any, @Body() dto: CreateRentalPriceDto) {
+    return this.adminService.createRentalPriceDraft(dto, admin.id);
+  }
+
+  @Put('rental-prices/:id')
+  @ApiOperation({ summary: 'Edit a manual rental price draft' })
+  async updateRentalPriceDraft(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateRentalPriceDto,
+  ) {
+    return this.adminService.updateRentalPriceDraft(id, dto, admin.id);
+  }
+
+  @Post('rental-prices/:id/approve')
+  @ApiOperation({ summary: 'Approve one rental price draft for customer display and checkout' })
+  async approveRentalPrice(@GetUser() admin: any, @Param('id') id: string) {
+    return this.adminService.approveRentalPrice(id, admin.id);
+  }
+
+  @Get('orders')
+  @ApiOperation({ summary: 'Get all orders with pagination, search, and filters' })
+  @ApiResponse({ status: 200, description: 'Paginated lean list of orders' })
+  async getAllOrders(@Query() query: AdminOrderQueryDto) {
+    return this.adminService.getAllOrders(query);
+  }
+
+  @Get('orders/:id')
+  @ApiOperation({ summary: 'Get full order details by ID' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Full order details' })
+  async getOrder(@Param('id') id: string) {
+    return this.adminService.getOrder(id);
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Put('orders/:id/status')
+  @ApiOperation({ summary: 'Update order status' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Order status updated' })
+  @ApiResponse({ status: 400, description: 'Invalid status or unsupported transition' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  async updateOrderStatus(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderStatusDto,
+  ) {
+    const courierData =
+      dto.courierName || dto.trackingNumber || dto.serialAssignments || dto.overrideReason
+        ? {
+            courierName: dto.courierName,
+            trackingNumber: dto.trackingNumber,
+            serialAssignments: dto.serialAssignments,
+            overrideReason: dto.overrideReason,
+          }
+        : undefined;
+    if (courierData) {
+      return this.adminService.updateOrderStatus(id, dto.status, admin?.id, courierData);
+    }
+    return this.adminService.updateOrderStatus(id, dto.status, admin?.id);
+  }
+
+  @Post('orders/:id/items/:itemId/cancel')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Admin cancel single order item before dispatch' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiParam({ name: 'itemId', type: String })
+  async cancelOrderItem(
+    @GetUser() admin: any,
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.adminService.cancelOrderItem(
+      orderId,
+      itemId,
+      admin?.id || 'admin',
+      reason || 'Cancelled by staff',
+    );
+  }
+
+  @Post('orders/:id/refund')
+  @Roles('ADMIN')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({ summary: 'Manually trigger a Razorpay refund for a paid order or cancelled item' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Refund triggered or idempotent status returned' })
+  async triggerOrderRefund(
+    @GetUser() admin: any,
+    @Param('id') orderId: string,
+    @Body() dto?: TriggerRefundDto,
+  ) {
+    return this.adminService.triggerOrderRefund(orderId, admin?.id || 'admin', dto);
+  }
+
+
+
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Get administrative platform settings' })
+  @ApiResponse({ status: 200, description: 'Current system settings' })
+  async getSettings() {
+    return this.adminService.getSettings();
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Put('settings')
+  @ApiOperation({ summary: 'Update administrative platform settings' })
+  @ApiResponse({ status: 200, description: 'Settings updated' })
+  async updateSettings(
+    @GetUser() admin: any,
+    @Body() dto: UpdateSettingsDto,
+  ) {
+    return this.adminService.updateSettings(dto, admin?.id);
+  }
+
+  @Get('inquiries')
+  @ApiOperation({ summary: 'Get corporate procurement inquiries' })
+  @ApiResponse({ status: 200, description: 'List of corporate inquiries' })
+  async getCorporateInquiries(
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.adminService.getCorporateInquiries({
+      status,
+      page: page ? parseInt(page, 10) : 1,
+      pageSize: pageSize ? parseInt(pageSize, 10) : 20,
+    });
+  }
+
+  @Put('inquiries/:id/status')
+  @ApiOperation({ summary: 'Update status of a corporate inquiry' })
+  @ApiResponse({ status: 200, description: 'Inquiry status updated' })
+  async updateCorporateInquiryStatus(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+    @Body('status') status: 'PENDING' | 'CONTACTED' | 'QUOTED' | 'CLOSED',
+    @Body('adminNotes') adminNotes?: string,
+  ) {
+    return this.adminService.updateCorporateInquiryStatus(id, status, admin?.id, adminNotes);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Affiliate & Withdrawal Management (Section 5.1)
+  // ---------------------------------------------------------------------------
+
+  @Get('affiliates')
+  @ApiOperation({ summary: 'List all affiliates and their balance overview (masked)' })
+  @ApiResponse({ status: 200, description: 'Affiliates list' })
+  async getAffiliates(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.getAffiliates({
+      page: page ? parseInt(page, 10) : 1,
+      pageSize: pageSize ? parseInt(pageSize, 10) : 20,
+      search,
+    });
+  }
+
+  @Get('affiliates/:id')
+  @ApiOperation({ summary: 'Get affiliate details, masked payout settings, and withdrawal ledger' })
+  @ApiResponse({ status: 200, description: 'Affiliate detail (masked)' })
+  async getAffiliateDetail(@Param('id') id: string) {
+    return this.adminService.getAffiliateDetail(id);
+  }
+
+  @Get('withdrawals/:id/payment-details')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({ summary: 'Decrypt payment snapshot for withdrawal processing (audit-logged)' })
+  @ApiResponse({ status: 200, description: 'Decrypted payment details' })
+  async getWithdrawalPaymentDetails(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+  ) {
+    return this.adminService.getWithdrawalPaymentDetails(id, admin?.id);
+  }
+
+  @Get('withdrawals/:id/payment-details/qr')
+  @ApiOperation({ summary: 'Stream payout QR image for authorized admin (audit-logged)' })
+  async getWithdrawalQr(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const { filePath, mimeType } = await this.adminService.getWithdrawalQrFile(id, admin?.id);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'private, no-store');
+    const stream = fs.createReadStream(filePath);
+    stream.pipe(res);
+  }
+
+  @Put('withdrawals/:id/status')
+  @ApiOperation({ summary: 'Approve or reject affiliate withdrawal request' })
+  @ApiResponse({ status: 200, description: 'Withdrawal status updated' })
+  async updateWithdrawalStatus(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+    @Body('status') status: 'APPROVED' | 'REJECTED',
+    @Body('adminNotes') adminNotes?: string,
+  ) {
+    return this.adminService.updateWithdrawalStatus(id, status, admin?.id, adminNotes);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Warranty Register & Serial Tracking (Stage 2)
+  // ---------------------------------------------------------------------------
+
+  @Get('service/warranty')
+  @ApiOperation({ summary: 'Paginated warranty register with serial and brand filters' })
+  async getWarrantyRegister(
+    @Query() query: WarrantyRegisterQueryDto,
+  ) {
+    return this.adminService.getWarrantyRegister(query);
+  }
+
+  @Get('service/units')
+  @ApiOperation({ summary: 'Paginated sold units list' })
+  async getSoldUnits(
+    @Query() query: any,
+  ) {
+    return this.adminService.getSoldUnits(query);
+  }
+
+  @Get('service/units/:serial')
+  @ApiOperation({ summary: 'Unit 360 history by serial or unit ID' })
+  async getUnitBySerial(
+    @Param('serial') serial: string,
+  ) {
+    return this.adminService.getUnitBySerial(serial);
+  }
+
+  @Post('service/units/:id/serial')
+  @ApiOperation({ summary: 'Audited serial number correction for a sold unit' })
+  async updateUnitSerial(
+    @GetUser() admin: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateUnitSerialDto,
+  ) {
+    return this.adminService.updateUnitSerial(id, dto, admin?.id);
+  }
+}

@@ -142,6 +142,9 @@ export default function FilterModal({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.container}>
+          {/* Native Bottom Sheet Grab Handle */}
+          <View style={styles.grabHandleBar} />
+
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
@@ -345,6 +348,15 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     maxHeight: '85%',
+  },
+  grabHandleBar: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#CBD5E1',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 4,
   },
   header: {
     flexDirection: 'row',

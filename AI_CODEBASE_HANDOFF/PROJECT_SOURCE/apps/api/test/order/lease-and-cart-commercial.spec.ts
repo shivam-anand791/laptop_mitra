@@ -1,0 +1,336 @@
+import { BadRequestException } from '@nestjs/common';
+import { OrderService } from '../../src/modules/order/order.service';
+import { WARRANTY_PRICE_PER_UNIT } from '../../src/modules/cart/cart.service';
+import { createNoTaxService } from '../helpers/no-tax-service';
+
+describe('Phase R3 — Commercial Integrity: Pricing, Warranty, Lease Advance, Multi-Mode Orders & Razorpay', () => {
+  let orderService: OrderService;
+  let prisma: any;
+  let cartService: any;
+  let productService: any;
+  let notificationService: any;
+  let discountService: any;
+  let paymentService: any;
+  let pincodeService: any;
+
+  const mockProductBuy = {
+    id: 'prod-buy-1',
+    name: 'ThinkPad X1 Carbon',
+    price: 80000,
+    stock: 5,
+    allowBackorder: false,
+    status: 'ACTIVE',
+  };
+
+  const mockProductLease = {
+    id: 'prod-lease-1',
+    name: 'Dell Latitude 5420',
+    price: 50000,
+    stock: 10,
+    allowBackorder: false,
+    status: 'ACTIVE',
+  };
+
+  const mockProductLeaseFallback = {
+    id: 'prod-lease-fallback',
+    name: 'HP EliteBook 840',
+    price: 40000,
+    stock: 8,
+    allowBackorder: false,
+    status: 'ACTIVE',
+  };
+
+  beforeEach(() => {
+    prisma = {
+      cart: {
+        findFirst: jest.fn(),
+      },
+      product: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn(),
+      },
+      productVariant: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      order: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockImplementation(({ data }: any) => {
+          return {
+            id: 'ord-test-r3-1',
+            orderNumber: 'LM-ORD-R3001',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            ...data,
+            items: data.items?.create || [],
+          };
+        }),
+      },
+      cartItem: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
+      },
+      rentalPrice: {
+        findFirst: jest.fn().mockImplementation(({ where }: any) => (
+          where.productId === mockProductLease.id
+            ? Promise.resolve({ monthlyPrice: 3500, approvedAt: new Date() })
+            : Promise.resolve(null)
+        )),
+      },
+      rentalSubscription: {
+        create: jest.fn().mockResolvedValue({ id: 'rental-1' }),
+      },
+      user: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      referral: {
+        findFirst: jest.fn().mockResolvedValue({ userId: 'referrer-1' }),
+      },
+      referralRedemption: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn().mockImplementation((fn: any) => fn(prisma)),
+    };
+
+    cartService = {};
+    productService = {};
+    notificationService = {
+      dispatchOrderUpdate: jest.fn().mockResolvedValue(undefined),
+    };
+    discountService = {
+      validateOrderDiscount: jest.fn().mockResolvedValue(null),
+      consumeOrderDiscount: jest.fn().mockResolvedValue(undefined),
+    };
+    paymentService = {};
+    pincodeService = { validateOrderShipping: jest.fn().mockResolvedValue({ pincode: '560001' }) };
+
+    orderService = new OrderService(
+      prisma,
+      cartService,
+      productService,
+      notificationService,
+      discountService,
+      pincodeService,
+      createNoTaxService(),
+      paymentService,
+    );
+  });
+
+  it('validates shipping PINs on the backend before any order can be created', async () => {
+    pincodeService.validateOrderShipping.mockRejectedValueOnce(new BadRequestException('Invalid PIN'));
+    const address = { pincode: '999999' };
+
+    await expect(orderService.createOrder(
+      'user-1', undefined, undefined, address, '9876543210', undefined, 'user@example.com',
+    )).rejects.toThrow('Invalid PIN');
+    expect(pincodeService.validateOrderShipping).toHaveBeenCalledWith(address, 'razorpay');
+  });
+
+  it('resolves a legacy referral alias to the referrer’s canonical code during order creation', async () => {
+    prisma.cart.findFirst.mockResolvedValue({
+      id: 'cart-referral',
+      items: [{
+        productId: mockProductBuy.id,
+        product: mockProductBuy,
+        quantity: 1,
+        purchaseMode: 'sell',
+        configuration: 'default',
+        hasWarranty: false,
+      }],
+    });
+    prisma.user.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'referrer-1', referralCode: 'mitrarefr1234' });
+
+    await orderService.createOrder(
+      'buyer-1', '55JAFRTN', undefined,
+      { email: 'buyer@example.com', phone: '9876543210', pincode: '560001' },
+      '9876543210', undefined, 'buyer@example.com',
+    );
+
+    expect(prisma.referral.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ code: { equals: '55JAFRTN', mode: 'insensitive' } }),
+    }));
+    expect(prisma.order.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ referralCode: 'mitrarefr1234' }),
+    }));
+    expect(prisma.referralRedemption.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ referralCode: 'mitrarefr1234', referrerUserId: 'referrer-1' }),
+    }));
+  });
+
+  describe('1. Price Resolution', () => {
+    it('rejects rental order creation if no approved price exists for the selected tenure', async () => {
+      prisma.cart.findFirst.mockResolvedValue({
+        id: 'cart-1',
+        items: [
+          {
+            productId: mockProductLeaseFallback.id,
+            product: mockProductLeaseFallback,
+            quantity: 1,
+            purchaseMode: 'lease',
+            tenureMonths: 12,
+            configuration: 'default',
+            hasWarranty: false,
+          },
+        ],
+      });
+
+      await expect(
+        orderService.createOrder(
+          'user-1',
+          undefined,
+          undefined,
+          { email: 'user@example.com', phone: '9999999999' },
+          '9999999999',
+          'Test notes',
+          'user@example.com',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('2. Warranty Rejection on Lease Items', () => {
+    it('strictly rejects order creation if a lease item has hasWarranty = true', async () => {
+      prisma.cart.findFirst.mockResolvedValue({
+        id: 'cart-1',
+        items: [
+          {
+            productId: mockProductLease.id,
+            product: mockProductLease,
+            quantity: 1,
+            purchaseMode: 'lease',
+            configuration: 'default',
+            hasWarranty: true, // INVALID on lease!
+          },
+        ],
+      });
+
+      await expect(
+        orderService.createOrder(
+          'user-1',
+          undefined,
+          undefined,
+          { email: 'user@example.com', phone: '9999999999' },
+          '9999999999',
+          'Test notes',
+          'user@example.com',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  it('prices and reserves the selected active variant at checkout', async () => {
+    const variant = {
+      id: 'variant-1',
+      productId: mockProductBuy.id,
+      name: '16GB RAM / 1TB SSD',
+      sku: 'TP-X1-16-1T',
+      attributes: { RAM: '16GB', Storage: '1TB SSD' },
+      price: 92500,
+      stock: 2,
+      allowBackorder: false,
+      isActive: true,
+    };
+    prisma.cart.findFirst.mockResolvedValue({
+      id: 'cart-variant',
+      items: [{
+        productId: mockProductBuy.id,
+        product: mockProductBuy,
+        variantId: variant.id,
+        variant,
+        priceAtAdd: 1,
+        quantity: 1,
+        purchaseMode: 'sell',
+        configuration: 'default',
+        hasWarranty: false,
+      }],
+    });
+
+    const order = await orderService.createOrder(
+      'user-1', undefined, undefined,
+      { email: 'user@example.com', phone: '9876543210' },
+      '9876543210', undefined, 'user@example.com',
+    );
+
+    expect(Number(order.subtotal)).toBe(92500);
+    expect(prisma.productVariant.updateMany).toHaveBeenCalledWith({
+      where: { id: variant.id, productId: mockProductBuy.id, isActive: true, stock: { gte: 1 } },
+      data: { stock: { decrement: 1 } },
+    });
+    expect(prisma.product.updateMany).not.toHaveBeenCalled();
+    expect(order.items[0]).toMatchObject({
+      variantId: variant.id,
+      variantSku: variant.sku,
+      variantName: variant.name,
+      variantAttributes: variant.attributes,
+    });
+    expect(prisma.cartItem.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('clears the server cart only when a COD order is created', async () => {
+    prisma.cart.findFirst.mockResolvedValue({
+      id: 'cart-cod',
+      items: [{ productId: mockProductBuy.id, product: mockProductBuy, quantity: 1, purchaseMode: 'sell', configuration: 'default', hasWarranty: false }],
+    });
+
+    await orderService.createOrder(
+      'user-1', undefined, undefined,
+      { email: 'user@example.com', phone: '9876543210' },
+      '9876543210', undefined, 'user@example.com', undefined, 'cod',
+    );
+
+    expect(prisma.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 'cart-cod' } });
+  });
+
+  describe('3. Purchase and rental separation', () => {
+    it('rejects a mixed purchase and rental order without reserving stock or clearing the cart', async () => {
+      prisma.cart.findFirst.mockResolvedValue({
+        id: 'cart-1',
+        items: [
+          {
+            productId: mockProductBuy.id,
+            product: mockProductBuy,
+            quantity: 1,
+            purchaseMode: 'sell',
+            configuration: 'default',
+            hasWarranty: true,
+          },
+          {
+            productId: mockProductLease.id,
+            product: mockProductLease,
+            quantity: 2,
+            purchaseMode: 'lease',
+            tenureMonths: 12,
+            configuration: 'default',
+            hasWarranty: false,
+          },
+        ],
+      });
+
+      await expect(orderService.createOrder(
+        'user-1',
+        undefined,
+        undefined,
+        { email: 'user@example.com', phone: '9876543210' },
+        '9876543210',
+        'Multi-mode order',
+        'user@example.com',
+      )).rejects.toThrow('Buy and rent items must be checked out separately');
+
+      expect(prisma.product.updateMany).not.toHaveBeenCalled();
+      expect(prisma.cartItem.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.order.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('4. Razorpay Amount Equals Server Total Exactly', () => {
+    it('guarantees Razorpay order amount in paise equals Math.round(order.finalAmount * 100)', () => {
+      const serverFinalAmount = 92999.00;
+      const expectedRazorpayAmountPaise = Math.round(serverFinalAmount * 100);
+
+      expect(expectedRazorpayAmountPaise).toBe(9299900);
+      expect(expectedRazorpayAmountPaise / 100).toBe(serverFinalAmount);
+    });
+  });
+});

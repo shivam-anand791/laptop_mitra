@@ -6,6 +6,8 @@ import Button from './ui/Button';
 import Input from './ui/Input';
 import { api } from '../lib/api';
 import { CreateCorporateInquiryDto } from '../lib/types';
+import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../lib/config';
+import { ShieldCheck, FileText, Truck, Copy, Check } from 'lucide-react';
 
 interface CorporateQuoteModalProps {
   open: boolean;
@@ -127,15 +129,15 @@ export default function CorporateQuoteModal({
     >
       {submittedInquiryId ? (
         <div className="py-4 space-y-4 text-center">
-          <div className="w-14 h-14 mx-auto rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          <div className="w-14 h-14 mx-auto rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center animate-check-bounce">
+            <svg className="w-8 h-8 text-emerald-600 animate-check-draw" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
             </svg>
           </div>
           <div>
             <h3 className="text-lg font-bold text-slate-900">Thank You, {contactPerson}!</h3>
             <p className="text-sm text-slate-600 mt-1">
-              Your inquiry for <strong className="text-slate-800">{companyName}</strong> has been received. Our enterprise hardware specialist will reach out within 24 business hours.
+              Your corporate quote request for <strong className="text-slate-800">{companyName}</strong> has been registered. Our enterprise hardware specialist will reach out within 24 business hours.
             </p>
           </div>
 
@@ -148,14 +150,38 @@ export default function CorporateQuoteModal({
             </span>
           </div>
 
-          <div className="pt-2">
-            <Button variant="primary" onClick={handleResetAndClose} className="w-full">
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
+            <Button variant="primary" onClick={handleResetAndClose} className="w-full sm:w-auto">
               Done
             </Button>
+            <a
+              href={`https://wa.me/${NEXT_PUBLIC_WHATSAPP_NUMBER}?text=Hi%20LaptopMitra,%20I%20just%20submitted%20Corporate%20Inquiry%20${submittedInquiryId}%20for%20${encodeURIComponent(companyName)}.%20Please%20share%20the%20quotation.`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+            >
+              WhatsApp Enterprise Desk
+            </a>
           </div>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+          {/* Corporate Assurance Strip */}
+          <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-center text-[10px] text-slate-600 font-semibold">
+            <div className="flex items-center justify-center gap-1">
+              <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span>Tax Invoices</span>
+            </div>
+            <div className="flex items-center justify-center gap-1 border-x border-slate-200">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Doorstep SLA</span>
+            </div>
+            <div className="flex items-center justify-center gap-1">
+              <Truck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+              <span>Pan-India Transit</span>
+            </div>
+          </div>
+
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
               {error}
@@ -183,9 +209,9 @@ export default function CorporateQuoteModal({
               <button
                 type="button"
                 onClick={() => setMode('sell')}
-                className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                   mode === 'sell'
-                    ? 'bg-[#1D6FF2] text-white border-[#1D6FF2] shadow-xs'
+                    ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-xs ring-1 ring-[#2563EB]/20'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >
@@ -194,9 +220,9 @@ export default function CorporateQuoteModal({
               <button
                 type="button"
                 onClick={() => setMode('lease')}
-                className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                   mode === 'lease'
-                    ? 'bg-[#1D6FF2] text-white border-[#1D6FF2] shadow-xs'
+                    ? 'bg-[#2563EB] text-white border-[#2563EB] shadow-xs ring-1 ring-[#2563EB]/20'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
               >

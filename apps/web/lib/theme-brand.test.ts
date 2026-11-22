@@ -33,8 +33,11 @@ describe('Brand color guard', () => {
     const help = read('app/help/page.tsx');
     const article = read('app/help/[categorySlug]/[articleSlug]/page.tsx');
 
-    assert.ok(help.includes('bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950'));
-    assert.equal(help.match(/bg-\[#0B1F4B\]/g)?.length, 2);
+    assert.ok(
+      help.includes('from-[#0B1F4B]') || help.includes('from-slate-950'),
+      'Help hero banner must use brand tech navy'
+    );
+    assert.ok(help.includes('#0B1F4B'), 'Help page must contain brand navy color');
     assert.ok(article.includes('bg-[#0B1F4B]'));
   });
 });

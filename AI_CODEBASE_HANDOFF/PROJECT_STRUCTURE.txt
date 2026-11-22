@@ -1,0 +1,941 @@
+AI_CODEBASE_HANDOFF/
+PROJECT_SOURCE/
+├── apps/
+│   ├── api/
+│   │   ├── database/
+│   │   │   └── rollbacks/
+│   │   │       └── 20261104_free_service_rollback.sql
+│   │   ├── prisma/
+│   │   │   ├── migrations/
+│   │   │   │   ├── 20261005000000_init/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261022000000_p0_checkout_integrity/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261023000000_phase4_admin_indexes/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261023160000_phase9_system_settings/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261026223000_phase2_schema_foundation/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261027170000_support_and_returns/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261028120000_support_history_preservation/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261029230000_product_variants/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261030173000_product_variant_integrity/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261031120000_rental_autopay_tax/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261102110000_rental_price_audit/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261103010000_support_ticket_priority/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261103020000_order_change_requests/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261103030000_corporate_business_profile/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261103040000_buyback_engine/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261103050000_order_item_cancellations/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261103060000_lease_engine/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261104010000_sold_units_and_serials/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261104020000_warranty_coverage/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261104030000_service_jobs_and_entitlements/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261104040000_service_settings_and_dedupe/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   ├── 20261111000000_reconcile_cart_discount_otp_drift/
+│   │   │   │   │   └── migration.sql
+│   │   │   │   └── migration_lock.toml
+│   │   │   ├── rollbacks/
+│   │   │   │   ├── 20261103010000_support_ticket_priority.rollback.sql
+│   │   │   │   ├── 20261103020000_order_change_requests.rollback.sql
+│   │   │   │   ├── 20261103030000_corporate_business_profile.rollback.sql
+│   │   │   │   └── 20261103040000_buyback_engine.rollback.sql
+│   │   │   ├── schema.prisma
+│   │   │   ├── seed-catalog.ts
+│   │   │   └── seed-rental-test.ts
+│   │   ├── scripts/
+│   │   │   ├── attach-variant-images.js
+│   │   │   ├── audit-db-support.ts
+│   │   │   ├── audit-variants-phase4.js
+│   │   │   ├── bootstrap-admin.ts
+│   │   │   ├── check-user.js
+│   │   │   ├── database-safety.cjs
+│   │   │   ├── dump_inventory.js
+│   │   │   ├── inventory_audit.js
+│   │   │   ├── link-admin-uid.ts
+│   │   │   ├── migrate-referral-codes.cjs
+│   │   │   ├── preflight-prod.ts
+│   │   │   ├── products_dump.json
+│   │   │   ├── promote-admin.ts
+│   │   │   ├── seed-dev-orders.ts
+│   │   │   ├── send-test-email.ts
+│   │   │   ├── sync_rental_pricing.js
+│   │   │   ├── sync-catalog-from-admin.ts
+│   │   │   ├── sync-catalog.js
+│   │   │   ├── test-payout-concurrency.ts
+│   │   │   ├── test-support-concurrency.ts
+│   │   │   ├── test-support-history-constraints.ts
+│   │   │   ├── verify-phase7-purchase-flow.js
+│   │   │   └── verify-phase9-final-sweep.js
+│   │   ├── secrets/
+│   │   │   └── firebase-service-account.json
+│   │   ├── src/
+│   │   │   ├── auth/
+│   │   │   │   ├── dto/
+│   │   │   │   │   └── sync-user.dto.ts
+│   │   │   │   ├── guards/
+│   │   │   │   │   └── firebase-auth.guard.ts
+│   │   │   │   ├── admin-bootstrap.ts
+│   │   │   │   ├── auth.controller.ts
+│   │   │   │   ├── auth.module.ts
+│   │   │   │   ├── auth.service.ts
+│   │   │   │   ├── email-verification.service.ts
+│   │   │   │   ├── email-verification.template.ts
+│   │   │   │   ├── otp.service.ts
+│   │   │   │   ├── otp.template.ts
+│   │   │   │   ├── password-reset.service.ts
+│   │   │   │   └── password-reset.template.ts
+│   │   │   ├── common/
+│   │   │   │   ├── database/
+│   │   │   │   │   └── db-safety.ts
+│   │   │   │   ├── encryption/
+│   │   │   │   │   ├── payment-encryption.module.ts
+│   │   │   │   │   └── payment-encryption.service.ts
+│   │   │   │   ├── filters/
+│   │   │   │   │   └── global-exception.filter.ts
+│   │   │   │   ├── guards/
+│   │   │   │   │   └── schema-gate.guard.ts
+│   │   │   │   ├── interceptors/
+│   │   │   │   │   ├── data-source-header.interceptor.ts
+│   │   │   │   │   └── sanitize-payout-logging.interceptor.ts
+│   │   │   │   ├── constants.ts
+│   │   │   │   ├── cors.ts
+│   │   │   │   ├── database-safety.ts
+│   │   │   │   └── fallback.ts
+│   │   │   ├── decorators/
+│   │   │   │   ├── allow-firebase-sync.decorator.ts
+│   │   │   │   ├── check-firebase-revocation.decorator.ts
+│   │   │   │   ├── get-user.decorator.ts
+│   │   │   │   ├── public.decorator.ts
+│   │   │   │   └── roles.decorator.ts
+│   │   │   ├── entity/
+│   │   │   │   ├── discount-code.entity.ts
+│   │   │   │   ├── index.ts
+│   │   │   │   ├── referral.entity.ts
+│   │   │   │   ├── wishlist-item.entity.ts
+│   │   │   │   └── wishlist.entity.ts
+│   │   │   ├── firebase/
+│   │   │   │   ├── firebase.module.ts
+│   │   │   │   └── firebase.service.ts
+│   │   │   ├── guards/
+│   │   │   │   └── roles.guard.ts
+│   │   │   ├── modules/
+│   │   │   │   ├── address/
+│   │   │   │   │   ├── address.controller.ts
+│   │   │   │   │   ├── address.module.ts
+│   │   │   │   │   └── address.service.ts
+│   │   │   │   ├── admin/
+│   │   │   │   │   ├── dto/
+│   │   │   │   │   │   ├── admin-analytics-query.dto.ts
+│   │   │   │   │   │   ├── admin-order-query.dto.ts
+│   │   │   │   │   │   ├── admin-pagination.dto.ts
+│   │   │   │   │   │   ├── admin-product-query.dto.ts
+│   │   │   │   │   │   ├── admin-user-query.dto.ts
+│   │   │   │   │   │   ├── save-rental-price.dto.ts
+│   │   │   │   │   │   ├── trigger-refund.dto.ts
+│   │   │   │   │   │   ├── update-order-status.dto.ts
+│   │   │   │   │   │   ├── update-settings.dto.ts
+│   │   │   │   │   │   ├── update-unit-serial.dto.ts
+│   │   │   │   │   │   ├── update-user-role.dto.ts
+│   │   │   │   │   │   ├── update-user-status.dto.ts
+│   │   │   │   │   │   └── warranty-register-query.dto.ts
+│   │   │   │   │   ├── admin-coupon.controller.ts
+│   │   │   │   │   ├── admin.controller.ts
+│   │   │   │   │   ├── admin.module.ts
+│   │   │   │   │   ├── admin.service.ts
+│   │   │   │   │   └── rental-pricing.ts
+│   │   │   │   ├── cart/
+│   │   │   │   │   ├── dto/
+│   │   │   │   │   │   └── cart.dto.ts
+│   │   │   │   │   ├── cart.controller.ts
+│   │   │   │   │   ├── cart.module.ts
+│   │   │   │   │   └── cart.service.ts
+│   │   │   │   ├── categories/
+│   │   │   │   │   ├── categories.controller.ts
+│   │   │   │   │   ├── categories.module.ts
+│   │   │   │   │   └── categories.service.ts
+│   │   │   │   ├── discount/
+│   │   │   │   │   ├── dto/
+│   │   │   │   │   │   ├── coupon.dto.ts
+│   │   │   │   │   │   ├── save-payout-details.dto.ts
+│   │   │   │   │   │   └── withdraw-request.dto.ts
+│   │   │   │   │   ├── coupon-allocation.ts
+│   │   │   │   │   ├── discount.controller.ts
+│   │   │   │   │   ├── discount.module.ts
+│   │   │   │   │   └── discount.service.ts
+│   │   │   │   ├── mail/
+│   │   │   │   │   ├── mail.interfaces.ts
+│   │   │   │   │   ├── mail.module.ts
+│   │   │   │   │   └── mail.service.ts
+│   │   │   │   ├── notifications/
+│   │   │   │   │   ├── notification.controller.ts
+│   │   │   │   │   ├── notification.module.ts
+│   │   │   │   │   └── notification.service.ts
+│   │   │   │   ├── order/
+│   │   │   │   │   ├── admin-lease.controller.ts
+│   │   │   │   │   ├── lease.controller.ts
+│   │   │   │   │   ├── lease.service.ts
+│   │   │   │   │   ├── order.controller.ts
+│   │   │   │   │   ├── order.module.ts
+│   │   │   │   │   └── order.service.ts
+│   │   │   │   ├── payments/
+│   │   │   │   │   ├── dto/
+│   │   │   │   │   │   └── razorpay.dto.ts
+│   │   │   │   │   ├── payment.controller.ts
+│   │   │   │   │   ├── payment.module.ts
+│   │   │   │   │   └── payment.service.ts
+│   │   │   │   ├── product/
+│   │   │   │   │   ├── product.controller.ts
+│   │   │   │   │   ├── product.module.ts
+│   │   │   │   │   └── product.service.ts
+│   │   │   │   ├── service/
+│   │   │   │   │   ├── dto/
+│   │   │   │   │   │   ├── book-service.dto.ts
+│   │   │   │   │   │   ├── cancel-service.dto.ts
+│   │   │   │   │   │   ├── reschedule-service.dto.ts
+│   │   │   │   │   │   └── update-service-job.dto.ts
+│   │   │   │   │   ├── admin-service.controller.ts
+│   │   │   │   │   ├── service.controller.ts
+│   │   │   │   │   ├── service.module.ts
+│   │   │   │   │   └── service.service.ts
+│   │   │   │   ├── shipping/
+│   │   │   │   │   ├── pincode.service.ts
+│   │   │   │   │   ├── shipping.controller.ts
+│   │   │   │   │   └── shipping.module.ts
+│   │   │   │   ├── support/
+│   │   │   │   │   ├── dto/
+│   │   │   │   │   │   ├── add-ticket-message.dto.ts
+│   │   │   │   │   │   ├── admin-support.dto.ts
+│   │   │   │   │   │   ├── buyback.dto.ts
+│   │   │   │   │   │   ├── create-corporate-inquiry.dto.ts
+│   │   │   │   │   │   ├── create-return-request.dto.ts
+│   │   │   │   │   │   ├── create-ticket.dto.ts
+│   │   │   │   │   │   ├── order-change-request.dto.ts
+│   │   │   │   │   │   ├── rate-ticket.dto.ts
+│   │   │   │   │   │   ├── update-refund-details.dto.ts
+│   │   │   │   │   │   └── vote-help-article.dto.ts
+│   │   │   │   │   ├── support.controller.ts
+│   │   │   │   │   ├── support.module.ts
+│   │   │   │   │   └── support.service.ts
+│   │   │   │   ├── tax/
+│   │   │   │   │   ├── tax.module.ts
+│   │   │   │   │   └── tax.service.ts
+│   │   │   │   ├── user/
+│   │   │   │   │   ├── user.module.ts
+│   │   │   │   │   └── user.service.ts
+│   │   │   │   └── wishlist/
+│   │   │   │       ├── wishlist.controller.ts
+│   │   │   │       ├── wishlist.module.ts
+│   │   │   │       └── wishlist.service.ts
+│   │   │   ├── prisma/
+│   │   │   │   ├── prisma.module.ts
+│   │   │   │   ├── prisma.service.ts
+│   │   │   │   └── schema-compatibility.service.ts
+│   │   │   ├── shared/
+│   │   │   │   └── random.service.ts
+│   │   │   ├── users/
+│   │   │   │   ├── dto/
+│   │   │   │   │   ├── update-address.dto.ts
+│   │   │   │   │   └── update-profile.dto.ts
+│   │   │   │   ├── users.controller.ts
+│   │   │   │   ├── users.module.ts
+│   │   │   │   └── users.service.ts
+│   │   │   ├── app.controller.ts
+│   │   │   ├── app.module.ts
+│   │   │   ├── main.ts
+│   │   │   └── types.ts
+│   │   ├── test/
+│   │   │   ├── admin/
+│   │   │   │   ├── admin-refund-cancel.spec.ts
+│   │   │   │   ├── admin.service.spec.ts
+│   │   │   │   ├── rental-pricing.spec.ts
+│   │   │   │   ├── serial-tracking-and-warranty.spec.ts
+│   │   │   │   └── support-role-sweep.spec.ts
+│   │   │   ├── auth/
+│   │   │   │   ├── admin-bootstrap.spec.ts
+│   │   │   │   ├── auth-email-reproduction.spec.ts
+│   │   │   │   ├── auth.service.spec.ts
+│   │   │   │   ├── email-verification.spec.ts
+│   │   │   │   ├── firebase-auth.guard.spec.ts
+│   │   │   │   ├── firebase.service.spec.ts
+│   │   │   │   ├── otp.spec.ts
+│   │   │   │   ├── password-reset.spec.ts
+│   │   │   │   ├── registration-sync.spec.ts
+│   │   │   │   ├── role-security.spec.ts
+│   │   │   │   └── roles.guard.spec.ts
+│   │   │   ├── cart/
+│   │   │   │   └── cart-commercial.spec.ts
+│   │   │   ├── common/
+│   │   │   │   ├── cors.spec.ts
+│   │   │   │   ├── database-safety.spec.ts
+│   │   │   │   ├── fallback-resilience.spec.ts
+│   │   │   │   ├── format.spec.ts
+│   │   │   │   ├── global-exception.filter.spec.ts
+│   │   │   │   └── storage.spec.ts
+│   │   │   ├── discount/
+│   │   │   │   ├── coupon-system.spec.ts
+│   │   │   │   ├── discount-throttle.spec.ts
+│   │   │   │   ├── payout-and-withdrawals.spec.ts
+│   │   │   │   └── referral-code.spec.ts
+│   │   │   ├── helpers/
+│   │   │   │   └── no-tax-service.ts
+│   │   │   ├── integration/
+│   │   │   │   ├── cart.integration-spec.ts
+│   │   │   │   ├── database.ts
+│   │   │   │   ├── global-setup.ts
+│   │   │   │   ├── n-minus-1.compatibility.integration-spec.ts
+│   │   │   │   ├── payout-concurrency.integration-spec.ts
+│   │   │   │   ├── support-number-concurrency.integration-spec.ts
+│   │   │   │   ├── support-role-sweep.integration-spec.ts
+│   │   │   │   └── test-environment.ts
+│   │   │   ├── mail/
+│   │   │   │   └── mail.service.spec.ts
+│   │   │   ├── mocks/
+│   │   │   │   └── nestjs-config.mock.ts
+│   │   │   ├── notifications/
+│   │   │   │   ├── notification.service.spec.ts
+│   │   │   │   └── payment-email.spec.ts
+│   │   │   ├── order/
+│   │   │   │   ├── cross-platform-sync.spec.ts
+│   │   │   │   ├── item-cancellation-and-lease.spec.ts
+│   │   │   │   ├── lease-and-cart-commercial.spec.ts
+│   │   │   │   ├── order-invoice-tax.spec.ts
+│   │   │   │   ├── order-return.spec.ts
+│   │   │   │   ├── order-tracking-courier.spec.ts
+│   │   │   │   ├── order.controller.spec.ts
+│   │   │   │   └── reservation-cleanup.spec.ts
+│   │   │   ├── payments/
+│   │   │   │   ├── payment.service.spec.ts
+│   │   │   │   └── seed-rental-test.spec.ts
+│   │   │   ├── product/
+│   │   │   │   ├── product-auth.spec.ts
+│   │   │   │   └── product-filters.spec.ts
+│   │   │   ├── security/
+│   │   │   │   ├── security-headers.spec.ts
+│   │   │   │   └── swagger.spec.ts
+│   │   │   ├── service/
+│   │   │   │   ├── end-to-end-verification.spec.ts
+│   │   │   │   ├── reminders-and-lease.spec.ts
+│   │   │   │   ├── service-lifecycle-and-booking.spec.ts
+│   │   │   │   └── service-schema-integrity.spec.ts
+│   │   │   ├── shared/
+│   │   │   │   └── random.service.spec.ts
+│   │   │   ├── shipping/
+│   │   │   │   └── pincode.service.spec.ts
+│   │   │   ├── support/
+│   │   │   │   ├── admin-support.spec.ts
+│   │   │   │   ├── change-requests-and-buyback.spec.ts
+│   │   │   │   ├── corporate-inquiry.spec.ts
+│   │   │   │   ├── situation-capability-contract.spec.ts
+│   │   │   │   ├── situation-engine.spec.ts
+│   │   │   │   ├── support-customer.spec.ts
+│   │   │   │   └── support-export.spec.ts
+│   │   │   ├── tax/
+│   │   │   │   └── tax.service.spec.ts
+│   │   │   ├── users/
+│   │   │   │   └── users.controller.spec.ts
+│   │   │   ├── app.controller.spec.ts
+│   │   │   ├── jest-global-setup.ts
+│   │   │   └── tsconfig.json
+│   │   ├── .env.development.example
+│   │   ├── .env.example
+│   │   ├── .env.test.example
+│   │   ├── .gitignore
+│   │   ├── jest.config.js
+│   │   ├── jest.integration.config.js
+│   │   ├── nest-cli.json
+│   │   ├── package.json
+│   │   ├── README.md
+│   │   ├── rollback_phase2_schema_foundation.sql
+│   │   └── tsconfig.json
+│   ├── mobile/
+│   │   ├── assets/
+│   │   │   ├── android-icon-background.png
+│   │   │   ├── android-icon-foreground.png
+│   │   │   ├── android-icon-monochrome.png
+│   │   │   ├── favicon.png
+│   │   │   ├── icon.png
+│   │   │   └── splash-icon.png
+│   │   ├── scripts/
+│   │   │   └── check-env.js
+│   │   ├── src/
+│   │   │   ├── __mocks__/
+│   │   │   │   ├── expo-constants.ts
+│   │   │   │   ├── expo-device.ts
+│   │   │   │   ├── expo-notifications.ts
+│   │   │   │   ├── expo-secure-store.ts
+│   │   │   │   └── expo-vector-icons.ts
+│   │   │   ├── __tests__/
+│   │   │   │   ├── account-screens.test.ts
+│   │   │   │   ├── account.test.ts
+│   │   │   │   ├── api-client.test.ts
+│   │   │   │   ├── app-config.test.ts
+│   │   │   │   ├── capabilities-and-boot.test.ts
+│   │   │   │   ├── checkout-payment.test.ts
+│   │   │   │   ├── import-side-effects.test.ts
+│   │   │   │   ├── mitra-affiliate.test.ts
+│   │   │   │   ├── mobile-coupons.test.ts
+│   │   │   │   ├── navigation-and-browsing.test.ts
+│   │   │   │   ├── order-history-and-polish.test.ts
+│   │   │   │   ├── secure-persistence.test.ts
+│   │   │   │   └── situation-and-buyback.test.ts
+│   │   │   ├── api/
+│   │   │   │   └── client.ts
+│   │   │   ├── components/
+│   │   │   │   ├── ui/
+│   │   │   │   │   ├── Alert.tsx
+│   │   │   │   │   ├── Badge.tsx
+│   │   │   │   │   ├── Button.tsx
+│   │   │   │   │   ├── EmptyState.tsx
+│   │   │   │   │   ├── ErrorState.tsx
+│   │   │   │   │   ├── index.ts
+│   │   │   │   │   ├── Input.tsx
+│   │   │   │   │   ├── LoadingState.tsx
+│   │   │   │   │   ├── PriceDisplay.tsx
+│   │   │   │   │   ├── SectionHeader.tsx
+│   │   │   │   │   └── TrustStrip.tsx
+│   │   │   │   ├── BuybackCalculatorModal.tsx
+│   │   │   │   ├── BuybackClaimModal.tsx
+│   │   │   │   ├── ChangeRequestModal.tsx
+│   │   │   │   ├── CorporateQuoteModal.tsx
+│   │   │   │   ├── CountryPicker.tsx
+│   │   │   │   ├── CouponOffersModal.tsx
+│   │   │   │   ├── DataErrorView.tsx
+│   │   │   │   ├── DevApiBanner.tsx
+│   │   │   │   ├── ErrorBoundary.tsx
+│   │   │   │   ├── FilterModal.tsx
+│   │   │   │   ├── FirebaseConfigErrorScreen.tsx
+│   │   │   │   ├── ItemSituationHelpModal.tsx
+│   │   │   │   ├── OfflineBanner.tsx
+│   │   │   │   ├── ProductCard.tsx
+│   │   │   │   ├── RazorpayCheckoutModal.tsx
+│   │   │   │   ├── ServerUnreachableScreen.tsx
+│   │   │   │   ├── Skeleton.tsx
+│   │   │   │   └── Toast.tsx
+│   │   │   ├── firebase/
+│   │   │   │   ├── firebase.ts
+│   │   │   │   └── securePersistence.ts
+│   │   │   ├── hooks/
+│   │   │   │   └── useApi.ts
+│   │   │   ├── navigation/
+│   │   │   │   ├── AuthStack.tsx
+│   │   │   │   ├── LinkingConfig.ts
+│   │   │   │   ├── MainStack.tsx
+│   │   │   │   ├── MainTabs.tsx
+│   │   │   │   ├── RootNavigator.tsx
+│   │   │   │   └── types.ts
+│   │   │   ├── providers/
+│   │   │   │   ├── AuthProvider.tsx
+│   │   │   │   └── QueryProvider.tsx
+│   │   │   ├── screens/
+│   │   │   │   ├── auth/
+│   │   │   │   │   ├── ForgotPasswordScreen.tsx
+│   │   │   │   │   ├── LoginScreen.tsx
+│   │   │   │   │   ├── OTPVerificationScreen.tsx
+│   │   │   │   │   ├── RegisterScreen.tsx
+│   │   │   │   │   └── ResetPasswordScreen.tsx
+│   │   │   │   └── main/
+│   │   │   │       ├── AboutScreen.tsx
+│   │   │   │       ├── AccountScreen.tsx
+│   │   │   │       ├── AddAddressScreen.tsx
+│   │   │   │       ├── AddressBookScreen.tsx
+│   │   │   │       ├── BuybackGuaranteeScreen.tsx
+│   │   │   │       ├── CartScreen.tsx
+│   │   │   │       ├── ChangePasswordScreen.tsx
+│   │   │   │       ├── CheckoutScreen.tsx
+│   │   │   │       ├── GuidedSupportFlowScreen.tsx
+│   │   │   │       ├── HelpArticleDetailScreen.tsx
+│   │   │   │       ├── HelpHomeScreen.tsx
+│   │   │   │       ├── HomeScreen.tsx
+│   │   │   │       ├── MitraDashboardScreen.tsx
+│   │   │   │       ├── MyCouponsScreen.tsx
+│   │   │   │       ├── MyLaptopsScreen.tsx
+│   │   │   │       ├── NotificationPreferencesScreen.tsx
+│   │   │   │       ├── OrderDetailScreen.tsx
+│   │   │   │       ├── OrderHistoryScreen.tsx
+│   │   │   │       ├── PaymentHistoryScreen.tsx
+│   │   │   │       ├── PrivacyScreen.tsx
+│   │   │   │       ├── ProductDetailScreen.tsx
+│   │   │   │       ├── ProfileScreen.tsx
+│   │   │   │       ├── ReturnDetailScreen.tsx
+│   │   │   │       ├── ReturnsListScreen.tsx
+│   │   │   │       ├── SearchScreen.tsx
+│   │   │   │       ├── ServiceJobDetailScreen.tsx
+│   │   │   │       ├── ServiceJobsListScreen.tsx
+│   │   │   │       ├── StoreScreen.tsx
+│   │   │   │       ├── TermsScreen.tsx
+│   │   │   │       ├── TicketDetailScreen.tsx
+│   │   │   │       ├── TicketListScreen.tsx
+│   │   │   │       └── WishlistScreen.tsx
+│   │   │   ├── theme/
+│   │   │   │   └── tokens.ts
+│   │   │   ├── types/
+│   │   │   │   └── react-native-razorpay.d.ts
+│   │   │   ├── utils/
+│   │   │   │   ├── account-helpers.ts
+│   │   │   │   ├── capabilities.ts
+│   │   │   │   ├── checkout-helpers.ts
+│   │   │   │   └── storage.ts
+│   │   │   ├── App.tsx
+│   │   │   └── config.ts
+│   │   ├── .env.example
+│   │   ├── .gitignore
+│   │   ├── AGENTS.md
+│   │   ├── app.config.ts
+│   │   ├── app.json
+│   │   ├── CLAUDE.md
+│   │   ├── eas.json
+│   │   ├── eslint.config.mjs
+│   │   ├── index.ts
+│   │   ├── jest.config.js
+│   │   ├── LICENSE
+│   │   ├── metro.config.js
+│   │   ├── MOBILE_DEV_BUILD.md
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   └── web/
+│       ├── app/
+│       │   ├── about/
+│       │   │   └── page.tsx
+│       │   ├── account/
+│       │   │   ├── addresses/
+│       │   │   │   └── page.tsx
+│       │   │   ├── coupons/
+│       │   │   │   └── page.tsx
+│       │   │   ├── laptops/
+│       │   │   │   └── page.tsx
+│       │   │   ├── notifications/
+│       │   │   │   └── page.tsx
+│       │   │   ├── orders/
+│       │   │   │   ├── [id]/
+│       │   │   │   │   └── page.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── payments/
+│       │   │   │   └── page.tsx
+│       │   │   ├── profile/
+│       │   │   │   └── page.tsx
+│       │   │   ├── referral/
+│       │   │   │   └── page.tsx
+│       │   │   ├── returns/
+│       │   │   │   ├── [id]/
+│       │   │   │   │   └── page.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── security/
+│       │   │   │   └── page.tsx
+│       │   │   ├── service-jobs/
+│       │   │   │   ├── [id]/
+│       │   │   │   │   └── page.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── tickets/
+│       │   │   │   ├── [id]/
+│       │   │   │   │   └── page.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── warranty-support/
+│       │   │   │   └── page.tsx
+│       │   │   ├── wishlist/
+│       │   │   │   └── page.tsx
+│       │   │   ├── layout.tsx
+│       │   │   └── page.tsx
+│       │   ├── admin/
+│       │   │   ├── affiliates/
+│       │   │   │   ├── [id]/
+│       │   │   │   │   └── page.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── analytics/
+│       │   │   │   └── page.tsx
+│       │   │   ├── buyback/
+│       │   │   │   └── page.tsx
+│       │   │   ├── change-requests/
+│       │   │   │   └── page.tsx
+│       │   │   ├── coupons/
+│       │   │   │   └── page.tsx
+│       │   │   ├── inquiries/
+│       │   │   │   └── page.tsx
+│       │   │   ├── leases/
+│       │   │   │   └── page.tsx
+│       │   │   ├── orders/
+│       │   │   │   ├── [id]/
+│       │   │   │   │   └── page.tsx
+│       │   │   │   └── page.tsx
+│       │   │   ├── products/
+│       │   │   │   └── page.tsx
+│       │   │   ├── returns/
+│       │   │   │   └── page.tsx
+│       │   │   ├── service/
+│       │   │   │   ├── jobs/
+│       │   │   │   │   ├── [id]/
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── settings/
+│       │   │   │   │   └── page.tsx
+│       │   │   │   ├── units/
+│       │   │   │   │   ├── [serial]/
+│       │   │   │   │   │   └── page.tsx
+│       │   │   │   │   └── page.tsx
+│       │   │   │   └── warranty/
+│       │   │   │       └── page.tsx
+│       │   │   ├── settings/
+│       │   │   │   └── page.tsx
+│       │   │   ├── support/
+│       │   │   │   └── page.tsx
+│       │   │   ├── users/
+│       │   │   │   └── page.tsx
+│       │   │   ├── error.tsx
+│       │   │   ├── layout.tsx
+│       │   │   ├── loading.tsx
+│       │   │   └── page.tsx
+│       │   ├── buyback-guarantee/
+│       │   │   └── page.tsx
+│       │   ├── cart/
+│       │   │   └── page.tsx
+│       │   ├── checkout/
+│       │   │   └── page.tsx
+│       │   ├── forgot-password/
+│       │   │   └── page.tsx
+│       │   ├── help/
+│       │   │   ├── [categorySlug]/
+│       │   │   │   └── [articleSlug]/
+│       │   │   │       └── page.tsx
+│       │   │   ├── guided-flow/
+│       │   │   │   └── page.tsx
+│       │   │   ├── layout.tsx
+│       │   │   └── page.tsx
+│       │   ├── login/
+│       │   │   └── page.tsx
+│       │   ├── privacy/
+│       │   │   └── page.tsx
+│       │   ├── products/
+│       │   │   ├── [id]/
+│       │   │   │   └── page.tsx
+│       │   │   └── page.tsx
+│       │   ├── profile/
+│       │   │   └── page.tsx
+│       │   ├── register/
+│       │   │   └── page.tsx
+│       │   ├── reset-password/
+│       │   │   └── page.tsx
+│       │   ├── terms/
+│       │   │   └── page.tsx
+│       │   ├── verify-email/
+│       │   │   └── page.tsx
+│       │   ├── wishlist/
+│       │   │   └── page.tsx
+│       │   ├── favicon.ico
+│       │   ├── globals.css
+│       │   ├── layout.tsx
+│       │   ├── page.tsx
+│       │   └── providers.tsx
+│       ├── components/
+│       │   ├── account/
+│       │   │   ├── AddressCard.tsx
+│       │   │   ├── BuybackClaimModal.tsx
+│       │   │   ├── ChangeRequestModal.tsx
+│       │   │   ├── ConfirmDialog.tsx
+│       │   │   ├── ErrorState.tsx
+│       │   │   ├── index.ts
+│       │   │   ├── ItemReturnModal.tsx
+│       │   │   ├── ItemSituationHelpModal.tsx
+│       │   │   ├── NeedHelpSituation.test.ts
+│       │   │   ├── OrderCard.tsx
+│       │   │   ├── OrderStatusChip.tsx
+│       │   │   ├── PaymentText.tsx
+│       │   │   ├── SkeletonList.tsx
+│       │   │   ├── SupportCallbackModal.tsx
+│       │   │   ├── SupportTicketModal.tsx
+│       │   │   ├── TaxInvoiceModal.tsx
+│       │   │   ├── TrackDeliveryModal.tsx
+│       │   │   ├── WarrantyClaimModal.tsx
+│       │   │   └── WishlistView.tsx
+│       │   ├── admin/
+│       │   │   ├── AdminCoupons.test.ts
+│       │   │   ├── AdminDashboard.test.ts
+│       │   │   ├── AdminErrorState.tsx
+│       │   │   ├── AdminGuard.test.ts
+│       │   │   ├── AdminGuard.tsx
+│       │   │   ├── AdminModal.tsx
+│       │   │   ├── AdminOrders.test.ts
+│       │   │   ├── AdminPhase8.test.ts
+│       │   │   ├── AdminPhase9.test.ts
+│       │   │   ├── DataTable.tsx
+│       │   │   ├── PageHeader.tsx
+│       │   │   ├── QueryState.tsx
+│       │   │   ├── SensitiveField.tsx
+│       │   │   ├── StatusBadge.tsx
+│       │   │   └── UserCorporateAndNotesModal.tsx
+│       │   ├── help/
+│       │   │   └── HelpSubnav.tsx
+│       │   ├── ui/
+│       │   │   ├── Alert.tsx
+│       │   │   ├── Badge.tsx
+│       │   │   ├── Button.tsx
+│       │   │   ├── ErrorState.tsx
+│       │   │   ├── index.ts
+│       │   │   ├── Input.tsx
+│       │   │   ├── mac-laptop-screen.tsx
+│       │   │   ├── Modal.tsx
+│       │   │   ├── Select.tsx
+│       │   │   ├── Skeleton.tsx
+│       │   │   └── Toast.tsx
+│       │   ├── AnimatedCounter.tsx
+│       │   ├── CartSyncBanner.tsx
+│       │   ├── CorporateQuoteModal.tsx
+│       │   ├── CouponOffersModal.tsx
+│       │   ├── CustomerCoupons.test.ts
+│       │   ├── CustomerLayout.tsx
+│       │   ├── EmptyState.tsx
+│       │   ├── FilterSidebar.tsx
+│       │   ├── FloatingContactButtons.tsx
+│       │   ├── Footer.tsx
+│       │   ├── Navbar.tsx
+│       │   ├── PriceDisplay.tsx
+│       │   ├── ProductCard.tsx
+│       │   ├── QualityPromiseSection.tsx
+│       │   ├── QuantityStepper.tsx
+│       │   ├── SearchBar.tsx
+│       │   ├── SpecTag.tsx
+│       │   ├── SyncRecoveryBanner.tsx
+│       │   └── TrustStrip.tsx
+│       ├── e2e/
+│       │   ├── theme-visual.spec.ts-snapshots/
+│       │   │   ├── account-orders-desktop-win32.png
+│       │   │   ├── account-orders-mobile-win32.png
+│       │   │   ├── account-tickets-desktop-win32.png
+│       │   │   ├── account-tickets-mobile-win32.png
+│       │   │   ├── cart-desktop-win32.png
+│       │   │   ├── cart-mobile-win32.png
+│       │   │   ├── help-article-desktop-win32.png
+│       │   │   ├── help-article-mobile-win32.png
+│       │   │   ├── help-desktop-win32.png
+│       │   │   ├── help-mobile-win32.png
+│       │   │   ├── home-desktop-win32.png
+│       │   │   ├── home-mobile-win32.png
+│       │   │   ├── login-desktop-win32.png
+│       │   │   ├── login-mobile-win32.png
+│       │   │   ├── product-detail-desktop-win32.png
+│       │   │   ├── product-detail-mobile-win32.png
+│       │   │   ├── products-desktop-win32.png
+│       │   │   └── products-mobile-win32.png
+│       │   ├── admin-products-pricing.spec.ts
+│       │   ├── cart-resilience.spec.ts
+│       │   ├── orders-need-help.spec.ts
+│       │   ├── theme-visual.spec.ts
+│       │   └── verify-email.spec.ts
+│       ├── lib/
+│       │   ├── hooks/
+│       │   │   ├── useIntersectionObserver.ts
+│       │   │   └── useReducedMotion.ts
+│       │   ├── account-helpers.test.ts
+│       │   ├── account-helpers.ts
+│       │   ├── admin-api.ts
+│       │   ├── admin-queries.ts
+│       │   ├── api.ts
+│       │   ├── auth-context.tsx
+│       │   ├── cart-context.tsx
+│       │   ├── checkout-helpers.test.ts
+│       │   ├── checkout-helpers.ts
+│       │   ├── config.test.ts
+│       │   ├── config.ts
+│       │   ├── design-tokens.ts
+│       │   ├── firebase.ts
+│       │   ├── format.ts
+│       │   ├── mock-data.ts
+│       │   ├── otp.test.ts
+│       │   ├── password-reset.test.ts
+│       │   ├── razorpay-contract.test.ts
+│       │   ├── razorpay.ts
+│       │   ├── redirect.test.ts
+│       │   ├── redirect.ts
+│       │   ├── support-config.ts
+│       │   ├── support-layout.test.ts
+│       │   ├── sync-recovery.test.ts
+│       │   ├── sync-recovery.ts
+│       │   ├── theme-brand.test.ts
+│       │   ├── types.ts
+│       │   ├── utils.test.ts
+│       │   ├── utils.ts
+│       │   ├── verification-guard.test.ts
+│       │   ├── verification-guard.ts
+│       │   ├── verification-link.test.ts
+│       │   └── wishlist-context.tsx
+│       ├── public/
+│       │   ├── brands/
+│       │   │   ├── dell.svg
+│       │   │   ├── hp.svg
+│       │   │   └── lenovo.svg
+│       │   ├── images/
+│       │   │   └── generated/
+│       │   │       ├── bulk-order-callout.jpg
+│       │   │       ├── cat-apple.jpg
+│       │   │       ├── cat-business.jpg
+│       │   │       ├── cat-gaming.jpg
+│       │   │       ├── cat-student.jpg
+│       │   │       ├── cat-ultrabook.jpg
+│       │   │       ├── empty-cart.jpg
+│       │   │       ├── empty-search.svg
+│       │   │       ├── empty-wishlist.jpg
+│       │   │       ├── error-404.svg
+│       │   │       ├── hero-enterprise-laptop-mobile.jpg
+│       │   │       ├── hero-enterprise-laptop.jpg
+│       │   │       ├── hero-enterprise-laptop.webp
+│       │   │       ├── manifest.json
+│       │   │       ├── more-than-purchase-banner.jpg
+│       │   │       ├── service-exchange.jpg
+│       │   │       └── service-leasing.jpg
+│       │   ├── apple-touch-icon.png
+│       │   ├── favicon-16x16.png
+│       │   ├── favicon-32x32.png
+│       │   ├── favicon.ico
+│       │   ├── favicon.svg
+│       │   ├── file.svg
+│       │   ├── globe.svg
+│       │   ├── logo.png
+│       │   ├── next.svg
+│       │   ├── site.webmanifest
+│       │   ├── vercel.svg
+│       │   └── window.svg
+│       ├── scripts/
+│       │   ├── capture_after_screenshots.js
+│       │   └── capture_screenshots.js
+│       ├── test-results/
+│       │   └── .last-run.json
+│       ├── .env.example
+│       ├── .eslintrc.json
+│       ├── .gitignore
+│       ├── AGENTS.md
+│       ├── CLAUDE.md
+│       ├── components.json
+│       ├── eslint.config.mjs
+│       ├── next-env.d.ts
+│       ├── next.config.ts
+│       ├── package.json
+│       ├── playwright.visual.config.ts
+│       ├── postcss.config.mjs
+│       ├── README.md
+│       ├── tailwind.config.mjs
+│       ├── tsconfig.json
+│       └── tsconfig.tsbuildinfo
+├── docs/
+│   ├── redesign/
+│   │   ├── IMAGE_PLAN.md
+│   │   ├── MOTION_SPEC.md
+│   │   └── PLAN.md
+│   ├── security/
+│   │   ├── AUTH_SETUP.md
+│   │   ├── BASELINE.md
+│   │   └── firebase-auth.md
+│   ├── deploy-database.md
+│   ├── DEPLOY.md
+│   ├── MOBILE_TESTING_GUIDE.md
+│   └── support-data-retention.md
+├── packages/
+│   ├── api-client/
+│   │   ├── src/
+│   │   │   └── index.ts
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   ├── config/
+│   │   ├── package.json
+│   │   ├── tsconfig.base.json
+│   │   └── tsconfig.json
+│   ├── env/
+│   │   ├── scripts/
+│   │   │   └── check-env.mjs
+│   │   ├── src/
+│   │   │   ├── index.ts
+│   │   │   ├── schema.test.ts
+│   │   │   └── schema.ts
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── tsconfig.tsbuildinfo
+│   ├── tokens/
+│   │   ├── src/
+│   │   │   ├── accessibility.ts
+│   │   │   ├── colors.ts
+│   │   │   ├── index.ts
+│   │   │   ├── radius.ts
+│   │   │   ├── shadows.ts
+│   │   │   ├── spacing.ts
+│   │   │   └── typography.ts
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   └── types/
+│       ├── src/
+│       │   ├── index.d.ts
+│       │   ├── index.d.ts.map
+│       │   ├── index.js
+│       │   ├── index.js.map
+│       │   ├── index.ts
+│       │   └── legal-content.ts
+│       ├── package.json
+│       └── tsconfig.json
+├── rules/
+│   ├── 00-agent-rules-overview.md
+│   ├── 01-security-rules.md
+│   ├── 02-planning-architecture-rules.md
+│   ├── 03-development-code-quality-rules.md
+│   ├── 04-testing-rules.md
+│   ├── 05-git-version-control-rules.md
+│   ├── 06-deployment-production-rules.md
+│   └── 07-ask-before-doing-this.md
+├── scripts/
+│   ├── check-api-mismatches.cjs
+│   ├── db-command.cjs
+│   ├── doctor.cjs
+│   ├── seed-coupons.js
+│   ├── smoke-test.sh
+│   └── verify-browser-login.cjs
+├── .db-protected-hosts
+├── .editorconfig
+├── .env.example
+├── .gitignore
+├── .npmrc
+├── .nvmrc
+├── .prettierignore
+├── .prettierrc.json
+├── AGENTS.md
+├── BUG_REPORT_2026-10-27.md
+├── deploy-fix-prompts.md
+├── DESIGN_SYSTEM.md
+├── DESIGN.md
+├── docker-compose.yml
+├── EMAIL_SETUP.md
+├── eslint.config.mjs
+├── EXISTING_PHP_FEATURE_INVENTORY.md
+├── FEATURE_PARITY_GAP_REPORT.md
+├── FEATURE_RESTORATION_IMPLEMENTATION_PLAN.md
+├── FUTURE_SCOPE_BEFORE_FINAL_DEPLOYMENT.md
+├── LaptopMitra Admin Panel – Phase-wise Fix Prompts.md
+├── LAPTOPMITRA_ACCOUNT_REDESIGN_PROMPT.md
+├── LAPTOPMITRA_CORRECTIVE_PROMPT_C0.md
+├── LAPTOPMITRA_FREE_SERVICE_AND_WARRANTY_PROMPT.md
+├── LAPTOPMITRA_MASTER_TEST_PLAN.md
+├── LAPTOPMITRA_SUPPORT_SYSTEM_PROMPTS.md
+├── MOBILE_APP_AUDIT_AND_PARITY_ROADMAP.md
+├── MOBILE_DEV_BUILD.md
+├── package.json
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
+├── predeploy.md
+├── render.yaml
+├── REVAMPED_APP_FEATURE_INVENTORY.md
+├── SECURITY_FIX_PLAN.md
+├── TODO.md
+├── tsconfig.base.json
+└── turbo.json

@@ -1,0 +1,17 @@
+{
+  "extends": "../../packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM"],
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "allowSyntheticDefaultImports": true,
+    "types": ["jest"],
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "rootDir": "."
+  },
+  "include": ["src/**/*", "app.config.ts"],
+  "exclude": ["node_modules", "dist", ".expo", "metro.config.js"]
+}

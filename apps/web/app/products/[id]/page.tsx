@@ -7,12 +7,13 @@ import { useRouter } from 'next/navigation';
 import CustomerLayout from '../../../components/CustomerLayout';
 import ProductCard from '../../../components/ProductCard';
 import Badge from '../../../components/ui/Badge';
-import { Product, ProductVariant } from '../../../lib/types';
+import { Product, ProductVariant, CartItem } from '../../../lib/types';
 import { api, ApiError } from '../../../lib/api';
 import { useCart } from '../../../lib/cart-context';
 import { useWishlist } from '../../../lib/wishlist-context';
 import { useAuth } from '../../../lib/auth-context';
 import { useSupportConfig } from '../../../lib/support-config';
+import { useToast } from '../../../components/ui/Toast';
 import { NEXT_PUBLIC_WHATSAPP_NUMBER } from '../../../lib/config';
 import CorporateQuoteModal from '../../../components/CorporateQuoteModal';
 import QualityPromiseSection from '../../../components/QualityPromiseSection';
@@ -32,6 +33,10 @@ import {
   Zap,
   Clock,
   ChevronRight,
+  ChevronLeft,
+  ChevronDown,
+  ChevronUp,
+  ArrowLeft,
   Award,
   CheckCircle2,
   Sparkles,
@@ -44,6 +49,8 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   HandCoins,
+  Maximize2,
+  Loader2,
 } from 'lucide-react';
 
 function getVariantSpecValue(
@@ -97,15 +104,23 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const { toggleWishlist, isInWishlist } = useWishlist();
   const { user } = useAuth();
   const { data: supportConfig } = useSupportConfig();
+  const { addToast } = useToast();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [similarProducts, setSimilarProducts] = useState<Product[]>([]);
   const [selectedImage, setSelectedImage] = useState<string>('');
+  const [isImgLoading, setIsImgLoading] = useState<boolean>(false);
+  const [zoomPos, setZoomPos] = useState<{ x: number; y: number }>({ x: 50, y: 50 });
+  const [isHovered, setIsHovered] = useState<boolean>(false);
+  const [isLightboxOpen, setIsLightboxOpen] = useState<boolean>(false);
   const [selectedVariantId, setSelectedVariantId] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [added, setAdded] = useState<boolean>(false);
+  const [isAdding, setIsAdding] = useState<boolean>(false);
+  const [isWishlistAnimating, setIsWishlistAnimating] = useState<boolean>(false);
+  const touchStartX = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<'specs' | 'inspection' | 'box' | 'warranty' | 'faq'>(
     'specs',
   );
@@ -117,6 +132,28 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [corporateModalOpen, setCorporateModalOpen] = useState<boolean>(false);
   const [buybackModalOpen, setBuybackModalOpen] = useState<boolean>(false);
   const [selectedBuybackIndex, setSelectedBuybackIndex] = useState<number>(0);
+  const [openAccordions, setOpenAccordions] = useState<{
+    assurance: boolean;
+    details: boolean;
+    specs: boolean;
+  }>({
+    assurance: false,
+    details: false,
+    specs: false,
+  });
+  const [showStickyBar, setShowStickyBar] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowStickyBar(window.scrollY > 550);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const toggleAccordion = (key: 'assurance' | 'details' | 'specs') => {
+    setOpenAccordions((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
   const buybackTriggerRef = useRef<HTMLButtonElement>(null);
   const wasBuybackModalOpen = useRef<boolean>(false);
 
@@ -299,6 +336,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
         : null;
 
   const handleAddToCart = async () => {
+    if (!product) return;
     if (cartItems.some((item) => (item.purchaseMode === 'lease') !== isLease)) {
       window.alert(
         'Buy and rent items must be kept in separate carts. Remove the existing cart items first.',
@@ -309,38 +347,72 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       setCorporateModalOpen(true);
       return;
     }
-    const synced = await addItem(product, quantity, {
-      purchaseMode: isLease ? 'lease' : 'sell',
-      hasWarranty: !isLease && hasWarranty,
-      ...(isLease ? { tenureMonths: selectedRentalTenure } : {}),
-      ...(selectedVariant ? { variantId: selectedVariant.id } : {}),
-    });
-    if (synced) {
-      setAdded(true);
-      setTimeout(() => setAdded(false), 2200);
+    setIsAdding(true);
+    try {
+      const synced = await addItem(product, quantity, {
+        purchaseMode: isLease ? 'lease' : 'sell',
+        hasWarranty: !isLease && hasWarranty,
+        ...(isLease ? { tenureMonths: selectedRentalTenure } : {}),
+        ...(selectedVariant ? { variantId: selectedVariant.id } : {}),
+      });
+      if (synced) {
+        setAdded(true);
+        addToast('success', `${product.name} added to cart!`);
+        setTimeout(() => setAdded(false), 2200);
+      }
+    } catch {
+      addToast('error', 'Could not add to cart. Please try again.');
+    } finally {
+      setIsAdding(false);
     }
   };
 
-  const handleBuyNow = async () => {
-    if (cartItems.some((item) => (item.purchaseMode === 'lease') !== isLease)) {
-      window.alert(
-        'Buy and rent items must be kept in separate carts. Remove the existing cart items first.',
-      );
-      return;
-    }
+  const handleBuyNow = () => {
+    if (!product) return;
     if (isLease && !hasLeasePrice) {
       setCorporateModalOpen(true);
       return;
     }
-    const synced = await addItem(product, quantity, {
+
+    const buyNowItem: CartItem = {
+      id: `buy-now-${product.id}-${selectedVariant?.id || 'default'}-${isLease ? 'lease' : 'sell'}`,
+      productId: product.id,
+      variantId: selectedVariant?.id || null,
+      variant: selectedVariant || null,
+      quantity,
+      priceAtAdd: Number(currentUnitPrice ?? priceNum),
       purchaseMode: isLease ? 'lease' : 'sell',
+      configuration: selectedVariant?.name || 'default',
       hasWarranty: !isLease && hasWarranty,
-      ...(isLease ? { tenureMonths: selectedRentalTenure } : {}),
-      ...(selectedVariant ? { variantId: selectedVariant.id } : {}),
-    });
-    if (synced) {
-      router.push('/checkout');
+      warrantyPrice: !isLease && hasWarranty ? 1999 : 0,
+      tenureMonths: isLease ? selectedRentalTenure : undefined,
+      product,
+    };
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.setItem('lm_buy_now_item', JSON.stringify(buyNowItem));
+      } catch (err) {
+        console.error('Failed to set buy-now item in sessionStorage', err);
+      }
     }
+    router.push('/checkout?buyNow=1');
+  };
+
+  const handleToggleWishlist = async () => {
+    if (!product) return;
+    setIsWishlistAnimating(true);
+    const wasWish = isInWishlist(product.id);
+    const success = await toggleWishlist(product);
+    if (success) {
+      addToast(
+        'success',
+        wasWish
+          ? `${product.name} removed from wishlist`
+          : `${product.name} saved to wishlist!`,
+      );
+    }
+    setTimeout(() => setIsWishlistAnimating(false), 300);
   };
 
   const handlePincodeCheck = (e: React.FormEvent) => {
@@ -355,6 +427,56 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     : product.images || [];
   const displayImageSrc =
     selectedImage || galleryImages[0]?.url || '/images/generated/cat-business.webp';
+
+  const selectImage = (url: string) => {
+    if (url !== selectedImage) {
+      setIsImgLoading(true);
+      setSelectedImage(url);
+    }
+  };
+
+  const handlePrevImg = () => {
+    if (galleryImages.length <= 1) return;
+    const currentIdx = galleryImages.findIndex(
+      (img) => img.url === (selectedImage || galleryImages[0]?.url),
+    );
+    const prevIdx = (currentIdx - 1 + galleryImages.length) % galleryImages.length;
+    setIsImgLoading(true);
+    setSelectedImage(galleryImages[prevIdx].url);
+  };
+
+  const handleNextImg = () => {
+    if (galleryImages.length <= 1) return;
+    const currentIdx = galleryImages.findIndex(
+      (img) => img.url === (selectedImage || galleryImages[0]?.url),
+    );
+    const nextIdx = (currentIdx + 1) % galleryImages.length;
+    setIsImgLoading(true);
+    setSelectedImage(galleryImages[nextIdx].url);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((e.clientX - left) / width) * 100));
+    const y = Math.max(0, Math.min(100, ((e.clientY - top) / height) * 100));
+    setZoomPos({ x, y });
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const deltaX = touchStartX.current - touchEndX;
+    if (deltaX > 45) {
+      handleNextImg();
+    } else if (deltaX < -45) {
+      handlePrevImg();
+    }
+    touchStartX.current = null;
+  };
 
   const buybackPlans = BUYBACK_POLICY.tiers.map((tier) => ({
     ...tier,
@@ -508,12 +630,52 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <CustomerLayout>
-      <div className="bg-[#F8FAFC] min-h-screen py-6 sm:py-8 lg:py-10">
+      {/* ─── Mobile Top Navigation Sub-Bar (Phone 2 Reference Match: md:hidden) ─── */}
+      <div className="md:hidden sticky top-0 z-30 bg-[#FFFDF9]/95 backdrop-blur-md border-b border-[#E6DFD5] px-4 py-2.5 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          aria-label="Go back"
+          className="p-1 -ml-1 text-slate-700 hover:text-[#0B1F4B] transition-colors cursor-pointer"
+        >
+          <ArrowLeft size={20} />
+        </button>
+
+        <Link href="/" className="font-black text-base tracking-tight text-[#0B1F4B]">
+          Laptop<span className="text-[#2563EB]">Mitra</span>
+        </Link>
+
+        <div className="flex items-center gap-2">
+          <Link
+            href="/products"
+            aria-label="Search laptops"
+            className="p-1.5 text-slate-700 hover:text-[#2563EB] transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </Link>
+          <Link
+            href="/cart"
+            aria-label="View Cart"
+            className="p-1.5 text-slate-700 hover:text-[#2563EB] transition-colors relative"
+          >
+            <ShoppingCart size={20} />
+            {cartItems.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-[#2563EB] text-white font-mono text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center ring-2 ring-[#FFFDF9]">
+                {cartItems.reduce((acc, it) => acc + it.quantity, 0)}
+              </span>
+            )}
+          </Link>
+        </div>
+      </div>
+
+      <div className="bg-[#F7F4EE] min-h-screen py-4 sm:py-8 lg:py-10 pb-24 md:pb-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Breadcrumbs */}
+          {/* Breadcrumbs (Desktop: hidden sm:flex) */}
           <nav
             aria-label="Breadcrumb"
-            className="flex items-center space-x-2 text-xs text-slate-500 mb-4 sm:mb-6 overflow-x-auto whitespace-nowrap py-1"
+            className="hidden sm:flex items-center space-x-2 text-xs text-slate-500 mb-4 sm:mb-6 overflow-x-auto whitespace-nowrap py-1"
           >
             <Link href="/" className="hover:text-[#2563EB] transition-colors font-medium">
               Home
@@ -543,30 +705,78 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-start">
             {/* LEFT COLUMN: Gallery & Certification (7 cols) */}
             <div className="lg:col-span-6 xl:col-span-7 space-y-3.5 lg:sticky lg:top-24 self-start">
-              {/* Main Hero Image in Clean Blue-and-White Frame */}
-              <div className="relative aspect-[16/10] max-h-[380px] rounded-3xl overflow-hidden bg-white border border-[#E2E8F0] shadow-sm flex items-center justify-center p-6 group">
-                <div className="relative w-full h-full">
-                  {displayImageSrc.startsWith('http') ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={displayImageSrc}
-                      alt={product.name}
-                      className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
-                    />
-                  ) : (
-                    <Image
-                      src={displayImageSrc}
-                      alt={product.name}
-                      fill
-                      className="object-contain transition-transform duration-300 group-hover:scale-105"
-                      sizes="(max-width: 768px) 100vw, 50vw"
-                      priority
-                    />
-                  )}
+              {/* Main Hero Image in Clean Cream-and-Blue Frame with Hover Zoom & Touch Swipe */}
+              <div
+                className="relative aspect-[16/10] max-h-[420px] rounded-3xl overflow-hidden bg-[#FFFDF9] border border-[#E6DFD5] shadow-xs flex items-center justify-center p-4 sm:p-6 group cursor-zoom-in select-none"
+                onMouseMove={handleMouseMove}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                onClick={() => setIsLightboxOpen(true)}
+              >
+                {/* Shimmer skeleton while image loads */}
+                {isImgLoading && (
+                  <div className="absolute inset-0 bg-[#FAF6EF] animate-pulse flex items-center justify-center z-5">
+                    <Loader2 className="w-8 h-8 text-[#2563EB]/40 animate-spin" />
+                  </div>
+                )}
+
+                <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    key={displayImageSrc}
+                    src={displayImageSrc}
+                    alt={product.name}
+                    onLoad={() => setIsImgLoading(false)}
+                    style={
+                      isHovered
+                        ? {
+                            transform: 'scale(1.18)',
+                            transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
+                            transition: 'transform 120ms ease-out',
+                          }
+                        : {
+                            transform: 'scale(1)',
+                            transition: 'transform 250ms ease-out',
+                          }
+                    }
+                    className={`w-full h-full object-contain pointer-events-none transition-opacity duration-300 ${
+                      isImgLoading ? 'opacity-0' : 'opacity-100'
+                    }`}
+                  />
                 </div>
 
+                {/* Left / Right Navigation Arrows */}
+                {galleryImages.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePrevImg();
+                      }}
+                      aria-label="Previous image"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-slate-700 shadow-sm border border-slate-200 flex items-center justify-center transition-all cursor-pointer z-10 active:scale-95 hover:scale-105"
+                    >
+                      <ChevronLeft size={20} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNextImg();
+                      }}
+                      aria-label="Next image"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-slate-700 shadow-sm border border-slate-200 flex items-center justify-center transition-all cursor-pointer z-10 active:scale-95 hover:scale-105"
+                    >
+                      <ChevronRight size={20} />
+                    </button>
+                  </>
+                )}
+
                 {/* Doorstep Warranty Floater */}
-                <div className="absolute top-4 left-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-blue-200 shadow-sm flex items-center gap-1.5 text-xs font-bold text-[#0B1F4B]">
+                <div className="absolute top-4 left-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-blue-200 shadow-xs flex items-center gap-1.5 text-xs font-bold text-[#0B1F4B] z-10 pointer-events-none">
                   <ShieldCheck size={16} className="text-[#2563EB]" />
                   <span>
                     {warrantyMonths
@@ -575,36 +785,74 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   </span>
                 </div>
 
-                {/* Wishlist Button */}
+                {/* Wishlist Button with Heart Pop Animation */}
                 <button
                   type="button"
-                  onClick={() => toggleWishlist(product)}
-                  className={`absolute top-4 right-4 p-2.5 rounded-full border transition-all cursor-pointer shadow-sm ${
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleToggleWishlist();
+                  }}
+                  className={`absolute top-4 right-4 p-2.5 rounded-full border transition-all cursor-pointer shadow-xs z-10 active:scale-90 ${
+                    isWishlistAnimating ? 'scale-125' : 'scale-100'
+                  } ${
                     isWish
                       ? 'bg-rose-50 border-rose-200 text-rose-600'
-                      : 'bg-white/90 border-slate-200 text-slate-400 hover:text-slate-700'
+                      : 'bg-white/90 hover:bg-white border-slate-200 text-slate-400 hover:text-rose-500'
                   }`}
                   aria-label={isWish ? 'Remove from wishlist' : 'Add to wishlist'}
                 >
-                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                  <svg
+                    className={`w-5 h-5 transition-colors duration-200 ${
+                      isWish ? 'fill-rose-500 text-rose-500' : 'fill-none stroke-current'
+                    }`}
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+                    />
                   </svg>
                 </button>
+
+                {/* Expand Image Fullscreen Lightbox Button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsLightboxOpen(true);
+                  }}
+                  aria-label="Expand image fullscreen"
+                  className="absolute bottom-4 right-4 p-2 rounded-xl bg-white/90 hover:bg-white text-slate-600 hover:text-[#0B1F4B] shadow-xs border border-slate-200 flex items-center justify-center transition-all cursor-pointer z-10 active:scale-95"
+                >
+                  <Maximize2 size={16} />
+                </button>
+
+                {/* Mobile image counter indicator */}
+                {galleryImages.length > 1 && (
+                  <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-xs px-2.5 py-1 rounded-lg text-[10px] font-bold text-white tracking-wider z-10 pointer-events-none">
+                    {galleryImages.findIndex(
+                      (img) => img.url === (selectedImage || galleryImages[0]?.url),
+                    ) + 1}{' '}
+                    / {galleryImages.length}
+                  </div>
+                )}
               </div>
 
               {/* Interactive Thumbnail Gallery */}
               {galleryImages.length > 1 && (
                 <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
                   {galleryImages.map((img, idx) => {
-                    const isSelected = selectedImage === img.url;
+                    const isSelected = (selectedImage || galleryImages[0]?.url) === img.url;
                     return (
                       <button
                         key={idx}
-                        onClick={() => setSelectedImage(img.url)}
-                        className={`relative w-16 h-16 rounded-xl overflow-hidden border-2 bg-white p-1 shrink-0 transition-all cursor-pointer ${
+                        onClick={() => selectImage(img.url)}
+                        className={`relative w-16 h-16 rounded-xl overflow-hidden border-2 p-1 shrink-0 transition-all duration-200 cursor-pointer ${
                           isSelected
-                            ? 'border-[#2563EB] ring-2 ring-blue-500/20 shadow-md scale-105'
-                            : 'border-[#E2E8F0] opacity-75 hover:opacity-100 hover:border-blue-300'
+                            ? 'border-[#2563EB] ring-2 ring-[#2563EB]/20 bg-[#FFFDF9] shadow-md scale-105'
+                            : 'border-[#E6DFD5] bg-[#FAF6EF]/60 opacity-75 hover:opacity-100 hover:border-blue-300'
                         }`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -712,7 +960,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               <div className="p-3.5 sm:p-4 rounded-2xl bg-white border border-[#E2E8F0] shadow-xs space-y-2">
                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <ShieldCheck size={13} className="text-[#2563EB]" />
-                  What's in the sealed box
+                  What&apos;s in the sealed box
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
                   <div className="flex items-center gap-2 p-1.5 sm:p-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
@@ -759,18 +1007,20 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
             {/* RIGHT COLUMN: Product Header, Buy Box, Pricing & Actions (5 cols) */}
             <div className="lg:col-span-6 xl:col-span-5 space-y-3">
-              {/* Product Header */}
-              <div className="space-y-1.5">
+              {/* Product Header (Matching Phone 2) */}
+              <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-2xs">
+                    BEST SELLER
+                  </span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-2xs">
+                    CERTIFIED REFURBISHED
+                  </span>
                   {product.category && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-[#2563EB] border border-blue-200">
+                    <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-[#2563EB] border border-blue-200">
                       {product.category.name}
                     </span>
                   )}
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    <CheckCircle2 size={11} className="mr-1 text-emerald-600" />
-                    Grade A+ Certified
-                  </span>
                   <span className="text-[10px] font-mono text-slate-400 ml-auto">
                     SKU: {selectedVariant?.sku || product.sku}
                   </span>
@@ -780,8 +1030,25 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   {product.name}
                 </h1>
 
+                <p className="text-xs text-slate-600 font-normal leading-relaxed">
+                  Reliable, business-grade laptop for work and productivity.
+                </p>
+
+                {/* Rating & Certified Row matching Phone 2 */}
+                <div className="flex flex-wrap items-center gap-2 text-xs pt-0.5">
+                  <span className="font-extrabold text-amber-500 flex items-center gap-1">
+                    ★ 4.8
+                  </span>
+                  <span className="text-slate-500 font-medium">(268 reviews)</span>
+                  <span className="text-slate-300">|</span>
+                  <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
+                    <ShieldCheck size={14} className="text-emerald-600" />
+                    Certified Refurbished
+                  </span>
+                </div>
+
                 {/* Stock & Dispatch Status Badge */}
-                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] pt-0.5">
                   {availableStock > 0 || allowBackorder ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -803,14 +1070,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
               {/* Procurement Model Selector (Buy vs Lease) */}
               <div className="space-y-1">
-                <div className="grid grid-cols-2 gap-1.5 bg-[#F1F5F9] p-1 rounded-xl border border-[#E2E8F0]">
+                <div className="grid grid-cols-2 gap-1.5 bg-[#FAF6EF] p-1 rounded-xl border border-[#E6DFD5]">
                   <button
                     type="button"
                     aria-pressed={procurementModel === 'buy'}
                     onClick={() => setProcurementModel('buy')}
                     className={`h-8.5 px-3 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                       procurementModel === 'buy'
-                        ? 'bg-white text-[#0B1F4B] shadow-xs border border-slate-200'
+                        ? 'bg-[#FFFDF9] text-[#0B1F4B] shadow-xs border border-slate-200'
                         : 'text-slate-500 hover:text-slate-900'
                     }`}
                   >
@@ -822,7 +1089,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     onClick={() => setProcurementModel('lease')}
                     className={`h-8.5 px-3 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                       procurementModel === 'lease'
-                        ? 'bg-white text-[#0B1F4B] shadow-xs border border-slate-200'
+                        ? 'bg-[#FFFDF9] text-[#0B1F4B] shadow-xs border border-slate-200'
                         : 'text-slate-500 hover:text-slate-900'
                     }`}
                   >
@@ -1033,12 +1300,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                                   type="button"
                                   disabled={!hasStock}
                                   onClick={() => chooseVariantForAttribute(attributeKey, val)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all duration-150 cursor-pointer flex items-center gap-1 ${
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all duration-180 cursor-pointer flex items-center gap-1.5 active:scale-95 ${
                                     isSelected
                                       ? 'bg-blue-50 border-2 border-[#2563EB] text-[#0B1F4B] ring-2 ring-blue-500/20 shadow-xs'
                                       : !hasStock
                                         ? 'bg-slate-100 border border-slate-200 text-slate-400 line-through cursor-not-allowed opacity-50'
-                                        : 'bg-white border border-[#CBD5E1] text-slate-700 hover:border-blue-300 hover:bg-blue-50/30'
+                                        : 'bg-[#FFFDF9] border border-[#E6DFD5] text-slate-700 hover:border-blue-300 hover:bg-blue-50/30'
                                   }`}
                                 >
                                   {isSelected && (
@@ -1192,27 +1459,37 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       </button>
                     </div>
 
-                    {/* Add to Cart */}
+                    {/* Add to Cart with async loading and feedback */}
                     <button
+                      type="button"
                       onClick={handleAddToCart}
-                      disabled={outOfStock}
-                      className={`h-10 flex-1 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs ${
+                      disabled={outOfStock || isAdding}
+                      className={`h-10 flex-1 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 ${
                         outOfStock
                           ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           : added
                             ? 'bg-emerald-600 text-white'
-                            : 'bg-white hover:bg-blue-50 text-[#2563EB] border-2 border-[#2563EB]'
+                            : isAdding
+                              ? 'bg-blue-50 text-[#2563EB] border-2 border-[#2563EB]'
+                              : 'bg-white hover:bg-blue-50 text-[#2563EB] border-2 border-[#2563EB]'
                       }`}
                     >
-                      <ShoppingCart size={14} />
-                      <span>{added ? 'Added!' : 'Add to Cart'}</span>
+                      {isAdding ? (
+                        <Loader2 size={14} className="animate-spin text-[#2563EB]" />
+                      ) : added ? (
+                        <Check size={14} className="stroke-[3]" />
+                      ) : (
+                        <ShoppingCart size={14} />
+                      )}
+                      <span>{isAdding ? 'Adding...' : added ? 'Added!' : 'Add to Cart'}</span>
                     </button>
 
                     {/* Buy Now */}
                     <button
+                      type="button"
                       onClick={handleBuyNow}
                       disabled={outOfStock}
-                      className={`h-10 flex-1 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+                      className={`h-10 flex-1 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 ${
                         outOfStock
                           ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           : 'bg-[#2563EB] hover:bg-[#1D4ED8] text-white hover:shadow-md'
@@ -1289,6 +1566,196 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   </span>
                 </button>
               </div>
+
+              {/* Key Specifications (Matching Phone 2) */}
+              <div className="space-y-2 pt-2">
+                <h3 className="text-xs font-black text-[#0B1F4B] uppercase tracking-wider">
+                  Key Specifications
+                </h3>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="p-2.5 rounded-xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-2xs flex flex-col items-center">
+                    <Cpu size={18} className="text-[#2563EB] mb-1" />
+                    <span className="text-[11px] font-black text-[#0B1F4B] line-clamp-1 leading-tight">
+                      {activeProcessor.split(' ')[0] || 'Intel'}
+                    </span>
+                    <span className="text-[9px] text-slate-500 line-clamp-1">
+                      {activeProcessor.split(' ').slice(1, 3).join(' ') || 'Processor'}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-2xs flex flex-col items-center">
+                    <MemoryStick size={18} className="text-[#2563EB] mb-1" />
+                    <span className="text-[11px] font-black text-[#0B1F4B] line-clamp-1 leading-tight">
+                      {activeRam.split(' ')[0] || '16GB'}
+                    </span>
+                    <span className="text-[9px] text-slate-500 line-clamp-1">
+                      {activeRam.split(' ').slice(1).join(' ') || 'RAM'}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-2xs flex flex-col items-center">
+                    <HardDrive size={18} className="text-[#2563EB] mb-1" />
+                    <span className="text-[11px] font-black text-[#0B1F4B] line-clamp-1 leading-tight">
+                      {activeStorage.split(' ')[0] || '512GB'}
+                    </span>
+                    <span className="text-[9px] text-slate-500 line-clamp-1">
+                      {activeStorage.split(' ').slice(1).join(' ') || 'SSD'}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-[#FFFDF9] border border-[#E6DFD5] shadow-2xs flex flex-col items-center">
+                    <Monitor size={18} className="text-[#2563EB] mb-1" />
+                    <span className="text-[11px] font-black text-[#0B1F4B] line-clamp-1 leading-tight">
+                      {activeDisplay.includes('"') ? activeDisplay.split('"')[0] + '"' : '14" FHD'}
+                    </span>
+                    <span className="text-[9px] text-slate-500 line-clamp-1">
+                      IPS Display
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3-Item Assurance Strip matching Phone 2 */}
+              <div className="grid grid-cols-3 gap-2 text-center p-2.5 rounded-xl bg-[#FFFDF9] border border-[#E6DFD5] text-[11px] font-bold text-[#0B1F4B] shadow-2xs">
+                <div className="flex flex-col items-center justify-center gap-1">
+                  <ShieldCheck size={16} className="text-[#2563EB]" />
+                  <span className="leading-tight">6-Month Warranty</span>
+                </div>
+                <div className="flex flex-col items-center justify-center gap-1">
+                  <Truck size={16} className="text-[#2563EB]" />
+                  <span className="leading-tight">Pan-India Delivery</span>
+                </div>
+                <div className="flex flex-col items-center justify-center gap-1">
+                  <RotateCcw size={16} className="text-[#2563EB]" />
+                  <span className="leading-tight">7-Day Return</span>
+                </div>
+              </div>
+
+              {/* Expandable Accordions with Smooth Animated Transitions */}
+              <div className="space-y-2 pt-2">
+                {/* Accordion 1: LaptopMitra Assurance */}
+                <div className="rounded-xl bg-[#FFFDF9] border border-[#E6DFD5] overflow-hidden shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => toggleAccordion('assurance')}
+                    className="w-full p-3 text-left flex items-center justify-between font-bold text-xs text-[#0B1F4B] hover:bg-[#FAF6EF] transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <ShieldCheck size={16} className="text-[#2563EB]" />
+                      <span>LaptopMitra Assurance</span>
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className={`text-slate-400 transition-transform duration-250 ease-out transform ${
+                        openAccordions.assurance ? 'rotate-180' : 'rotate-0'
+                      }`}
+                    />
+                  </button>
+                  <div
+                    className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                      openAccordions.assurance
+                        ? 'grid-rows-[1fr] opacity-100'
+                        : 'grid-rows-[0fr] opacity-0'
+                    }`}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="p-3 pt-0 text-xs text-slate-600 leading-relaxed border-t border-[#E6DFD5]/70 bg-[#FAF6EF]/40 space-y-1.5">
+                        <p>• 32-point physical and diagnostic inspection passed.</p>
+                        <p>• Doorstep warranty pickup and replacement guarantee.</p>
+                        <p>• Dedicated technical support via WhatsApp and phone.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Accordion 2: Product Details */}
+                <div className="rounded-xl bg-[#FFFDF9] border border-[#E6DFD5] overflow-hidden shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => toggleAccordion('details')}
+                    className="w-full p-3 text-left flex items-center justify-between font-bold text-xs text-[#0B1F4B] hover:bg-[#FAF6EF] transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <FileText size={16} className="text-[#2563EB]" />
+                      <span>Product Details</span>
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className={`text-slate-400 transition-transform duration-250 ease-out transform ${
+                        openAccordions.details ? 'rotate-180' : 'rotate-0'
+                      }`}
+                    />
+                  </button>
+                  <div
+                    className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                      openAccordions.details
+                        ? 'grid-rows-[1fr] opacity-100'
+                        : 'grid-rows-[0fr] opacity-0'
+                    }`}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="p-3 pt-0 text-xs text-slate-600 leading-relaxed border-t border-[#E6DFD5]/70 bg-[#FAF6EF]/40 space-y-1">
+                        <p>
+                          {product.description ||
+                            'Enterprise-grade corporate laptop certified for business multitasking, heavy spreadsheets, and reliable day-long battery life.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Accordion 3: Specifications */}
+                <div className="rounded-xl bg-[#FFFDF9] border border-[#E6DFD5] overflow-hidden shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => toggleAccordion('specs')}
+                    className="w-full p-3 text-left flex items-center justify-between font-bold text-xs text-[#0B1F4B] hover:bg-[#FAF6EF] transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <SlidersHorizontal size={16} className="text-[#2563EB]" />
+                      <span>Specifications</span>
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className={`text-slate-400 transition-transform duration-250 ease-out transform ${
+                        openAccordions.specs ? 'rotate-180' : 'rotate-0'
+                      }`}
+                    />
+                  </button>
+                  <div
+                    className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                      openAccordions.specs
+                        ? 'grid-rows-[1fr] opacity-100'
+                        : 'grid-rows-[0fr] opacity-0'
+                    }`}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="p-3 pt-0 text-xs text-slate-600 leading-relaxed border-t border-[#E6DFD5]/70 bg-[#FAF6EF]/40 divide-y divide-[#E6DFD5]/70">
+                        <div className="py-1 flex justify-between">
+                          <span className="font-semibold text-slate-500">Processor:</span>
+                          <span className="font-bold text-[#0B1F4B]">{activeProcessor}</span>
+                        </div>
+                        <div className="py-1 flex justify-between">
+                          <span className="font-semibold text-slate-500">RAM:</span>
+                          <span className="font-bold text-[#0B1F4B]">{activeRam}</span>
+                        </div>
+                        <div className="py-1 flex justify-between">
+                          <span className="font-semibold text-slate-500">Storage:</span>
+                          <span className="font-bold text-[#0B1F4B]">{activeStorage}</span>
+                        </div>
+                        <div className="py-1 flex justify-between">
+                          <span className="font-semibold text-slate-500">Display:</span>
+                          <span className="font-bold text-[#0B1F4B]">{activeDisplay}</span>
+                        </div>
+                        <div className="py-1 flex justify-between">
+                          <span className="font-semibold text-slate-500">Battery Health:</span>
+                          <span className="font-bold text-emerald-700">{activeBattery}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1307,7 +1774,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   id="technical-specifications-title"
                   className="text-2xl font-black text-[#0B1F4B] tracking-tight"
                 >
-                  What's inside?
+                  What&apos;s inside?
                 </h2>
                 <p className="mt-1 text-xs sm:text-sm text-slate-500">
                   Viewing specs for <strong className="text-slate-800">{product.name}</strong> —{' '}
@@ -1700,51 +2167,20 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 </div>
                 <Link
                   href="/products"
-                  className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1"
+                  className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1 group"
                 >
                   <span>View all laptops</span>
-                  <ArrowRight size={14} />
+                  <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
                 </Link>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 stagger-reveal">
                 {similarProducts.map((p) => (
                   <ProductCard key={p.id} product={p} />
                 ))}
               </div>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* MOBILE STICKY BOTTOM ACTION BAR (Mobile only, hidden on tablet md+) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] p-3 px-4 shadow-xl">
-        <div className="flex items-center justify-between gap-3 max-w-md mx-auto">
-          <div>
-            <span className="text-[10px] text-slate-400 block font-bold uppercase truncate max-w-[140px]">
-              {selectedVariant?.name || product.name}
-            </span>
-            <span className="text-lg font-black text-[#0B1F4B] tabular-nums">
-              ₹{currentUnitPrice?.toLocaleString('en-IN')}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleAddToCart}
-              disabled={outOfStock}
-              className="h-10 px-3.5 rounded-xl text-xs font-bold bg-white text-[#2563EB] border-2 border-[#2563EB] disabled:opacity-40"
-            >
-              {added ? 'Added!' : 'Cart'}
-            </button>
-            <button
-              onClick={handleBuyNow}
-              disabled={outOfStock}
-              className="h-10 px-4 rounded-xl text-xs font-black bg-[#2563EB] text-white shadow-md disabled:opacity-40"
-            >
-              Buy Now
-            </button>
-          </div>
         </div>
       </div>
 
@@ -1808,7 +2244,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 What Will You Get Back?
               </h3>
               <p className="mt-1 text-xs text-slate-600">
-                See your guaranteed cash value when you're ready to upgrade.
+                See your guaranteed cash value when you&apos;re ready to upgrade.
               </p>
             </div>
 
@@ -1821,7 +2257,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   id="buyback-summary-label"
                   className="text-xs font-bold text-slate-500 uppercase tracking-wider"
                 >
-                  You'll receive at least — {selectedBuybackPlan.period}
+                  You&apos;ll receive at least — {selectedBuybackPlan.period}
                 </p>
                 <p className="mt-1 text-3xl font-black text-[#0B1F4B] tabular-nums">
                   ₹{selectedBuybackPlan.estimatedValue.toLocaleString('en-IN')}
@@ -1906,6 +2342,180 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 </Link>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Responsive Sticky Bottom Purchase Bar (Desktop & Mobile) ─── */}
+      <div
+        className={`fixed bottom-0 left-0 right-0 z-40 bg-[#FFFDF9]/95 backdrop-blur-md border-t border-[#E6DFD5] shadow-[0_-4px_24px_rgba(11,31,75,0.08)] transition-all duration-300 transform ${
+          showStickyBar ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'
+        }`}
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)' }}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-3">
+          {/* Left: Product thumbnail + title + active price (Desktop & Mobile) */}
+          <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-[#FAF6EF] border border-[#E6DFD5] overflow-hidden shrink-0 relative">
+              <Image
+                src={selectedImage || galleryImages[0]?.url || '/placeholder.png'}
+                alt={product.name}
+                fill
+                className="object-contain p-1"
+                sizes="44px"
+              />
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-xs font-bold text-[#0B1F4B] truncate max-w-[130px] sm:max-w-xs md:max-w-md">
+                {product.name}
+              </h4>
+              <div className="flex items-center gap-1.5 sm:gap-2 pt-0.5 text-xs">
+                <span className="font-extrabold text-[#2563EB] tabular-nums">
+                  ₹{priceNum.toLocaleString('en-IN')}
+                </span>
+                {compareNum && compareNum > priceNum && (
+                  <span className="line-through text-slate-400 text-[10px] sm:text-[11px] tabular-nums hidden sm:inline">
+                    ₹{compareNum.toLocaleString('en-IN')}
+                  </span>
+                )}
+                {discountPercent > 0 && (
+                  <span className="text-[9px] sm:text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                    {discountPercent}% OFF
+                  </span>
+                )}
+                <span className="text-slate-300 hidden md:inline">|</span>
+                <span className="text-[10px] text-slate-500 font-medium hidden md:inline">
+                  {selectedVariant ? selectedVariant.name : `${activeRam} • ${activeStorage}`}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons (Compact & responsive) */}
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleAddToCart}
+              disabled={outOfStock || isAdding}
+              className={`h-10 px-3 sm:px-4 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 ${
+                outOfStock
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  : added
+                    ? 'bg-emerald-600 text-white'
+                    : isAdding
+                      ? 'bg-blue-50 text-[#2563EB] border-2 border-[#2563EB]'
+                      : 'bg-[#FFFDF9] hover:bg-blue-50 text-[#2563EB] border-2 border-[#2563EB]'
+              }`}
+            >
+              {isAdding ? (
+                <Loader2 size={14} className="animate-spin text-[#2563EB]" />
+              ) : added ? (
+                <Check size={14} className="stroke-[3]" />
+              ) : (
+                <ShoppingCart size={14} />
+              )}
+              <span>{isAdding ? 'Adding...' : added ? 'Added!' : 'Add to Cart'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBuyNow}
+              disabled={outOfStock}
+              className={`h-10 px-4 sm:px-5 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md active:scale-95 ${
+                outOfStock
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  : 'bg-[#2563EB] hover:bg-[#1D4ED8] text-white'
+              }`}
+            >
+              <Zap size={14} className="fill-current" />
+              <span>{isLease ? 'Rent Now' : 'Buy Now'}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Fullscreen Gallery Lightbox Modal ─── */}
+      {isLightboxOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Product Image Gallery Preview"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in"
+          onClick={() => setIsLightboxOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setIsLightboxOpen(false);
+            if (e.key === 'ArrowRight') handleNextImg();
+            if (e.key === 'ArrowLeft') handlePrevImg();
+          }}
+          tabIndex={-1}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] w-full flex flex-col items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setIsLightboxOpen(false)}
+              className="absolute top-2 right-2 p-2.5 rounded-full bg-white/20 hover:bg-white/40 text-white transition-all cursor-pointer z-20"
+              aria-label="Close fullscreen gallery"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Main Lightbox Image Viewport */}
+            <div className="relative w-full aspect-[16/10] max-h-[72vh] flex items-center justify-center p-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={displayImageSrc}
+                alt={product.name}
+                className="max-h-[70vh] max-w-full object-contain drop-shadow-2xl rounded-2xl animate-scale-in select-none"
+              />
+
+              {galleryImages.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handlePrevImg}
+                    aria-label="Previous image"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/30 hover:bg-white/50 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
+                  >
+                    <ChevronLeft size={24} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNextImg}
+                    aria-label="Next image"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/30 hover:bg-white/50 text-white flex items-center justify-center transition-all cursor-pointer active:scale-95"
+                  >
+                    <ChevronRight size={24} />
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Thumbnail Navigation in Lightbox */}
+            {galleryImages.length > 1 && (
+              <div className="flex gap-2.5 mt-2 overflow-x-auto py-2 px-4 max-w-full">
+                {galleryImages.map((img, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => selectImage(img.url)}
+                    className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition-all cursor-pointer p-1 bg-white/10 shrink-0 ${
+                      (selectedImage || galleryImages[0]?.url) === img.url
+                        ? 'border-white ring-2 ring-white/60 scale-105'
+                        : 'border-white/30 opacity-60 hover:opacity-100 hover:border-white/70'
+                    }`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.url} alt="" className="w-full h-full object-contain" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
